@@ -12,4 +12,8 @@
 - go版本：`go version go1.11.1 darwin/amd64`
 
 ### Package
-- `go get -u github.com/tools/godep`
+- [godep](https://github.com/tools/godep)：`go get -u github.com/tools/godep`
+- [etcd](https://github.com/etcd-io/etcd/tree/master/clientv3): `go get go.etcd.io/etcd/clientv3`
+- [cronexpr](https://github.com/gorhill/cronexpr)：`go get github.com/gorhill/cronexpr`
+
+
