@@ -16,3 +16,13 @@
 - [示例2：获取crontab下一个执行时间](crontab/demo02/main.go)
 - [示例3：crontab持续调度Demo](crontab/demo03/main.go)
 
+#### etcd示例
+> https://godoc.org/go.etcd.io/etcd/clientv3
+
+- [示例1：etcd put操作](etcd/put/main.go)
+- [示例2：etcd get操作](etcd/get/main.go)
+- [示例3：etcd delete操作](etcd/delete/main.go)
+- [示例3：etcd lease(租约)操作](etcd/lease01/main.go)
+- [示例3：etcd lease(租约+续租)操作](etcd/lease02/main.go)
+- [示例3：etcd watch 操作](etcd/watch/main.go)
+

@@ -17,3 +17,5 @@
 - [cronexpr](https://github.com/gorhill/cronexpr)：`go get github.com/gorhill/cronexpr`
 
 
+### 参考文档
+- [etcd docs](https://godoc.org/go.etcd.io/etcd/clientv3)
