@@ -22,7 +22,9 @@
 - [示例1：etcd put操作](etcd/put/main.go)
 - [示例2：etcd get操作](etcd/get/main.go)
 - [示例3：etcd delete操作](etcd/delete/main.go)
-- [示例3：etcd lease(租约)操作](etcd/lease01/main.go)
-- [示例3：etcd lease(租约+续租)操作](etcd/lease02/main.go)
-- [示例3：etcd watch 操作](etcd/watch/main.go)
+- [示例4：etcd lease(租约)操作](etcd/lease01/main.go)
+- [示例5：etcd lease(租约+续租)操作](etcd/lease02/main.go)
+- [示例6：etcd watch 操作](etcd/watch/main.go)
+- [示例7：etcd operation Get Put Delete](etcd/operation/main.go)
+- [示例7：etcd txn(事务)操作](etcd/txn/main.go)
 
