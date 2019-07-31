@@ -26,5 +26,14 @@
 - [示例5：etcd lease(租约+续租)操作](etcd/lease02/main.go)
 - [示例6：etcd watch 操作](etcd/watch/main.go)
 - [示例7：etcd operation Get Put Delete](etcd/operation/main.go)
-- [示例7：etcd txn(事务)操作](etcd/txn/main.go)
+- [示例8：etcd txn(事务)操作](etcd/txn/main.go)
+
+#### mongod示例
+> https://godoc.org/go.mongodb.org/mongo-driver/mongo
+
+- [示例1：mongo insert基本使用](mongo/insert01/main.go)
+- [示例2：mongo InserMany 插入多行记录](mongo/insert02/main.go)
+- [示例3：mongo Delete 基本使用](mongo/delete01/main.go)
+- [示例4：mongo Find 基本使用](mongo/find01/main.go)
+
 
