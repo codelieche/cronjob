@@ -36,4 +36,9 @@
 - [示例3：mongo Delete 基本使用](mongo/delete01/main.go)
 - [示例4：mongo Find 基本使用](mongo/find01/main.go)
 
+#### Elasticsearch示例
+> https://github.com/elastic/go-elasticsearch/tree/6.x  
+ https://godoc.org/github.com/elastic/go-elasticsearch/
+
+- [示例1：elaseticsearch 基本使用](elasticsearch/demo01/main.go)
 
