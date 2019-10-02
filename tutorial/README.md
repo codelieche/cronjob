@@ -50,5 +50,6 @@
 - [示例4：http andler(处理器)基本使用](http/handler01/main.go)
 - [示例5：http cookie 基本使用](http/cookie01/main.go)
 - [示例6：http template(模板) 基本使用](http/template01/main.go)
+- [示例7：httprouter 的基本使用](http/router/main.go)
 
 
