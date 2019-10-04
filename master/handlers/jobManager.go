@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
+
+	"go.etcd.io/etcd/mvcc/mvccpb"
 
 	"github.com/codelieche/cronjob/common"
 
@@ -68,6 +71,87 @@ func (jobManager *JobManager) SaveJob(job *common.Job) (prevJob *common.Job, err
 	} else {
 		// 没有上一个的job值，直接返回
 		return nil, nil
+	}
+}
+
+// 获取Job的Detail
+func (jobManager *JobManager) GetJob(name string) (job *common.Job, err error) {
+	// 定义变量
+	var (
+		jobKey      string
+		getResponse *clientv3.GetResponse
+		keyValue    *mvccpb.KeyValue
+		i           int
+	)
+	// 1. 对name做校验
+	name = strings.TrimSpace(name)
+	if name == "" {
+		err = fmt.Errorf("传入的name为空")
+		return nil, err
+	}
+
+	// 2. 从etcd中获取对象
+	jobKey = fmt.Sprintf("/crontab/jobs/%s", name)
+	if getResponse, err = jobManager.kv.Get(context.TODO(), jobKey); err != nil {
+		return nil, err
+	}
+
+	// 3. 获取kv对象
+	//log.Println(getResponse.Header)
+	//log.Println(getResponse.Kvs)
+	if len(getResponse.Kvs) == 1 {
+		for i = range getResponse.Kvs {
+			keyValue = getResponse.Kvs[i]
+			//log.Println(keyValue.Value)
+			//	4. json反序列化
+			if err = json.Unmarshal(keyValue.Value, &job); err != nil {
+				return nil, err
+			} else {
+				return job, nil
+			}
+		}
+		goto NotFound
+	} else {
+		goto NotFound
+	}
+
+NotFound:
+	err = fmt.Errorf("Job Not Fount!")
+	return nil, err
+}
+
+// Delete Job
+func (jobManager *JobManager) DeleteJob(name string) (success bool, err error) {
+	// 定义变量
+	var (
+		jobKey         string
+		deleteResponse *clientv3.DeleteResponse
+	)
+	// 1. 对name做判断
+	name = strings.TrimSpace(name)
+
+	if name == "" {
+		err = fmt.Errorf("name不可为空")
+		return false, err
+	}
+
+	// 2. 操作删除
+	jobKey = fmt.Sprintf("/crontab/jobs/%s", name)
+	if deleteResponse, err = jobManager.kv.Delete(
+		context.TODO(),
+		jobKey,
+		clientv3.WithPrevKV(),
+	); err != nil {
+		return false, err
+	}
+
+	// 3. 返回被删除的keyValue
+	if len(deleteResponse.PrevKvs) < 1 {
+		err = fmt.Errorf("%s不存在", jobKey)
+		return false, err
+	} else {
+		// 删除成功
+		return true, nil
 	}
 }
 

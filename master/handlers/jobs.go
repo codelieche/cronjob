@@ -35,7 +35,7 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		contentType = strings.Split(contentType, ";")[0]
 	}
 
-	log.Println(r.Header.Get("Content-Type"))
+	//log.Println(r.Header.Get("Content-Type"))
 
 	switch contentType {
 	case "multipart/form-data":
@@ -112,4 +112,59 @@ ERR:
 	log.Println(err.Error())
 	http.Error(w, err.Error(), 500)
 	return
+}
+
+// Job详情
+func JobDetail(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	// 1. 获取到job的name
+	var (
+		name         string
+		job          *common.Job
+		err          error
+		jobByteValue []byte
+	)
+	name = ps.ByName("name")
+
+	// 2. 从Etcd中获取数据
+	if job, err = jobManager.GetJob(name); err != nil {
+		http.Error(w, err.Error(), 404)
+		return
+	} else {
+		// 3. 对job序列化
+		if jobByteValue, err = json.Marshal(job); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(jobByteValue)
+			return
+		}
+	}
+}
+
+// Job Delete
+func JobDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	// 定义变量
+	var (
+		name    string
+		success bool
+		err     error
+	)
+
+	// 1. 获取到name
+	name = ps.ByName("name")
+
+	// 2. 从etcd中删除key
+	if success, err = jobManager.DeleteJob(name); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	} else {
+		if success {
+			w.WriteHeader(204)
+		} else {
+			//	不存在
+			w.WriteHeader(404)
+		}
+		return
+	}
 }
