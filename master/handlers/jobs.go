@@ -125,7 +125,7 @@ func JobDetail(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	)
 	name = ps.ByName("name")
 
-	// 2. 从Etcd中获取数据
+	// 2. 从etcd中获取数据
 	if job, err = jobManager.GetJob(name); err != nil {
 		http.Error(w, err.Error(), 404)
 		return
@@ -156,7 +156,7 @@ func JobDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 
 	// 2. 从etcd中删除key
 	if success, err = jobManager.DeleteJob(name); err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, err.Error(), 404)
 		return
 	} else {
 		if success {
@@ -167,4 +167,37 @@ func JobDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		}
 		return
 	}
+}
+
+// Job List
+func JobList(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	var (
+		listResponse JobListResponse
+		results      []*common.Job
+		err          error
+		data         []byte
+	)
+
+	// 获取列表数据
+	if results, err = jobManager.ListJobs(); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	// 对结果序列化
+	listResponse = JobListResponse{
+		Count:   len(results),
+		Next:    "",
+		Results: results,
+	}
+
+	if data, err = json.Marshal(listResponse); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+		return
+	}
+
 }

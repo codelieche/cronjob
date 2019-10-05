@@ -16,6 +16,5 @@ func (apiServer *ApiServer) Run(addr string) {
 	if addr == "" {
 		addr = ":9000"
 	}
-
 	http.ListenAndServe(addr, apiServer.Router)
 }

@@ -15,6 +15,8 @@ func newApiRouter() *httprouter.Router {
 	// job相关
 	// job create
 	router.POST("/job/create", handlers.JobCreate)
+	// job List
+	router.GET("/jobs/list", handlers.JobList)
 	// job Detail
 	router.GET("/job/:name", handlers.JobDetail)
 	// job Delete

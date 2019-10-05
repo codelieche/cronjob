@@ -74,6 +74,50 @@ func (jobManager *JobManager) SaveJob(job *common.Job) (prevJob *common.Job, err
 	}
 }
 
+// List Jobs
+func (jobManager *JobManager) ListJobs() (jobList []*common.Job, err error) {
+	// 定义变量
+	var (
+		jobsDirKey  string
+		getResponse *clientv3.GetResponse
+		kvPair      *mvccpb.KeyValue
+		job         *common.Job
+	)
+	jobsDirKey = "/crontab/jobs/"
+
+	// 获取job对象
+	//endKey := "/crontab/jobs/test2"
+	//jobsDirKey = endKey
+
+	// clientv3.WithFromKey() 会从传入的key开始获取，不可与WithPrefix同时使用
+	if getResponse, err = jobManager.kv.Get(
+		context.TODO(),
+		jobsDirKey,
+		clientv3.WithPrefix(),
+		//clientv3.WithFromKey(),
+		//clientv3.WithLimit(10),
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+	); err != nil {
+		// 出错
+		return
+	}
+
+	// 变量kv
+	for _, kvPair = range getResponse.Kvs {
+		//	对值序列化
+		job = &common.Job{}
+		if err = json.Unmarshal(kvPair.Value, job); err != nil {
+			continue
+		} else {
+			jobList = append(jobList, job)
+		}
+	}
+
+	//	返回结果
+	return jobList, nil
+
+}
+
 // 获取Job的Detail
 func (jobManager *JobManager) GetJob(name string) (job *common.Job, err error) {
 	// 定义变量
