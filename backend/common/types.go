@@ -1,6 +1,8 @@
 package common
 
-import "go.etcd.io/etcd/clientv3"
+import (
+	"go.etcd.io/etcd/clientv3"
+)
 
 // 定时任务
 // 比如：每三十分钟执行一次的任务
@@ -25,4 +27,9 @@ type JobManager struct {
 type Response struct {
 	Status  bool   `json:"status"`  // 状态
 	Message string `json:"message"` // 消息
+}
+
+type WatchHandler interface {
+	HandlerGetResponse(getResponse *clientv3.GetResponse) // 监听key之前先 Get一下所有的Key
+	HandlerWatchChan(watchChan clientv3.WatchChan)        // 监听事件会有个watchResponse的Channel
 }

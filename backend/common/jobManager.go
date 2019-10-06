@@ -237,86 +237,50 @@ func (jobManager *JobManager) KillJob(name string) (err error) {
 	return
 }
 
-// Watch Jobs
-// 监听Job的变化
-func (jobManager *JobManager) WatchJobs() (err error) {
+// Watch keys
+// 监听etcd key的变化
+// 传递的参数：要监听的key的前缀，和处理监听的接口
+func (jobManager *JobManager) WatchKeys(keyDir string, watchHandler WatchHandler) (err error) {
 	// 1. 定义变量
 	var (
-		jobKeyDir          string
-		getResponse        *clientv3.GetResponse
-		kvPair             *mvccpb.KeyValue
-		job                *Job
+		getResponse *clientv3.GetResponse
+		//kvPair             *mvccpb.KeyValue
+		//job                *Job
 		watchStartRevision int64
 		watchChan          clientv3.WatchChan
-		watchResponse      clientv3.WatchResponse
-		watchEvent         *clientv3.Event
+		//watchResponse      clientv3.WatchResponse
+		//watchEvent         *clientv3.Event
 	)
 
 	// 2. get：/crontab/jobs/目录下的所有任务，并且获知当前集群的revision
-	jobKeyDir = "/crontab/jobs/"
+	//keyDir = "/crontab/jobs/"
 	if getResponse, err = jobManager.kv.Get(
-		context.TODO(), jobKeyDir,
+		context.TODO(), keyDir,
 		clientv3.WithPrefix(),
 	); err != nil {
 		return
 	}
 
-	// 3. for循环打印一下jobs
-	for _, kvPair = range getResponse.Kvs {
-		if job, err = UnpackByteToJob(kvPair.Value); err != nil {
-			log.Println(err.Error())
-			continue
-		} else {
-			// 把这个job同步给scheduler
-			log.Println(job)
-		}
-	}
+	// 3. HandlerGetResponse(getResponse *clientv3.GetResponse)
+	watchHandler.HandlerGetResponse(getResponse)
 
 	// 4. watch新的变化
 	func() { // 监听协程
 		// 4-1: 从GET时刻后续版本开始监听
 		watchStartRevision = getResponse.Header.Revision + 1
-		log.Println("开始watch事件:", watchStartRevision)
+		log.Printf("开始watch事件:%s(Revision:%d)", keyDir, getResponse.Header.Revision)
 
 		//	4-2：监听:/crontab/jobs/目录后续的变化
 		watchChan = jobManager.watcher.Watch(
 			context.TODO(),
-			jobKeyDir,
+			keyDir,
 			clientv3.WithPrefix(),                // 监听以jobKeyDir为前缀的key
 			clientv3.WithRev(watchStartRevision), // 设置开始的版本号
 			clientv3.WithPrevKV(),                // 如果不需知道上一次的值，可不添加这个option
 		)
 
-		// 4-3: 处理监听事件
-		for watchResponse = range watchChan {
-			for _, watchEvent = range watchResponse.Events {
-				log.Println("当前事件的Revision：", watchResponse.Header.Revision)
-				switch watchEvent.Type {
-				case mvccpb.PUT:
-					log.Printf("监听到Put事件: IsCreate %v, IsModify %v", watchEvent.IsCreate(), watchEvent.IsModify())
-					// 反序列化，推送给调度协程
-					if job, err = UnpackByteToJob(watchEvent.Kv.Value); err != nil {
-						log.Println(err.Error())
-						continue
-					} else {
-						log.Println("监听到新的job：", job)
-					}
-				case mvccpb.DELETE:
-					log.Println("删除事件")
-					// 停止任务
-					// 输出name
-					log.Println("删除Key：", string(watchEvent.Kv.Key))
-
-					// 反序列化，推送给调度协程
-					if job, err = UnpackByteToJob(watchEvent.PrevKv.Value); err != nil {
-						log.Println(err.Error())
-						continue
-					} else {
-						log.Println("监听到删除job：", job)
-					}
-				}
-			}
-		}
+		// 4-3: 处理监听事件的Channel
+		watchHandler.HandlerWatchChan(watchChan)
 
 	}()
 	return

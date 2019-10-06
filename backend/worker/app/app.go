@@ -15,7 +15,12 @@ type Worker struct {
 func (w *Worker) Run() {
 	// 启动worker程序
 	log.Println("worker run ...")
-	w.JobManager.WatchJobs()
+	var jobsKeyDir = "/crontab/jobs/"
+	var handerWatchDemo = common.WatchHandlerDemo{
+		KeyDir: jobsKeyDir,
+	}
+	// 开始监听keys
+	w.JobManager.WatchKeys(jobsKeyDir, &handerWatchDemo)
 }
 
 // 实例化Worker
