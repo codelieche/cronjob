@@ -1,4 +1,4 @@
-package handlers
+package common
 
 import (
 	"context"
@@ -10,22 +10,12 @@ import (
 
 	"go.etcd.io/etcd/mvcc/mvccpb"
 
-	"github.com/codelieche/cronjob/common"
-
 	"go.etcd.io/etcd/clientv3"
 )
 
-// Job Manager
-// 计划任务的管理器
-type JobManager struct {
-	client *clientv3.Client // etcd的客户端连接
-	kv     clientv3.KV      // etcd的KV对
-	lease  clientv3.Lease   // etcd的租约
-}
-
 // 保存Job到etcd中
 // 返回上一次的Job和错误信息
-func (jobManager *JobManager) SaveJob(job *common.Job) (prevJob *common.Job, err error) {
+func (jobManager *JobManager) SaveJob(job *Job) (prevJob *Job, err error) {
 	// 把任务保存到/crontab/jobs/:name中
 	var (
 		jobKey   string
@@ -75,13 +65,13 @@ func (jobManager *JobManager) SaveJob(job *common.Job) (prevJob *common.Job, err
 }
 
 // List Jobs
-func (jobManager *JobManager) ListJobs() (jobList []*common.Job, err error) {
+func (jobManager *JobManager) ListJobs() (jobList []*Job, err error) {
 	// 定义变量
 	var (
 		jobsDirKey  string
 		getResponse *clientv3.GetResponse
 		kvPair      *mvccpb.KeyValue
-		job         *common.Job
+		job         *Job
 	)
 	jobsDirKey = "/crontab/jobs/"
 
@@ -105,7 +95,7 @@ func (jobManager *JobManager) ListJobs() (jobList []*common.Job, err error) {
 	// 变量kv
 	for _, kvPair = range getResponse.Kvs {
 		//	对值序列化
-		job = &common.Job{}
+		job = &Job{}
 		if err = json.Unmarshal(kvPair.Value, job); err != nil {
 			continue
 		} else {
@@ -119,7 +109,7 @@ func (jobManager *JobManager) ListJobs() (jobList []*common.Job, err error) {
 }
 
 // 获取Job的Detail
-func (jobManager *JobManager) GetJob(name string) (job *common.Job, err error) {
+func (jobManager *JobManager) GetJob(name string) (job *Job, err error) {
 	// 定义变量
 	var (
 		jobKey      string
@@ -160,7 +150,7 @@ func (jobManager *JobManager) GetJob(name string) (job *common.Job, err error) {
 	}
 
 NotFound:
-	err = fmt.Errorf("Job Not Fount!")
+	err = fmt.Errorf("job Not Fount!")
 	return nil, err
 }
 
@@ -247,6 +237,91 @@ func (jobManager *JobManager) KillJob(name string) (err error) {
 	return
 }
 
+// Watch Jobs
+// 监听Job的变化
+func (jobManager *JobManager) WatchJobs() (err error) {
+	// 1. 定义变量
+	var (
+		jobKeyDir          string
+		getResponse        *clientv3.GetResponse
+		kvPair             *mvccpb.KeyValue
+		job                *Job
+		watchStartRevision int64
+		watchChan          clientv3.WatchChan
+		watchResponse      clientv3.WatchResponse
+		watchEvent         *clientv3.Event
+	)
+
+	// 2. get：/crontab/jobs/目录下的所有任务，并且获知当前集群的revision
+	jobKeyDir = "/crontab/jobs/"
+	if getResponse, err = jobManager.kv.Get(
+		context.TODO(), jobKeyDir,
+		clientv3.WithPrefix(),
+	); err != nil {
+		return
+	}
+
+	// 3. for循环打印一下jobs
+	for _, kvPair = range getResponse.Kvs {
+		if job, err = UnpackByteToJob(kvPair.Value); err != nil {
+			log.Println(err.Error())
+			continue
+		} else {
+			// 把这个job同步给scheduler
+			log.Println(job)
+		}
+	}
+
+	// 4. watch新的变化
+	func() { // 监听协程
+		// 4-1: 从GET时刻后续版本开始监听
+		watchStartRevision = getResponse.Header.Revision + 1
+		log.Println("开始watch事件:", watchStartRevision)
+
+		//	4-2：监听:/crontab/jobs/目录后续的变化
+		watchChan = jobManager.watcher.Watch(
+			context.TODO(),
+			jobKeyDir,
+			clientv3.WithPrefix(),                // 监听以jobKeyDir为前缀的key
+			clientv3.WithRev(watchStartRevision), // 设置开始的版本号
+			clientv3.WithPrevKV(),                // 如果不需知道上一次的值，可不添加这个option
+		)
+
+		// 4-3: 处理监听事件
+		for watchResponse = range watchChan {
+			for _, watchEvent = range watchResponse.Events {
+				log.Println("当前事件的Revision：", watchResponse.Header.Revision)
+				switch watchEvent.Type {
+				case mvccpb.PUT:
+					log.Printf("监听到Put事件: IsCreate %v, IsModify %v", watchEvent.IsCreate(), watchEvent.IsModify())
+					// 反序列化，推送给调度协程
+					if job, err = UnpackByteToJob(watchEvent.Kv.Value); err != nil {
+						log.Println(err.Error())
+						continue
+					} else {
+						log.Println("监听到新的job：", job)
+					}
+				case mvccpb.DELETE:
+					log.Println("删除事件")
+					// 停止任务
+					// 输出name
+					log.Println("删除Key：", string(watchEvent.Kv.Key))
+
+					// 反序列化，推送给调度协程
+					if job, err = UnpackByteToJob(watchEvent.PrevKv.Value); err != nil {
+						log.Println(err.Error())
+						continue
+					} else {
+						log.Println("监听到删除job：", job)
+					}
+				}
+			}
+		}
+
+	}()
+	return
+}
+
 // 实例化Job Manager
 func NewJobManager() (*JobManager, error) {
 	var (
@@ -254,6 +329,7 @@ func NewJobManager() (*JobManager, error) {
 		client     *clientv3.Client
 		kv         clientv3.KV
 		lease      clientv3.Lease
+		watcher    clientv3.Watcher
 		err        error
 		jobManager *JobManager
 	)
@@ -275,12 +351,14 @@ func NewJobManager() (*JobManager, error) {
 	// 得到KV的Lease的API子集
 	kv = clientv3.NewKV(client)
 	lease = clientv3.NewLease(client)
+	watcher = clientv3.NewWatcher(client)
 
 	//	实例化Job Manager
 	jobManager = &JobManager{
-		client: client,
-		kv:     kv,
-		lease:  lease,
+		client:  client,
+		kv:      kv,
+		lease:   lease,
+		watcher: watcher,
 	}
 
 	// 返回

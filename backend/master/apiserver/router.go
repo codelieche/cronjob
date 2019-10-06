@@ -3,7 +3,7 @@ package apiserver
 import (
 	"net/http"
 
-	"cronjob.codelieche/master/handlers"
+	"github.com/codelieche/cronjob/backend/master/handlers"
 	"github.com/julienschmidt/httprouter"
 )
 

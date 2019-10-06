@@ -3,7 +3,7 @@ package app
 import (
 	"time"
 
-	"cronjob.codelieche/master/apiserver"
+	"github.com/codelieche/cronjob/backend/master/apiserver"
 )
 
 type Master struct {

@@ -1,6 +1,6 @@
 package handlers
 
-import "github.com/codelieche/cronjob/common"
+import "github.com/codelieche/cronjob/backend/common"
 
 // Job List Response
 type JobListResponse struct {

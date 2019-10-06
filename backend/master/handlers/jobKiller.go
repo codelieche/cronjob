@@ -5,8 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"cronjob.codelieche/common"
-
+	"github.com/codelieche/cronjob/backend/common"
 	"github.com/julienschmidt/httprouter"
 )
 
