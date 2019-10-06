@@ -199,6 +199,54 @@ func (jobManager *JobManager) DeleteJob(name string) (success bool, err error) {
 	}
 }
 
+// 计划任务kill
+// 杀掉计划任务运行的进程
+func (jobManager *JobManager) KillJob(name string) (err error) {
+	// 添加要杀掉的Job信息
+	// 通过在：/crontab/kill/:name添加一条数据
+	// Worker节点，会监听到这个条目的PUT操作，然后做相应的操作
+
+	// 1. 定义变量
+	var (
+		jobKillKey         string
+		leaseGrantResponse *clientv3.LeaseGrantResponse
+		leaseID            clientv3.LeaseID
+		putResponse        *clientv3.PutResponse
+	)
+
+	// 校验key
+	name = strings.TrimSpace(name)
+	if name == "" {
+		err = fmt.Errorf("job的name不可为空")
+		return
+	}
+	jobKillKey = fmt.Sprintf("/crontab/kill/%s", name)
+
+	// 2. 通知worker杀死对应的任务
+	// 2-1: 创建个租约
+	if leaseGrantResponse, err = jobManager.lease.Grant(context.TODO(), 5); err != nil {
+		// 创建租约失败
+		return
+	}
+	// 2-2： 得到租约ID
+	leaseID = leaseGrantResponse.ID
+
+	// 2-3: 添加kill记录
+	if putResponse, err = jobManager.kv.Put(
+		context.TODO(),
+		jobKillKey, name,
+		clientv3.WithLease(leaseID),
+	); err != nil {
+		return
+	} else {
+		// put成功
+		//putResponse = putResponse
+		log.Println(putResponse.Header.Revision)
+	}
+
+	return
+}
+
 // 实例化Job Manager
 func NewJobManager() (*JobManager, error) {
 	var (

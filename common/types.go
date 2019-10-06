@@ -9,3 +9,9 @@ type Job struct {
 	Command     string `json:"command"`               // 任务的命令
 	Description string `json:"description,omitempty"` // Job描述
 }
+
+// HTTP Response数据
+type Response struct {
+	Status  bool   `json:"status"`  // 状态
+	Message string `json:"message"` // 消息
+}
