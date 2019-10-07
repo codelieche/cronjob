@@ -1,10 +1,8 @@
-package app
+package worker
 
 import (
 	"log"
 	"time"
-
-	"cronjob.codelieche/backend/worker"
 
 	"github.com/codelieche/cronjob/backend/common"
 )
@@ -12,18 +10,19 @@ import (
 type Worker struct {
 	TimeStart  time.Time          // 启动时间
 	JobManager *common.JobManager // 计划任务管理器
-	Scheduler  *worker.Scheduler  // 调度器
+	Scheduler  *Scheduler         // 调度器
 }
 
 func (w *Worker) Run() {
 	// 启动worker程序
 	log.Println("worker run ...")
-	var jobsKeyDir = "/crontab/jobs/"
+	//var jobsKeyDir = "/crontab/jobs/"
+	var jobsKeyDir = common.ETCD_JOBS_DIR
 	//var handerWatchDemo = common.WatchHandlerDemo{
 	//	KeyDir: jobsKeyDir,
 	//}
 
-	var watchHandler = worker.WatchHandler{
+	var watchHandler = WatchHandler{
 		KeyDir:    jobsKeyDir,
 		Scheduler: w.Scheduler,
 	}
@@ -36,10 +35,15 @@ func (w *Worker) Run() {
 }
 
 // 实例化Worker
-func NewWorker() *Worker {
+func NewWorkerApp() *Worker {
+	// 定义了个全局的app的
+	if app != nil {
+		return app
+	}
+
 	var (
 		jobManager *common.JobManager
-		scheduler  *worker.Scheduler
+		scheduler  *Scheduler
 		err        error
 	)
 
@@ -50,7 +54,7 @@ func NewWorker() *Worker {
 	}
 
 	// 实例化调度器
-	scheduler = worker.NewScheduler()
+	scheduler = NewScheduler()
 
 	// 实例化Worker
 	return &Worker{

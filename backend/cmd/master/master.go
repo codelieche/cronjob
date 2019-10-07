@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"cronjob.codelieche/backend/master/app"
+	"github.com/codelieche/cronjob/backend/master/app"
 )
 
 func init() {

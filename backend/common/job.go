@@ -38,3 +38,13 @@ func BuildJobSchedulePlan(job *Job) (jobSchedulePlan *JobSchedulePlan, err error
 	}
 	return jobSchedulePlan, nil
 }
+
+// 构造执行状态信息
+func BuildJobExecuteInfo(jobPlan *JobSchedulePlan) (jobExecuteInfo *JobExecuteInfo) {
+	jobExecuteInfo = &JobExecuteInfo{
+		Job:         jobPlan.Job,
+		PlanTime:    jobPlan.NextTime,
+		ExecuteTime: time.Now(),
+	}
+	return
+}

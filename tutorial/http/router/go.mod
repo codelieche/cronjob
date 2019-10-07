@@ -1,4 +1,4 @@
-module cronjob.codelieche/tutorial/http/router
+module github.com/codelieche/cronjob/tutorial/http/router
 
 go 1.13
 

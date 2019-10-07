@@ -9,8 +9,10 @@ import (
 
 // 任务调度器
 type Scheduler struct {
-	jobEventChan chan *common.JobEvent              // etcd任务时间队列
-	jobPlanTable map[string]*common.JobSchedulePlan // 任务调度计划表
+	jobEventChan      chan *common.JobEvent              // etcd任务时间队列
+	jobPlanTable      map[string]*common.JobSchedulePlan // 任务调度计划表
+	jobExecutingTable map[string]*common.JobExecuteInfo  // 任务执行信息表
+	jobResultChan     chan *common.JobExecuteResult      // 任务执行结果队列
 }
 
 // 计算任务调度状态
@@ -19,6 +21,7 @@ func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 		jobPlan  *common.JobSchedulePlan
 		now      time.Time
 		nearTime *time.Time
+		err      error
 	)
 	// 1. 遍历所有的job
 
@@ -34,7 +37,11 @@ func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 		// 2. 过期的任务立即执行
 		// 如果执行计划下次执行的世界早于当前，或者等于当前时间，都需要执行一下这个计划
 		if jobPlan.NextTime.Before(now) || jobPlan.NextTime.Equal(now) {
-			log.Println("执行计划任务：", jobPlan.Job.Name)
+			//log.Println("执行计划任务：", jobPlan.Job.Name)
+			// 执行计划任务
+			if err = scheduler.TryRunJob(jobPlan); err != nil {
+				log.Println("执行计划任务出错：", err.Error())
+			}
 			// 更新NextTime：需要设置新的下次执行时间
 			jobPlan.NextTime = jobPlan.Expression.Next(now)
 		} else {
@@ -66,6 +73,9 @@ func (scheduler *Scheduler) ScheduleLoop() {
 
 	// 调度的延时定时器
 	scheduleTimer = time.NewTimer(scheduleAfter)
+
+	// 启动消费执行结果协程
+	go scheduler.comsumeJobExecuteResultsLoop()
 
 	// 2. 定时任务
 	for {
@@ -116,11 +126,67 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
 	}
 }
 
+// 执行计划任务
+func (scheduler *Scheduler) TryRunJob(jobPlan *common.JobSchedulePlan) (err error) {
+	var (
+		jobExecuteInfo *common.JobExecuteInfo
+		isExecuting    bool
+	)
+	// 如果任务正在执行，跳过本次调度
+	if jobExecuteInfo, isExecuting = scheduler.jobExecutingTable[jobPlan.Job.Name]; isExecuting {
+		log.Println("尚未推出，还在执行，跳过！", jobPlan.Job.Name)
+		return
+	} else {
+		// 构建执行状态信息
+		jobExecuteInfo = common.BuildJobExecuteInfo(jobPlan)
+
+		// 保存执行信息
+		scheduler.jobExecutingTable[jobPlan.Job.Name] = jobExecuteInfo
+
+		// 执行计划任务
+		executor.ExecuteJob(jobExecuteInfo, scheduler.jobResultChan)
+	}
+
+	// 执行完毕后，从执行信息表中删除这条数据,这个在HandlerJobExecuteResult中处理
+
+	return
+}
+
+// 回传任务执行结果
+func (scheduler *Scheduler) PushJobExecuteResult(result *common.JobExecuteResult) {
+	scheduler.jobResultChan <- result
+}
+
+// 消费计划任务执行结果的循环
+func (scheduler *Scheduler) comsumeJobExecuteResultsLoop() {
+	var (
+		result *common.JobExecuteResult
+	)
+	for {
+		select {
+		case result = <-scheduler.jobResultChan:
+			scheduler.HandlerJobExecuteResult(result)
+		}
+	}
+}
+
+// 处理计划任务的结果
+func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteResult) {
+	// 删掉执行状态
+	delete(scheduler.jobExecutingTable, result.ExecuteInfo.Job.Name)
+	log.Println("Job执行完成：", result.ExecuteInfo.Job.Name)
+	log.Println(string(result.Output))
+}
+
+// 消费结果
+
 // 初始化调度器
 func NewScheduler() *Scheduler {
 	scheduler := &Scheduler{
-		jobEventChan: make(chan *common.JobEvent, 1000),
-		jobPlanTable: make(map[string]*common.JobSchedulePlan),
+		jobEventChan:      make(chan *common.JobEvent, 1000),
+		jobPlanTable:      make(map[string]*common.JobSchedulePlan),
+		jobExecutingTable: make(map[string]*common.JobExecuteInfo),
+		jobResultChan:     make(chan *common.JobExecuteResult, 500),
 	}
 	return scheduler
 }

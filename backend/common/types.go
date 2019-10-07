@@ -39,6 +39,22 @@ type JobSchedulePlan struct {
 	NextTime   time.Time            // 下次执行时间
 }
 
+// Job执行信息
+type JobExecuteInfo struct {
+	Job         *Job      // 任务信息
+	PlanTime    time.Time // 计划调度的时间
+	ExecuteTime time.Time // 实际执行的时间
+}
+
+// Job执行结果
+type JobExecuteResult struct {
+	ExecuteInfo *JobExecuteInfo //执行信息
+	Output      []byte          // Job执行输出结果
+	Err         error           // 脚本错误原因
+	StartTime   time.Time       // 启动时间
+	EndTime     time.Time       // 结束时间
+}
+
 // HTTP Response数据
 type Response struct {
 	Status  bool   `json:"status"`  // 状态

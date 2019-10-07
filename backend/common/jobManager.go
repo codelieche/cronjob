@@ -30,7 +30,7 @@ func (jobManager *JobManager) SaveJob(job *Job) (prevJob *Job, err error) {
 		return nil, err
 	}
 
-	jobKey = fmt.Sprintf("/crontab/jobs/%s", job.Name)
+	jobKey = ETCD_JOBS_DIR + job.Name
 
 	// 任务信息json：对job序列化一下
 	if jobValue, err = json.Marshal(job); err != nil {
@@ -73,7 +73,7 @@ func (jobManager *JobManager) ListJobs() (jobList []*Job, err error) {
 		kvPair      *mvccpb.KeyValue
 		job         *Job
 	)
-	jobsDirKey = "/crontab/jobs/"
+	jobsDirKey = ETCD_JOBS_DIR
 
 	// 获取job对象
 	//endKey := "/crontab/jobs/test2"
@@ -125,7 +125,7 @@ func (jobManager *JobManager) GetJob(name string) (job *Job, err error) {
 	}
 
 	// 2. 从etcd中获取对象
-	jobKey = fmt.Sprintf("/crontab/jobs/%s", name)
+	jobKey = ETCD_JOBS_DIR + name
 	if getResponse, err = jobManager.kv.Get(context.TODO(), jobKey); err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (jobManager *JobManager) DeleteJob(name string) (success bool, err error) {
 	}
 
 	// 2. 操作删除
-	jobKey = fmt.Sprintf("/crontab/jobs/%s", name)
+	jobKey = ETCD_JOBS_DIR + name
 	if deleteResponse, err = jobManager.kv.Delete(
 		context.TODO(),
 		jobKey,
@@ -283,6 +283,13 @@ func (jobManager *JobManager) WatchKeys(keyDir string, watchHandler WatchHandler
 		watchHandler.HandlerWatchChan(watchChan)
 
 	}()
+	return
+}
+
+// 创建任务执行锁
+func (jobManager *JobManager) CreateJobLock(name string) (jobLock *JobLock) {
+	// 返回一把锁
+	jobLock = NewJobLock(name, jobManager.kv, jobManager.lease)
 	return
 }
 
