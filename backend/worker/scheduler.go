@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -134,7 +135,7 @@ func (scheduler *Scheduler) TryRunJob(jobPlan *common.JobSchedulePlan) (err erro
 	)
 	// 如果任务正在执行，跳过本次调度
 	if jobExecuteInfo, isExecuting = scheduler.jobExecutingTable[jobPlan.Job.Name]; isExecuting {
-		log.Println("尚未推出，还在执行，跳过！", jobPlan.Job.Name)
+		log.Println("尚未退出，还在执行，跳过！", jobPlan.Job.Name)
 		return
 	} else {
 		// 构建执行状态信息
@@ -148,6 +149,7 @@ func (scheduler *Scheduler) TryRunJob(jobPlan *common.JobSchedulePlan) (err erro
 	}
 
 	// 执行完毕后，从执行信息表中删除这条数据,这个在HandlerJobExecuteResult中处理
+	// 即使未获取到锁，也需要从scheduler.jobExecutingTable 删除这条jobExecuteInfo
 
 	return
 }
@@ -174,8 +176,12 @@ func (scheduler *Scheduler) comsumeJobExecuteResultsLoop() {
 func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteResult) {
 	// 删掉执行状态
 	delete(scheduler.jobExecutingTable, result.ExecuteInfo.Job.Name)
-	log.Println("Job执行完成：", result.ExecuteInfo.Job.Name)
-	log.Println(string(result.Output))
+	if result.IsExecute {
+		log.Println("Job执行完成：", result.ExecuteInfo.Job.Name)
+		fmt.Println(string(result.Output))
+	} else {
+		log.Printf("Job: %s 未执行：%s\n", result.ExecuteInfo.Job.Name, result.Err.Error())
+	}
 }
 
 // 消费结果

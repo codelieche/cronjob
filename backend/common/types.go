@@ -48,7 +48,8 @@ type JobExecuteInfo struct {
 
 // Job执行结果
 type JobExecuteResult struct {
-	ExecuteInfo *JobExecuteInfo //执行信息
+	ExecuteInfo *JobExecuteInfo // 执行信息: 消费结果的时候，会根据这个来判断是否执行了
+	IsExecute   bool            // 是否有执行
 	Output      []byte          // Job执行输出结果
 	Err         error           // 脚本错误原因
 	StartTime   time.Time       // 启动时间

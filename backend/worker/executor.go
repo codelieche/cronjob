@@ -3,7 +3,6 @@ package worker
 
 import (
 	"context"
-	"log"
 	"os/exec"
 	"time"
 
@@ -16,7 +15,7 @@ type Executor struct {
 
 // 执行一个任务
 func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *common.JobExecuteResult) (err error) {
-	log.Println("执行计划任务：", info.Job.Name, info.Job.Time)
+	// log.Println("执行计划任务：", info.Job.Name, info.Job.Time)
 	// 启动一个协程来执行command
 	go func() {
 		// 执行shell命令
@@ -31,8 +30,29 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 		// 初始化分布式锁
 		jobLock = app.JobManager.CreateJobLock(info.Job.Name)
 
-		// 执行shell命令
-		// 开始执行时间
+		// 尝试上锁
+		if err = jobLock.TryLock(); err != nil {
+			// 上锁失败，无需执行
+			// log.Println("上锁失败：", jobLock, err.Error())
+			// 执行结果
+			result = &common.JobExecuteResult{
+				ExecuteInfo: info,
+				IsExecute:   false,
+				Output:      nil,
+				Err:         err,
+				StartTime:   time.Now(),
+				EndTime:     time.Now(),
+			}
+			// 即使未执行也需要把结果输出到channel中
+			c <- result
+			return
+		} else {
+			// 上锁成功才执行shell命令
+			defer jobLock.Unlock()
+			// log.Println("获取到锁：", jobLock)
+		}
+
+		// 开始执行时间: 得到锁才会去执行的
 		timeStart = time.Now()
 		cmd = exec.CommandContext(context.TODO(), "/bin/bash", "-c", info.Job.Command)
 
@@ -43,6 +63,7 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 		// Scheduler会从executingTable中删除执行记录
 		result = &common.JobExecuteResult{
 			ExecuteInfo: info,
+			IsExecute:   true, // 有执行到
 			Output:      output,
 			Err:         err,
 			StartTime:   timeStart,
