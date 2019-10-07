@@ -1,6 +1,9 @@
 package common
 
 import (
+	"time"
+
+	"github.com/gorhill/cronexpr"
 	"go.etcd.io/etcd/clientv3"
 )
 
@@ -21,6 +24,19 @@ type JobManager struct {
 	kv      clientv3.KV      // etcd的KV对
 	lease   clientv3.Lease   // etcd的租约
 	watcher clientv3.Watcher // etcd watch
+}
+
+// Job事件
+type JobEvent struct {
+	Event int  // 事件类型
+	Job   *Job // Job
+}
+
+// Job调度计划
+type JobSchedulePlan struct {
+	Job        *Job                 // 计划任务
+	Expression *cronexpr.Expression // 解析好的cronexpr表达式
+	NextTime   time.Time            // 下次执行时间
 }
 
 // HTTP Response数据
