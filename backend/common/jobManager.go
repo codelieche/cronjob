@@ -210,7 +210,7 @@ func (jobManager *JobManager) KillJob(name string) (err error) {
 		err = fmt.Errorf("job的name不可为空")
 		return
 	}
-	jobKillKey = fmt.Sprintf("/crontab/kill/%s", name)
+	jobKillKey = ETCD_JOB_KILL_DIR + name
 
 	// 2. 通知worker杀死对应的任务
 	// 2-1: 创建个租约
@@ -230,15 +230,15 @@ func (jobManager *JobManager) KillJob(name string) (err error) {
 		return
 	} else {
 		// put成功
-		//putResponse = putResponse
-		log.Println(putResponse.Header.Revision)
+		putResponse = putResponse
+		// log.Println(putResponse.Header.Revision)
 	}
 
 	return
 }
 
 // Watch keys
-// 监听etcd key的变化
+// 监听etcd key的变化: 比如监听jobs的变化，和监听kill的任务
 // 传递的参数：要监听的key的前缀，和处理监听的接口
 func (jobManager *JobManager) WatchKeys(keyDir string, watchHandler WatchHandler) (err error) {
 	// 1. 定义变量

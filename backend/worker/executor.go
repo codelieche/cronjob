@@ -2,7 +2,6 @@
 package worker
 
 import (
-	"context"
 	"os/exec"
 	"time"
 
@@ -54,7 +53,8 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 
 		// 开始执行时间: 得到锁才会去执行的
 		timeStart = time.Now()
-		cmd = exec.CommandContext(context.TODO(), "/bin/bash", "-c", info.Job.Command)
+		// 传入执行command的上下文
+		cmd = exec.CommandContext(info.ExecuteCtx, "/bin/bash", "-c", info.Job.Command)
 
 		// 执行并捕获输出
 		output, err = cmd.CombinedOutput()

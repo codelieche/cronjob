@@ -7,11 +7,11 @@ import (
 	"go.etcd.io/etcd/mvcc/mvccpb"
 )
 
-type WatchHandlerDemo struct {
+type WatchJobsHandlerDemo struct {
 	KeyDir string // 监听的key目录
 }
 
-func (demo *WatchHandlerDemo) HandlerGetResponse(response *clientv3.GetResponse) {
+func (demo *WatchJobsHandlerDemo) HandlerGetResponse(response *clientv3.GetResponse) {
 	var (
 		job    *Job
 		kvPair *mvccpb.KeyValue
@@ -29,7 +29,7 @@ func (demo *WatchHandlerDemo) HandlerGetResponse(response *clientv3.GetResponse)
 	}
 }
 
-func (demo *WatchHandlerDemo) HandlerWatchChan(watchChan clientv3.WatchChan) {
+func (demo *WatchJobsHandlerDemo) HandlerWatchChan(watchChan clientv3.WatchChan) {
 	var (
 		job           *Job
 		watchResponse clientv3.WatchResponse

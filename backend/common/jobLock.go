@@ -63,12 +63,15 @@ func (jobLock *JobLock) TryLock() (err error) {
 			select {
 			case keepResponse = <-keepResponseChan:
 				if keepResponse == nil {
-					// goto END
-					break
+					// 特别注意这里要退出for循环，用goto END, 别用break
+					goto END
+				} else {
+					//log.Println(keepResponse)
 				}
 			}
 		}
-		// END:
+	END:
+		// 自动续租完毕
 	}()
 
 	// 4. 创建事务txn

@@ -7,4 +7,5 @@ var app *Worker
 func init() {
 	executor = NewExecutor()
 	app = NewWorkerApp()
+
 }

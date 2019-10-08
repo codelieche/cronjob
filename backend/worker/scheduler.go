@@ -18,6 +18,7 @@ type Scheduler struct {
 
 // 计算任务调度状态
 func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
+
 	var (
 		jobPlan  *common.JobSchedulePlan
 		now      time.Time
@@ -38,7 +39,7 @@ func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 		// 2. 过期的任务立即执行
 		// 如果执行计划下次执行的世界早于当前，或者等于当前时间，都需要执行一下这个计划
 		if jobPlan.NextTime.Before(now) || jobPlan.NextTime.Equal(now) {
-			//log.Println("执行计划任务：", jobPlan.Job.Name)
+			// log.Println("执行计划任务：", jobPlan.Job.Name)
 			// 执行计划任务
 			if err = scheduler.TryRunJob(jobPlan); err != nil {
 				log.Println("执行计划任务出错：", err.Error())
@@ -108,6 +109,7 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
 		jobSchedulePlan *common.JobSchedulePlan
 		err             error
 		isExist         bool
+		jobExecuteInfo  *common.JobExecuteInfo
 	)
 	switch jobEvent.Event {
 	case common.JOB_EVENT_PUT: // 保存job事件
@@ -122,6 +124,16 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
 		if jobSchedulePlan, isExist = scheduler.jobPlanTable[jobEvent.Job.Name]; isExist {
 			// 存在就删除，不存在就无需操作
 			delete(scheduler.jobPlanTable, jobEvent.Job.Name)
+		}
+
+	case common.JOB_EVENT_KILL: // 杀掉job事件
+		// 取消Command执行
+		if jobExecuteInfo, isExist = scheduler.jobExecutingTable[jobEvent.Job.Name]; isExist {
+			// 是的在本work中执行中，那么可以杀掉它
+			log.Println("需要杀死job")
+			jobExecuteInfo.ExceteCancelFun()
+		} else {
+			log.Println("Job未在执行中，无需kill")
 		}
 
 	}
@@ -179,6 +191,9 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 	if result.IsExecute {
 		log.Println("Job执行完成：", result.ExecuteInfo.Job.Name)
 		fmt.Println(string(result.Output))
+		if result.Err != nil {
+			fmt.Println("执行出现了错误：", result.Err.Error())
+		}
 	} else {
 		log.Printf("Job: %s 未执行：%s\n", result.ExecuteInfo.Job.Name, result.Err.Error())
 	}

@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -46,5 +47,8 @@ func BuildJobExecuteInfo(jobPlan *JobSchedulePlan) (jobExecuteInfo *JobExecuteIn
 		PlanTime:    jobPlan.NextTime,
 		ExecuteTime: time.Now(),
 	}
+	// 为本次的执行创建一个执行上下文：主要用于取消job的执行
+	jobExecuteInfo.ExecuteCtx, jobExecuteInfo.ExceteCancelFun = context.WithCancel(context.TODO())
+
 	return
 }

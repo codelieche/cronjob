@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"time"
 
 	"github.com/gorhill/cronexpr"
@@ -41,9 +42,11 @@ type JobSchedulePlan struct {
 
 // Job执行信息
 type JobExecuteInfo struct {
-	Job         *Job      // 任务信息
-	PlanTime    time.Time // 计划调度的时间
-	ExecuteTime time.Time // 实际执行的时间
+	Job             *Job               // 任务信息
+	PlanTime        time.Time          // 计划调度的时间
+	ExecuteTime     time.Time          // 实际执行的时间
+	ExecuteCtx      context.Context    // 执行job的上下文
+	ExceteCancelFun context.CancelFunc // 执行执行job的取消函数
 }
 
 // Job执行结果

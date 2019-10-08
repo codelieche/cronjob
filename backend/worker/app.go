@@ -18,18 +18,27 @@ func (w *Worker) Run() {
 	log.Println("worker run ...")
 	//var jobsKeyDir = "/crontab/jobs/"
 	var jobsKeyDir = common.ETCD_JOBS_DIR
-	//var handerWatchDemo = common.WatchHandlerDemo{
+	//var handerJobsWatchDemo = common.WatchJobsHandlerDemo{
 	//	KeyDir: jobsKeyDir,
 	//}
 
-	var watchHandler = WatchHandler{
+	var watchHandler = WatchJobsHandler{
 		KeyDir:    jobsKeyDir,
+		Scheduler: w.Scheduler,
+	}
+
+	// watch kill
+	var watchKillHandler = &WatchKillHandler{
+		KeyDir:    common.ETCD_JOB_KILL_DIR,
 		Scheduler: w.Scheduler,
 	}
 
 	// 开始监听keys
 	//go w.JobManager.WatchKeys(jobsKeyDir, &handerWatchDemo)
+	// 监听jobs
 	go w.JobManager.WatchKeys(jobsKeyDir, &watchHandler)
+	// 监听kill
+	go w.JobManager.WatchKeys(common.ETCD_JOB_KILL_DIR, watchKillHandler)
 
 	w.Scheduler.ScheduleLoop()
 }
