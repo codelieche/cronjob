@@ -14,6 +14,7 @@ type Scheduler struct {
 	jobPlanTable      map[string]*common.JobSchedulePlan // 任务调度计划表
 	jobExecutingTable map[string]*common.JobExecuteInfo  // 任务执行信息表
 	jobResultChan     chan *common.JobExecuteResult      // 任务执行结果队列
+	logHandler        LogHandler                         // 执行日志处理器
 }
 
 // 计算任务调度状态
@@ -78,6 +79,9 @@ func (scheduler *Scheduler) ScheduleLoop() {
 
 	// 启动消费执行结果协程
 	go scheduler.comsumeJobExecuteResultsLoop()
+
+	// 启动消费执行日志的协程
+	go scheduler.logHandler.ConsumeLogsLoop()
 
 	// 2. 定时任务
 	for {
@@ -186,14 +190,37 @@ func (scheduler *Scheduler) comsumeJobExecuteResultsLoop() {
 
 // 处理计划任务的结果
 func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteResult) {
+	var (
+		jobExecuteLog *common.JobExecuteLog
+	)
 	// 删掉执行状态
 	delete(scheduler.jobExecutingTable, result.ExecuteInfo.Job.Name)
 	if result.IsExecute {
+		// 记录日志
+		jobExecuteLog = &common.JobExecuteLog{
+			Name:         result.ExecuteInfo.Job.Name,
+			Command:      result.ExecuteInfo.Job.Command,
+			Output:       string(result.Output),
+			PlanTime:     result.ExecuteInfo.PlanTime,
+			ScheduleTime: result.ExecuteInfo.ExecuteTime,
+			StartTime:    result.StartTime,
+			EndTime:      result.EndTime,
+		}
+
+		// 判断是否有错误信息
+		if result.Err != nil {
+			jobExecuteLog.Err = result.Err.Error()
+		}
+
+		// 交给写日志的程序处理。
+		scheduler.logHandler.AddLog(jobExecuteLog)
+
 		log.Println("Job执行完成：", result.ExecuteInfo.Job.Name)
 		fmt.Println(string(result.Output))
 		if result.Err != nil {
 			fmt.Println("执行出现了错误：", result.Err.Error())
 		}
+
 	} else {
 		log.Printf("Job: %s 未执行：%s\n", result.ExecuteInfo.Job.Name, result.Err.Error())
 	}
@@ -203,11 +230,24 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 
 // 初始化调度器
 func NewScheduler() *Scheduler {
+	var (
+		logHandler *MongoLogHandler
+		err        error
+	)
+	// 实例化消息处理
+	if logHandler, err = NewMongoLogHandler(); err != nil {
+		log.Panic(err)
+		return nil
+	} else {
+
+	}
 	scheduler := &Scheduler{
 		jobEventChan:      make(chan *common.JobEvent, 1000),
 		jobPlanTable:      make(map[string]*common.JobSchedulePlan),
 		jobExecutingTable: make(map[string]*common.JobExecuteInfo),
 		jobResultChan:     make(chan *common.JobExecuteResult, 500),
+		logHandler:        logHandler,
 	}
+
 	return scheduler
 }

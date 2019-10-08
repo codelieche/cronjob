@@ -59,6 +59,18 @@ type JobExecuteResult struct {
 	EndTime     time.Time       // 结束时间
 }
 
+// 任务执行日志
+type JobExecuteLog struct {
+	Name         string    `json:"name", bson:"name"`                  // 任务名字
+	Command      string    `json:"command", bson: "command"`           // 任务命令
+	Output       string    `json:"output", bson:"output"`              // 任务执行输出结果
+	Err          string    `json:"err", bson:"err"`                    // 任务错误信息
+	PlanTime     time.Time `json:"plan_time, "bson:"planTime"`         // 计划时间
+	ScheduleTime time.Time `json:"schedule_time, "bson:"scheduleTime"` // 调度时间
+	StartTime    time.Time `json:"start_time", bson:"startTime"`       // 任务开始时间
+	EndTime      time.Time `json:"end_time", bson:"endTime"`           // 任务结束时间
+}
+
 // HTTP Response数据
 type Response struct {
 	Status  bool   `json:"status"`  // 状态
