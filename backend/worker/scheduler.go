@@ -216,7 +216,7 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 		scheduler.logHandler.AddLog(jobExecuteLog)
 
 		log.Println("Job执行完成：", result.ExecuteInfo.Job.Name)
-		fmt.Println(string(result.Output))
+		// fmt.Println(string(result.Output))
 		if result.Err != nil {
 			fmt.Println("执行出现了错误：", result.Err.Error())
 		}
