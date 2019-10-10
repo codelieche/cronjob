@@ -40,6 +40,9 @@ func (w *Worker) Run() {
 	// 监听kill
 	go w.JobManager.WatchKeys(common.ETCD_JOB_KILL_DIR, watchKillHandler)
 
+	// 注册worker信息到etcd
+	go register.keepOnlive()
+
 	w.Scheduler.ScheduleLoop()
 }
 
