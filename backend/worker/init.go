@@ -11,9 +11,16 @@ var app *Worker
 var register *Register
 
 func init() {
+	// 解析参数
+	parseParams()
+
+	// 启动worker的监控web协程
+	go runMonitorWeb()
+
 	var (
 		err error
 	)
+
 	executor = NewExecutor()
 	app = NewWorkerApp()
 	if register, err = newRegister(); err != nil {

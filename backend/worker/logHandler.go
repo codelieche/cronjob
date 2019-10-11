@@ -124,9 +124,12 @@ func (logHandler *MongoLogHandler) ConsumeLogsLoop() {
 		// 判断下日志是否有
 		if len(logHandler.logList) > 0 {
 			// 一次插入多条记录
-			log.Println("开始写入大量数据：现在日志长度为", len(logHandler.logList))
+			// log.Println("开始写入大量数据：现在日志长度为", len(logHandler.logList))
 			if insertManyResult, err = logHandler.insertManayLogList(); err != nil {
-				log.Println("写入日志出错：", err.Error())
+				log.Printf("写入日志(%d条)出错：%s\n", len(logHandler.logList), err.Error())
+				// 出错了之后，延时一会
+				time.Sleep(10 * time.Second)
+
 			} else {
 				for _, item := range insertManyResult.InsertedIDs {
 					objectID := item.(primitive.ObjectID)

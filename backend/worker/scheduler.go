@@ -87,7 +87,7 @@ func (scheduler *Scheduler) ScheduleLoop() {
 	for {
 		select {
 		case jobEvent = <-scheduler.jobEventChan: // 监听任务变化事件
-			log.Println("新的jobEvent：", jobEvent.Job.Name, jobEvent.Job.Time, jobEvent.Job.Command)
+			// log.Println("新的jobEvent：", jobEvent.Job.Name, jobEvent.Job.Time, jobEvent.Job.Command)
 			// 根据事件，对内存中维护的任务队列做增删操作
 			scheduler.handleJobEvent(jobEvent)
 		case <-scheduleTimer.C: // Timer到期：最近的任务到期了
@@ -222,7 +222,7 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 		}
 
 	} else {
-		log.Printf("Job: %s 未执行：%s\n", result.ExecuteInfo.Job.Name, result.Err.Error())
+		// log.Printf("Job: %s 未执行：%s\n", result.ExecuteInfo.Job.Name, result.Err.Error())
 	}
 }
 

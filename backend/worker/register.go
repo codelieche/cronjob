@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
+	"strings"
 	"time"
 
 	"cronjob.codelieche/backend/common"
@@ -15,14 +17,16 @@ import (
 
 // 注册节点信息到master
 type Register struct {
-	client   *clientv3.Client
-	kv       clientv3.KV
-	lease    clientv3.Lease
-	Name     string `json:"name"`     // 节点的名称：Ip:Port（这样就算唯一的了）
-	HostName string `json:"hostname"` // 主机名
-	Ip       string `json:"ip"`       // IP地址
-	Port     int    `json:"port"`     // worker 监控服务的端口
-	Pid      int    `json:"pid"`      // Worker的端口号
+	client *clientv3.Client
+	kv     clientv3.KV
+	lease  clientv3.Lease
+
+	Info *common.WorkerInfo // Worker节点的信息
+	//Name     string `json:"name"`     // 节点的名称：Ip:Port（这样就算唯一的了）
+	//HostName string `json:"hostname"` // 主机名
+	//Ip       string `json:"ip"`       // IP地址
+	//Port     int    `json:"port"`     // worker 监控服务的端口
+	//Pid      int    `json:"pid"`      // Worker的端口号
 }
 
 // 注册到：/crontab/workers/目录中
@@ -42,7 +46,7 @@ func (register *Register) keepOnlive() {
 
 	for {
 		// 注册路径
-		workerKey = common.ETCD_WORKER_DIR + register.Name
+		workerKey = common.ETCD_WORKER_DIR + register.Info.Name
 
 		// 创建租约
 		if leaseGrantResponse, err = register.lease.Grant(context.TODO(), 10); err != nil {
@@ -59,7 +63,7 @@ func (register *Register) keepOnlive() {
 		}
 
 		// 注册到etcd
-		if workerInfoValue, err = json.Marshal(register); err != nil {
+		if workerInfoValue, err = json.Marshal(register.Info); err != nil {
 			log.Println(err)
 			goto RETRY
 		}
@@ -98,8 +102,11 @@ func newRegister() (register *Register, err error) {
 		kv     clientv3.KV
 		lease  clientv3.Lease
 
-		hostName  string
-		ipAddress string
+		hostName    string
+		userCurrent *user.User
+		userName    string
+		ipAddress   string
+		workerInfo  *common.WorkerInfo
 	)
 
 	// 初始化配置
@@ -119,24 +126,38 @@ func newRegister() (register *Register, err error) {
 
 	// 获取到主机名
 	if hostName, err = os.Hostname(); err != nil {
-		return
+		hostName = "unkownhost" // 未知主机
+	}
+	// 获取执行程序的用户名
+	if userCurrent, err = user.Current(); err != nil {
+		userName = "unkownuser"
+	} else {
+		userName = userCurrent.Username
 	}
 
 	// 获取主机的IP
 	if ipAddress, err = common.GetFirstLocalIpAddress(); err != nil {
 		return
+	} else {
+		ipAddress = strings.Split(ipAddress, "/")[0]
+	}
+
+	workerInfo = &common.WorkerInfo{
+		Host: hostName,
+		User: userName,
+		Ip:   ipAddress,
+		Port: webMonitorPort, // web监听的端口号
+		Pid:  os.Getppid(),   // 进程号
 	}
 
 	register = &Register{
-		client:   client,
-		kv:       kv,
-		lease:    lease,
-		HostName: hostName,
-		Ip:       ipAddress,
-		Pid:      os.Getppid(), // 进程号
+		client: client,
+		kv:     kv,
+		lease:  lease,
+		Info:   workerInfo, // 工作节点的信息
 	}
 
-	register.Name = fmt.Sprintf("%s:%d", register.Ip, register.Pid)
+	register.Info.Name = fmt.Sprintf("%s:%d", register.Info.Ip, register.Info.Port)
 
 	return register, err
 }
