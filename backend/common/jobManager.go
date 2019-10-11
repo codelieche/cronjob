@@ -150,7 +150,7 @@ func (jobManager *JobManager) GetJob(name string) (job *Job, err error) {
 	}
 
 NotFound:
-	err = fmt.Errorf("job Not Fount!")
+	err = fmt.Errorf("job not fount!")
 	return nil, err
 }
 
