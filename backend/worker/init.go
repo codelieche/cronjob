@@ -11,15 +11,12 @@ var app *Worker
 var register *Register
 
 func init() {
-	// 解析参数
-	parseParams()
-
-	// 启动worker的监控web协程
-	go runMonitorWeb()
-
 	var (
 		err error
 	)
+
+	//webMonitorPort = 8080
+	parseParams()
 
 	executor = NewExecutor()
 	app = NewWorkerApp()

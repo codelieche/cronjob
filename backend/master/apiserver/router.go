@@ -33,6 +33,10 @@ func newApiRouter() *httprouter.Router {
 	// job kill相关
 	router.POST("/job/kill/create", handlers.JobKill)
 
+	// 执行日志相关
+	router.GET("/job/execute/list", handlers.LogList)
+	router.GET("/job/execute/list/:page", handlers.LogList)
+
 	// 静态文件相关： 需要以相对路径
 	//router.ServeFiles("/*filepath", http.Dir("./static"))
 	router.ServeFiles("/static/*filepath", http.Dir("./static"))

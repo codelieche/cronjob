@@ -25,8 +25,8 @@ func GetFirstLocalIpAddress() (ipv4 string, err error) {
 
 			// 转成ipv4
 			if ipNet.IP.To4() != nil {
-				ipv4 = ipNet.String()
-
+				// ipv4 = ipNet.String() // 192.168.1.101/24
+				ipv4 = ipNet.IP.String() // 192.168.1.101
 				// 得到第一个就返回
 				return
 			}

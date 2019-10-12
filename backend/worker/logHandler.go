@@ -2,9 +2,12 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
@@ -15,9 +18,10 @@ import (
 
 // 日志处理的接口
 type LogHandler interface {
-	ConsumeLogsLoop()                              // 消费日志循环函数
-	AddLog(executeLog *common.JobExecuteLog) error // 添加日志
-	Stop()                                         // 日志处理器停止时的操作
+	ConsumeLogsLoop()                                                         // 消费日志循环函数
+	AddLog(executeLog *common.JobExecuteLog) error                            // 添加日志
+	Stop()                                                                    // 日志处理器停止时的操作
+	List(page int, pageSize int) (logList []*common.JobExecuteLog, err error) //获取日志的列表
 }
 
 // 日志处理器--mongo
@@ -168,6 +172,64 @@ func (logHandler *MongoLogHandler) AddLog(executeLog *common.JobExecuteLog) (err
 	return
 }
 
+// 获取日志的列表
+func (logHandler *MongoLogHandler) List(page int, pageSize int) (logList []*common.JobExecuteLog, err error) {
+	var (
+		skip  int64
+		limit int64
+
+		filter  *JobExecuteLogFilter
+		logSort *SortLogByStartTime
+
+		cursor        *mongo.Cursor
+		jobExecuteLog *common.JobExecuteLog
+	)
+	// 对page进行判断
+	if page < 0 {
+		err = errors.New("日志的列表page需要大于0")
+		return
+	}
+	// 需要跳过多少
+	if page > 1 {
+		skip = int64((page - 1) * pageSize)
+	}
+	// 显示的条数
+	limit = int64(pageSize)
+
+	// 过滤条件
+	filter = &JobExecuteLogFilter{Name: "test1"}
+	filter = filter
+	//log.Println(filter)
+
+	logSort = &SortLogByStartTime{StartTime: -1}
+
+	// log.Println(skip, limit)
+
+	if cursor, err = logHandler.collection.Find(
+		context.TODO(), bson.D{},
+		&options.FindOptions{Skip: &skip, Limit: &limit, Sort: &logSort},
+	); err != nil {
+		return
+	}
+
+	// 延迟释放游标
+	defer cursor.Close(context.TODO())
+
+	// 开始处理查找结果
+	for cursor.Next(context.TODO()) {
+		jobExecuteLog = &common.JobExecuteLog{}
+		if err = cursor.Decode(&jobExecuteLog); err != nil {
+			log.Println(err)
+			continue
+		} else {
+			logList = append(logList, jobExecuteLog)
+		}
+		//log.Println(jobExecuteLog)
+	}
+
+	return logList, nil
+}
+
 func NewMongoLogHandler() (logHandler *MongoLogHandler, err error) {
 	var (
 		option         *options.ClientOptions
@@ -183,7 +245,7 @@ func NewMongoLogHandler() (logHandler *MongoLogHandler, err error) {
 		Hosts: []string{"127.0.0.1:27017"},
 		Auth: &options.Credential{
 			Username: "root",
-			Password: "password",
+			Password: "happydb",
 		},
 		ConnectTimeout: &connectTimeout,
 	}

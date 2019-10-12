@@ -16,6 +16,10 @@ type Worker struct {
 func (w *Worker) Run() {
 	// 启动worker程序
 	log.Println("worker run ...")
+
+	// 启动worker的监控web协程
+	go runMonitorWeb()
+
 	//var jobsKeyDir = "/crontab/jobs/"
 	var jobsKeyDir = common.ETCD_JOBS_DIR
 	//var handerJobsWatchDemo = common.WatchJobsHandlerDemo{
@@ -48,9 +52,12 @@ func (w *Worker) Run() {
 
 // 实例化Worker
 func NewWorkerApp() *Worker {
+
 	// 定义了个全局的app的
 	if app != nil {
 		return app
+	} else {
+
 	}
 
 	var (
