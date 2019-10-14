@@ -25,7 +25,7 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		//data         map[string]string
 		needParseForm bool
 
-		name, time, command, description string
+		category, name, time, command, description string
 	)
 
 	// 1. 解析POST表单
@@ -74,12 +74,14 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	// 3. 实例化Job
 	if needParseForm {
 		// 2. 去表单中的job字段: name, time, command, description
+		category = r.PostForm.Get("category")
 		name = r.PostForm.Get("name")
 		time = r.PostForm.Get("time")
 		command = r.PostForm.Get("command")
 		description = r.PostForm.Get("description")
 
 		job = &common.Job{
+			Category:    category,
 			Name:        name,
 			Time:        time,
 			Command:     command,
@@ -119,14 +121,18 @@ func JobDetail(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// 1. 获取到job的name
 	var (
 		name         string
+		category     string
+		jobKey       string
 		job          *common.Job
 		err          error
 		jobByteValue []byte
 	)
+	category = ps.ByName("category")
 	name = ps.ByName("name")
+	jobKey = fmt.Sprintf("%s%s/%s", common.ETCD_JOBS_DIR, category, name)
 
 	// 2. 从etcd中获取数据
-	if job, err = jobManager.GetJob(name); err != nil {
+	if job, err = jobManager.GetJob(jobKey); err != nil {
 		http.Error(w, err.Error(), 404)
 		return
 	} else {
@@ -146,16 +152,21 @@ func JobDetail(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 func JobDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// 定义变量
 	var (
-		name    string
-		success bool
-		err     error
+		category string
+		name     string
+		jobKey   string
+		success  bool
+		err      error
 	)
 
 	// 1. 获取到name
+	category = ps.ByName("category")
 	name = ps.ByName("name")
 
+	jobKey = fmt.Sprintf("%s%s/%s", common.ETCD_JOBS_DIR, category, name)
+
 	// 2. 从etcd中删除key
-	if success, err = jobManager.DeleteJob(name); err != nil {
+	if success, err = jobManager.DeleteJob(jobKey); err != nil {
 		http.Error(w, err.Error(), 404)
 		return
 	} else {

@@ -80,16 +80,21 @@ func (logHandler *MongoLogHandler) ConsumeLogsLoop() {
 
 	// 如果初始化的时候没设置timer，就这里设置个
 	if logHandler.Duration <= 0 {
-		logTimerDuration = 1000 * time.Microsecond
+		logTimerDuration = 1000 * time.Millisecond
 	} else {
-		logTimerDuration = time.Duration(logHandler.Duration) * time.Microsecond
+		logTimerDuration = time.Duration(logHandler.Duration) * time.Millisecond
+		log.Println("写入日志的频率为：", logTimerDuration)
+
 	}
 	// 创建一个timer
 	timer = time.NewTimer(logTimerDuration)
+	timer.Reset(logTimerDuration)
 
 	for logHandler.isActive {
+		//log.Println("for ------")
 		select {
 		case executeLog = <-logHandler.logChan:
+			// log.Println(executeLog)
 			if executeLog == nil {
 				goto END
 			}
@@ -110,7 +115,9 @@ func (logHandler *MongoLogHandler) ConsumeLogsLoop() {
 				continue
 			}
 		case <-timer.C:
-			//log.Println("计时器，计时器")
+			// log.Println("计时器，计时器")
+			// log.Println(logTimerDuration)
+
 			// 到了该刷新下日志的时候了
 			// 记得执行：timer.Reset
 			goto INSERT

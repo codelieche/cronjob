@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -18,6 +19,7 @@ import (
 func (jobManager *JobManager) SaveJob(job *Job) (prevJob *Job, err error) {
 	// 把任务保存到/crontab/jobs/:name中
 	var (
+		jobsDir  string
 		jobKey   string
 		jobValue []byte
 
@@ -30,7 +32,19 @@ func (jobManager *JobManager) SaveJob(job *Job) (prevJob *Job, err error) {
 		return nil, err
 	}
 
-	jobKey = ETCD_JOBS_DIR + job.Name
+	// 如果job的分类为空，就设置其为default
+	if job.Category == "" {
+		job.Category = "default"
+	}
+
+	// jobKey = ETCD_JOBS_DIR + job.Name
+	jobsDir = ETCD_JOBS_DIR
+	if strings.HasSuffix(jobsDir, "/") {
+		jobsDir = string(jobsDir[:len(jobsDir)-1])
+	}
+
+	// 组合jobKey
+	jobKey = fmt.Sprintf("%s/%s/%s", jobsDir, job.Category, job.Name)
 
 	// 任务信息json：对job序列化一下
 	if jobValue, err = json.Marshal(job); err != nil {
@@ -109,23 +123,26 @@ func (jobManager *JobManager) ListJobs() (jobList []*Job, err error) {
 }
 
 // 获取Job的Detail
-func (jobManager *JobManager) GetJob(name string) (job *Job, err error) {
+func (jobManager *JobManager) GetJob(jobKey string) (job *Job, err error) {
 	// 定义变量
 	var (
-		jobKey      string
 		getResponse *clientv3.GetResponse
 		keyValue    *mvccpb.KeyValue
 		i           int
 	)
-	// 1. 对name做校验
-	name = strings.TrimSpace(name)
-	if name == "" {
-		err = fmt.Errorf("传入的name为空")
+	// 1. 对jobKey做校验
+	jobKey = strings.TrimSpace(jobKey)
+	if jobKey == "" {
+		err = fmt.Errorf("传入的jobKey为空")
 		return nil, err
+	}
+	if !strings.HasPrefix(jobKey, ETCD_JOBS_DIR) {
+		err = errors.New("传入的key不正确")
+		return false, err
 	}
 
 	// 2. 从etcd中获取对象
-	jobKey = ETCD_JOBS_DIR + name
+	jobKey = strings.Replace(jobKey, "//", "/", -1)
 	if getResponse, err = jobManager.kv.Get(context.TODO(), jobKey); err != nil {
 		return nil, err
 	}
@@ -155,22 +172,25 @@ NotFound:
 }
 
 // Delete Job
-func (jobManager *JobManager) DeleteJob(name string) (success bool, err error) {
+func (jobManager *JobManager) DeleteJob(jobKey string) (success bool, err error) {
 	// 定义变量
 	var (
-		jobKey         string
 		deleteResponse *clientv3.DeleteResponse
 	)
-	// 1. 对name做判断
-	name = strings.TrimSpace(name)
+	// 1. 对key做判断
+	jobKey = strings.TrimSpace(jobKey)
+	if !strings.HasPrefix(jobKey, ETCD_JOBS_DIR) {
+		err = errors.New("传入的key不正确")
+		return false, err
+	}
 
-	if name == "" {
-		err = fmt.Errorf("name不可为空")
+	if jobKey == "" {
+		err = fmt.Errorf("jobKey不可为空")
 		return false, err
 	}
 
 	// 2. 操作删除
-	jobKey = ETCD_JOBS_DIR + name
+	jobKey = strings.Replace(jobKey, "//", "/", -1)
 	if deleteResponse, err = jobManager.kv.Delete(
 		context.TODO(),
 		jobKey,
