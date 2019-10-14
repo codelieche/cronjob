@@ -12,6 +12,7 @@ import (
 // 比如：每三十分钟执行一次的任务
 // */30 * * * * echo `date` >> /var/log/test.log
 type Job struct {
+	Key         string `json:"key, omitempty"`        // ETCD中保存的key
 	Category    string `json:"category"`              // 类型：默认是default
 	Name        string `json:"name"`                  // 任务的名称
 	Time        string `json:"time"`                  // 计划任务的时间
@@ -62,6 +63,7 @@ type JobExecuteResult struct {
 
 // 任务执行日志
 type JobExecuteLog struct {
+	Category     string    `json:"category", bson:"category"`          // 任务类型
 	Name         string    `json:"name", bson:"name"`                  // 任务名字
 	Command      string    `json:"command", bson: "command"`           // 任务命令
 	Output       string    `json:"output", bson:"output"`              // 任务执行输出结果
@@ -76,6 +78,12 @@ type JobExecuteLog struct {
 type Response struct {
 	Status  bool   `json:"status"`  // 状态
 	Message string `json:"message"` // 消息
+}
+
+// Kill计划任务的info
+type KillJob struct {
+	Category string `json:"category"` // 要杀掉的job的分类
+	Name     string `json:"name"`     // 要杀掉的job的名称
 }
 
 type WatchHandler interface {

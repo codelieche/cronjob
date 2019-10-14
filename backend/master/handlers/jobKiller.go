@@ -15,6 +15,7 @@ import (
 func JobKill(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// 1. 定义变量
 	var (
+		category string
 		name     string
 		err      error
 		response common.Response
@@ -27,10 +28,16 @@ func JobKill(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	}
 
 	// 得到name字段
+	category = r.PostForm.Get("category")
 	name = r.PostForm.Get("name")
 
+	if category == "" {
+		category = "default"
+	}
+
 	// 3. 添加kill 任务
-	if err = jobManager.KillJob(name); err != nil {
+
+	if err = jobManager.KillJob(category, name); err != nil {
 		goto ERR
 	} else {
 		// 4. 响应结果

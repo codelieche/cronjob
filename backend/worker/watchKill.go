@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/codelieche/cronjob/backend/common"
@@ -30,8 +31,10 @@ func (watch *WatchKillHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 		watchResponse clientv3.WatchResponse
 		watchEvent    *clientv3.Event
 		jobName       string
+		killJob       *common.KillJob
 		job           *common.Job
 		jobEvent      *common.JobEvent
+		err           error
 	)
 
 	// 处理监听事件
@@ -41,12 +44,20 @@ func (watch *WatchKillHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 			switch watchEvent.Type {
 			case mvccpb.PUT:
 				// 杀死Job任务事件
+				killJob = &common.KillJob{}
+				if err = json.Unmarshal(watchEvent.Kv.Value, killJob); err != nil {
+					log.Println(string(watchEvent.Kv.Value))
+					log.Println(err)
+					continue
+				}
 
 				// 从key中提取出jobName
-				jobName = common.ExtractKillJobName(string(watchEvent.Kv.Key))
+				//待删 jobName = common.ExtractKillJobName(string(watchEvent.Kv.Key))
 				//log.Println(jobName, "===>", string(watchEvent.Kv.Key))
+				jobName = killJob.Name
 				job = &common.Job{
-					Name: jobName,
+					Category: killJob.Category,
+					Name:     jobName,
 				}
 				// 构造JobEvnet
 				jobEvent = &common.JobEvent{

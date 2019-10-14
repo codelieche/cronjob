@@ -111,6 +111,7 @@ func (scheduler *Scheduler) PushJobEvent(jobEvent *common.JobEvent) {
 func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
 	var (
 		jobSchedulePlan *common.JobSchedulePlan
+		jobExecutingKey string // 任务类型 + "-" + 任务名称
 		err             error
 		isExist         bool
 		jobExecuteInfo  *common.JobExecuteInfo
@@ -120,23 +121,28 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
 		if jobSchedulePlan, err = common.BuildJobSchedulePlan(jobEvent.Job); err != nil {
 			return
 		} else {
-			scheduler.jobPlanTable[jobEvent.Job.Name] = jobSchedulePlan
+			jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+			scheduler.jobPlanTable[jobExecutingKey] = jobSchedulePlan
 		}
 
 	case common.JOB_EVENT_DELETE: // 删除job事件
 		// 判断job是否存在
-		if jobSchedulePlan, isExist = scheduler.jobPlanTable[jobEvent.Job.Name]; isExist {
+		jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+		if jobSchedulePlan, isExist = scheduler.jobPlanTable[jobExecutingKey]; isExist {
 			// 存在就删除，不存在就无需操作
-			delete(scheduler.jobPlanTable, jobEvent.Job.Name)
+			delete(scheduler.jobPlanTable, jobExecutingKey)
 		}
 
 	case common.JOB_EVENT_KILL: // 杀掉job事件
 		// 取消Command执行
-		if jobExecuteInfo, isExist = scheduler.jobExecutingTable[jobEvent.Job.Name]; isExist {
+		// log.Println(scheduler.jobExecutingTable)
+		jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+		if jobExecuteInfo, isExist = scheduler.jobExecutingTable[jobExecutingKey]; isExist {
 			// 是的在本work中执行中，那么可以杀掉它
 			log.Println("需要杀死job")
 			jobExecuteInfo.ExceteCancelFun()
 		} else {
+			// log.Println(scheduler.jobExecutingTable)
 			log.Println("Job未在执行中，无需kill")
 		}
 
@@ -146,8 +152,9 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
 // 执行计划任务
 func (scheduler *Scheduler) TryRunJob(jobPlan *common.JobSchedulePlan) (err error) {
 	var (
-		jobExecuteInfo *common.JobExecuteInfo
-		isExecuting    bool
+		jobExecuteInfo  *common.JobExecuteInfo
+		jobExecutingKey string
+		isExecuting     bool
 	)
 	// 如果任务正在执行，跳过本次调度
 	if jobExecuteInfo, isExecuting = scheduler.jobExecutingTable[jobPlan.Job.Name]; isExecuting {
@@ -158,7 +165,8 @@ func (scheduler *Scheduler) TryRunJob(jobPlan *common.JobSchedulePlan) (err erro
 		jobExecuteInfo = common.BuildJobExecuteInfo(jobPlan)
 
 		// 保存执行信息
-		scheduler.jobExecutingTable[jobPlan.Job.Name] = jobExecuteInfo
+		jobExecutingKey = jobPlan.Job.Category + "-" + jobPlan.Job.Name
+		scheduler.jobExecutingTable[jobExecutingKey] = jobExecuteInfo
 
 		// 执行计划任务
 		executor.ExecuteJob(jobExecuteInfo, scheduler.jobResultChan)
@@ -198,6 +206,7 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 	if result.IsExecute {
 		// 记录日志
 		jobExecuteLog = &common.JobExecuteLog{
+			Category:     result.ExecuteInfo.Job.Category,
 			Name:         result.ExecuteInfo.Job.Name,
 			Command:      result.ExecuteInfo.Job.Command,
 			Output:       string(result.Output),
@@ -215,7 +224,7 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 		// 交给写日志的程序处理。
 		scheduler.logHandler.AddLog(jobExecuteLog)
 
-		log.Println("Job执行完成：", result.ExecuteInfo.Job.Name)
+		log.Println("Job执行完成：", result.ExecuteInfo.Job.Category, result.ExecuteInfo.Job.Name)
 		// fmt.Println(string(result.Output))
 		if result.Err != nil {
 			fmt.Println("执行出现了错误：", result.Err.Error())

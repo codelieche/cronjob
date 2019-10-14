@@ -70,6 +70,7 @@ func (jobManager *JobManager) SaveJob(job *Job) (prevJob *Job, err error) {
 			return nil, nil
 		} else {
 			// 返回上一个的旧值
+			prevJob.Key = jobKey
 			return prevJob, err
 		}
 	} else {
@@ -113,6 +114,7 @@ func (jobManager *JobManager) ListJobs() (jobList []*Job, err error) {
 		if err = json.Unmarshal(kvPair.Value, job); err != nil {
 			continue
 		} else {
+			job.Key = string(kvPair.Key)
 			jobList = append(jobList, job)
 		}
 	}
@@ -138,7 +140,7 @@ func (jobManager *JobManager) GetJob(jobKey string) (job *Job, err error) {
 	}
 	if !strings.HasPrefix(jobKey, ETCD_JOBS_DIR) {
 		err = errors.New("传入的key不正确")
-		return false, err
+		return nil, err
 	}
 
 	// 2. 从etcd中获取对象
@@ -158,6 +160,7 @@ func (jobManager *JobManager) GetJob(jobKey string) (job *Job, err error) {
 			if err = json.Unmarshal(keyValue.Value, &job); err != nil {
 				return nil, err
 			} else {
+				job.Key = jobKey
 				return job, nil
 			}
 		}
@@ -211,7 +214,7 @@ func (jobManager *JobManager) DeleteJob(jobKey string) (success bool, err error)
 
 // 计划任务kill
 // 杀掉计划任务运行的进程
-func (jobManager *JobManager) KillJob(name string) (err error) {
+func (jobManager *JobManager) KillJob(category, name string) (err error) {
 	// 添加要杀掉的Job信息
 	// 通过在：/crontab/kill/:name添加一条数据
 	// Worker节点，会监听到这个条目的PUT操作，然后做相应的操作
@@ -219,19 +222,30 @@ func (jobManager *JobManager) KillJob(name string) (err error) {
 	// 1. 定义变量
 	var (
 		jobKillKey         string
+		killJob            *KillJob
+		killJobData        []byte
 		leaseGrantResponse *clientv3.LeaseGrantResponse
 		leaseID            clientv3.LeaseID
 		putResponse        *clientv3.PutResponse
 	)
 
 	// 校验key
+	category = strings.TrimSpace(category)
+	if category == "" {
+		category = "default"
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		err = fmt.Errorf("job的name不可为空")
 		return
 	}
-	jobKillKey = ETCD_JOB_KILL_DIR + name
 
+	// jobKillKey = ETCD_JOB_KILL_DIR + name
+	jobKillKey = fmt.Sprintf("%s%s/%s", ETCD_JOB_KILL_DIR, category, name)
+	killJob = &KillJob{
+		Category: category,
+		Name:     name,
+	}
 	// 2. 通知worker杀死对应的任务
 	// 2-1: 创建个租约
 	if leaseGrantResponse, err = jobManager.lease.Grant(context.TODO(), 5); err != nil {
@@ -242,9 +256,13 @@ func (jobManager *JobManager) KillJob(name string) (err error) {
 	leaseID = leaseGrantResponse.ID
 
 	// 2-3: 添加kill记录
+	if killJobData, err = json.Marshal(killJob); err != nil {
+		return nil
+	}
+
 	if putResponse, err = jobManager.kv.Put(
 		context.TODO(),
-		jobKillKey, name,
+		jobKillKey, string(killJobData),
 		clientv3.WithLease(leaseID),
 	); err != nil {
 		return

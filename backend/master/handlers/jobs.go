@@ -96,6 +96,7 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		goto ERR
 	} else {
 		// 保存成功
+		job.Key = fmt.Sprintf("%s%s/%s", common.ETCD_JOBS_DIR, category, name)
 		//log.Println(prevJob)
 	}
 
