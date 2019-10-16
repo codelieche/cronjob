@@ -22,7 +22,7 @@ type Job struct {
 
 // Job Manager
 // 计划任务的管理器
-type JobManager struct {
+type EtcdManager struct {
 	client  *clientv3.Client // etcd的客户端连接
 	kv      clientv3.KV      // etcd的KV对
 	lease   clientv3.Lease   // etcd的租约

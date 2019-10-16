@@ -23,7 +23,7 @@ worker:
   # monitor web相关配置
   http:
     host: "0.0.0.0"
-    port: 8080
+    port: ${WORKER_PORT:8080}
 
   # etcd相关配置
   etcd:

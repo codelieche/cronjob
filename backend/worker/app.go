@@ -8,9 +8,9 @@ import (
 )
 
 type Worker struct {
-	TimeStart  time.Time          // 启动时间
-	JobManager *common.JobManager // 计划任务管理器
-	Scheduler  *Scheduler         // 调度器
+	TimeStart   time.Time           // 启动时间
+	EtcdManager *common.EtcdManager // 计划任务管理器
+	Scheduler   *Scheduler          // 调度器
 }
 
 func (w *Worker) Run() {
@@ -40,9 +40,9 @@ func (w *Worker) Run() {
 	// 开始监听keys
 	//go w.JobManager.WatchKeys(jobsKeyDir, &handerWatchDemo)
 	// 监听jobs
-	go w.JobManager.WatchKeys(jobsKeyDir, &watchHandler)
+	go w.EtcdManager.WatchKeys(jobsKeyDir, &watchHandler)
 	// 监听kill
-	go w.JobManager.WatchKeys(common.ETCD_JOB_KILL_DIR, watchKillHandler)
+	go w.EtcdManager.WatchKeys(common.ETCD_JOB_KILL_DIR, watchKillHandler)
 
 	// 注册worker信息到etcd
 	go register.keepOnlive()
@@ -61,13 +61,13 @@ func NewWorkerApp() *Worker {
 	}
 
 	var (
-		jobManager *common.JobManager
-		scheduler  *Scheduler
-		err        error
+		etcdManager *common.EtcdManager
+		scheduler   *Scheduler
+		err         error
 	)
 
 	// 实例化jobManager
-	if jobManager, err = common.NewJobManager(common.Config.Worker.Etcd); err != nil {
+	if etcdManager, err = common.NewEtcdManager(common.Config.Worker.Etcd); err != nil {
 		log.Println(err.Error())
 		panic(err)
 	}
@@ -77,8 +77,8 @@ func NewWorkerApp() *Worker {
 
 	// 实例化Worker
 	return &Worker{
-		TimeStart:  time.Now(),
-		JobManager: jobManager,
-		Scheduler:  scheduler,
+		TimeStart:   time.Now(),
+		EtcdManager: etcdManager,
+		Scheduler:   scheduler,
 	}
 }

@@ -16,7 +16,7 @@ import (
 
 // 保存Job到etcd中
 // 返回上一次的Job和错误信息
-func (jobManager *JobManager) SaveJob(job *Job) (prevJob *Job, err error) {
+func (etcdManager *EtcdManager) SaveJob(job *Job) (prevJob *Job, err error) {
 	// 把任务保存到/crontab/jobs/:name中
 	var (
 		jobsDir  string
@@ -52,7 +52,7 @@ func (jobManager *JobManager) SaveJob(job *Job) (prevJob *Job, err error) {
 	}
 
 	//	保存到etcd中
-	if putResponse, err = jobManager.kv.Put(
+	if putResponse, err = etcdManager.kv.Put(
 		context.TODO(),        // 上下文
 		jobKey,                // Key
 		string(jobValue),      // 值
@@ -80,7 +80,7 @@ func (jobManager *JobManager) SaveJob(job *Job) (prevJob *Job, err error) {
 }
 
 // List Jobs
-func (jobManager *JobManager) ListJobs() (jobList []*Job, err error) {
+func (etcdManager *EtcdManager) ListJobs() (jobList []*Job, err error) {
 	// 定义变量
 	var (
 		jobsDirKey  string
@@ -95,7 +95,7 @@ func (jobManager *JobManager) ListJobs() (jobList []*Job, err error) {
 	//jobsDirKey = endKey
 
 	// clientv3.WithFromKey() 会从传入的key开始获取，不可与WithPrefix同时使用
-	if getResponse, err = jobManager.kv.Get(
+	if getResponse, err = etcdManager.kv.Get(
 		context.TODO(),
 		jobsDirKey,
 		clientv3.WithPrefix(),
@@ -125,7 +125,7 @@ func (jobManager *JobManager) ListJobs() (jobList []*Job, err error) {
 }
 
 // 获取Job的Detail
-func (jobManager *JobManager) GetJob(jobKey string) (job *Job, err error) {
+func (etcdManager *EtcdManager) GetJob(jobKey string) (job *Job, err error) {
 	// 定义变量
 	var (
 		getResponse *clientv3.GetResponse
@@ -145,7 +145,7 @@ func (jobManager *JobManager) GetJob(jobKey string) (job *Job, err error) {
 
 	// 2. 从etcd中获取对象
 	jobKey = strings.Replace(jobKey, "//", "/", -1)
-	if getResponse, err = jobManager.kv.Get(context.TODO(), jobKey); err != nil {
+	if getResponse, err = etcdManager.kv.Get(context.TODO(), jobKey); err != nil {
 		return nil, err
 	}
 
@@ -175,7 +175,7 @@ NotFound:
 }
 
 // Delete Job
-func (jobManager *JobManager) DeleteJob(jobKey string) (success bool, err error) {
+func (etcdManager *EtcdManager) DeleteJob(jobKey string) (success bool, err error) {
 	// 定义变量
 	var (
 		deleteResponse *clientv3.DeleteResponse
@@ -194,7 +194,7 @@ func (jobManager *JobManager) DeleteJob(jobKey string) (success bool, err error)
 
 	// 2. 操作删除
 	jobKey = strings.Replace(jobKey, "//", "/", -1)
-	if deleteResponse, err = jobManager.kv.Delete(
+	if deleteResponse, err = etcdManager.kv.Delete(
 		context.TODO(),
 		jobKey,
 		clientv3.WithPrevKV(),
@@ -214,7 +214,7 @@ func (jobManager *JobManager) DeleteJob(jobKey string) (success bool, err error)
 
 // 计划任务kill
 // 杀掉计划任务运行的进程
-func (jobManager *JobManager) KillJob(category, name string) (err error) {
+func (etcdManager *EtcdManager) KillJob(category, name string) (err error) {
 	// 添加要杀掉的Job信息
 	// 通过在：/crontab/kill/:name添加一条数据
 	// Worker节点，会监听到这个条目的PUT操作，然后做相应的操作
@@ -248,7 +248,7 @@ func (jobManager *JobManager) KillJob(category, name string) (err error) {
 	}
 	// 2. 通知worker杀死对应的任务
 	// 2-1: 创建个租约
-	if leaseGrantResponse, err = jobManager.lease.Grant(context.TODO(), 5); err != nil {
+	if leaseGrantResponse, err = etcdManager.lease.Grant(context.TODO(), 5); err != nil {
 		// 创建租约失败
 		return
 	}
@@ -260,7 +260,7 @@ func (jobManager *JobManager) KillJob(category, name string) (err error) {
 		return nil
 	}
 
-	if putResponse, err = jobManager.kv.Put(
+	if putResponse, err = etcdManager.kv.Put(
 		context.TODO(),
 		jobKillKey, string(killJobData),
 		clientv3.WithLease(leaseID),
@@ -278,7 +278,7 @@ func (jobManager *JobManager) KillJob(category, name string) (err error) {
 // Watch keys
 // 监听etcd key的变化: 比如监听jobs的变化，和监听kill的任务
 // 传递的参数：要监听的key的前缀，和处理监听的接口
-func (jobManager *JobManager) WatchKeys(keyDir string, watchHandler WatchHandler) (err error) {
+func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler WatchHandler) (err error) {
 	// 1. 定义变量
 	var (
 		getResponse *clientv3.GetResponse
@@ -292,7 +292,7 @@ func (jobManager *JobManager) WatchKeys(keyDir string, watchHandler WatchHandler
 
 	// 2. get：/crontab/jobs/目录下的所有任务，并且获知当前集群的revision
 	//keyDir = "/crontab/jobs/"
-	if getResponse, err = jobManager.kv.Get(
+	if getResponse, err = etcdManager.kv.Get(
 		context.TODO(), keyDir,
 		clientv3.WithPrefix(),
 	); err != nil {
@@ -309,7 +309,7 @@ func (jobManager *JobManager) WatchKeys(keyDir string, watchHandler WatchHandler
 		log.Printf("开始watch事件:%s(Revision:%d)", keyDir, getResponse.Header.Revision)
 
 		//	4-2：监听:/crontab/jobs/目录后续的变化
-		watchChan = jobManager.watcher.Watch(
+		watchChan = etcdManager.watcher.Watch(
 			context.TODO(),
 			keyDir,
 			clientv3.WithPrefix(),                // 监听以jobKeyDir为前缀的key
@@ -325,22 +325,22 @@ func (jobManager *JobManager) WatchKeys(keyDir string, watchHandler WatchHandler
 }
 
 // 创建任务执行锁
-func (jobManager *JobManager) CreateJobLock(name string) (jobLock *JobLock) {
+func (etcdManager *EtcdManager) CreateJobLock(name string) (jobLock *JobLock) {
 	// 返回一把锁
-	jobLock = NewJobLock(name, jobManager.kv, jobManager.lease)
+	jobLock = NewJobLock(name, etcdManager.kv, etcdManager.lease)
 	return
 }
 
 // 实例化Job Manager
-func NewJobManager(etcdConfig *EtcdConfig) (*JobManager, error) {
+func NewEtcdManager(etcdConfig *EtcdConfig) (*EtcdManager, error) {
 	var (
-		config     clientv3.Config
-		client     *clientv3.Client
-		kv         clientv3.KV
-		lease      clientv3.Lease
-		watcher    clientv3.Watcher
-		err        error
-		jobManager *JobManager
+		config      clientv3.Config
+		client      *clientv3.Client
+		kv          clientv3.KV
+		lease       clientv3.Lease
+		watcher     clientv3.Watcher
+		err         error
+		etcdManager *EtcdManager
 	)
 
 	//	初始化etcd配置
@@ -364,7 +364,7 @@ func NewJobManager(etcdConfig *EtcdConfig) (*JobManager, error) {
 	watcher = clientv3.NewWatcher(client)
 
 	//	实例化Job Manager
-	jobManager = &JobManager{
+	etcdManager = &EtcdManager{
 		client:  client,
 		kv:      kv,
 		lease:   lease,
@@ -372,5 +372,5 @@ func NewJobManager(etcdConfig *EtcdConfig) (*JobManager, error) {
 	}
 
 	// 返回
-	return jobManager, nil
+	return etcdManager, nil
 }

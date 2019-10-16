@@ -27,7 +27,7 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 		)
 
 		// 初始化分布式锁
-		jobLock = app.JobManager.CreateJobLock(info.Job.Name)
+		jobLock = app.EtcdManager.CreateJobLock(info.Job.Name)
 
 		// 尝试上锁
 		if err = jobLock.TryLock(); err != nil {

@@ -9,16 +9,16 @@ import (
 	"github.com/codelieche/cronjob/backend/common"
 )
 
-var jobManager *common.JobManager
+var etcdManager *common.EtcdManager
 var workerManager *common.WorkerManager
 var logHandler *worker.MongoLogHandler
 
 func init() {
-	if jobManagerObj, err := common.NewJobManager(common.Config.Master.Etcd); err != nil {
+	if obj, err := common.NewEtcdManager(common.Config.Master.Etcd); err != nil {
 		log.Println(err.Error())
 		os.Exit(1)
 	} else {
-		jobManager = jobManagerObj
+		etcdManager = obj
 	}
 
 	//	 初始化WorkerManager

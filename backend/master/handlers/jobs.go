@@ -92,7 +92,7 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	//log.Println(job)
 
 	// 4. 保存Job到etcd中
-	if _, err = jobManager.SaveJob(job); err != nil {
+	if _, err = etcdManager.SaveJob(job); err != nil {
 		goto ERR
 	} else {
 		// 保存成功
@@ -133,7 +133,7 @@ func JobDetail(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	jobKey = fmt.Sprintf("%s%s/%s", common.ETCD_JOBS_DIR, category, name)
 
 	// 2. 从etcd中获取数据
-	if job, err = jobManager.GetJob(jobKey); err != nil {
+	if job, err = etcdManager.GetJob(jobKey); err != nil {
 		http.Error(w, err.Error(), 404)
 		return
 	} else {
@@ -167,7 +167,7 @@ func JobDelete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	jobKey = fmt.Sprintf("%s%s/%s", common.ETCD_JOBS_DIR, category, name)
 
 	// 2. 从etcd中删除key
-	if success, err = jobManager.DeleteJob(jobKey); err != nil {
+	if success, err = etcdManager.DeleteJob(jobKey); err != nil {
 		http.Error(w, err.Error(), 404)
 		return
 	} else {
@@ -191,7 +191,7 @@ func JobList(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	)
 
 	// 获取列表数据
-	if results, err = jobManager.ListJobs(); err != nil {
+	if results, err = etcdManager.ListJobs(); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

@@ -37,7 +37,7 @@ func JobKill(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 
 	// 3. 添加kill 任务
 
-	if err = jobManager.KillJob(category, name); err != nil {
+	if err = etcdManager.KillJob(category, name); err != nil {
 		goto ERR
 	} else {
 		// 4. 响应结果
