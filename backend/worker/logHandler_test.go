@@ -2,12 +2,14 @@ package worker
 
 import (
 	"testing"
+
+	"github.com/codelieche/cronjob/backend/common"
 )
 
 // 测试获取日志列表
 // 如果执行提示出错，可注释掉init中的parseParamse()
 func TestMongoLogHandler_List(t *testing.T) {
-	if logHandler, err := NewMongoLogHandler(); err != nil {
+	if logHandler, err := NewMongoLogHandler(common.Config.Worker.Mongo); err != nil {
 		t.Error(err)
 	} else {
 		if logList, err := logHandler.List(1, 10); err != nil {

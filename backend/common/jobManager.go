@@ -332,7 +332,7 @@ func (jobManager *JobManager) CreateJobLock(name string) (jobLock *JobLock) {
 }
 
 // 实例化Job Manager
-func NewJobManager() (*JobManager, error) {
+func NewJobManager(etcdConfig *EtcdConfig) (*JobManager, error) {
 	var (
 		config     clientv3.Config
 		client     *clientv3.Client
@@ -345,8 +345,9 @@ func NewJobManager() (*JobManager, error) {
 
 	//	初始化etcd配置
 	config = clientv3.Config{
-		Endpoints:   []string{"127.0.0.1:2379"}, // 集群地址
-		DialTimeout: 5000 * time.Microsecond,    // 连接超时
+		//Endpoints:   []string{"127.0.0.1:2379"}, // 集群地址
+		Endpoints:   etcdConfig.Endpoints,    // 集群地址
+		DialTimeout: 5000 * time.Microsecond, // 连接超时
 
 	}
 

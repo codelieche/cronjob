@@ -237,7 +237,7 @@ func (logHandler *MongoLogHandler) List(page int, pageSize int) (logList []*comm
 	return logList, nil
 }
 
-func NewMongoLogHandler() (logHandler *MongoLogHandler, err error) {
+func NewMongoLogHandler(mongoConfig *common.MongoConfig) (logHandler *MongoLogHandler, err error) {
 	var (
 		option         *options.ClientOptions
 		database       *mongo.Database
@@ -249,10 +249,10 @@ func NewMongoLogHandler() (logHandler *MongoLogHandler, err error) {
 	//	配置文件
 	connectTimeout = 10 * time.Second
 	option = &options.ClientOptions{
-		Hosts: []string{"127.0.0.1:27017"},
+		Hosts: mongoConfig.Hosts,
 		Auth: &options.Credential{
-			Username: "root",
-			Password: "happydb",
+			Username: mongoConfig.User,
+			Password: mongoConfig.Password,
 		},
 		ConnectTimeout: &connectTimeout,
 	}

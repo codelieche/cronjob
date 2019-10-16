@@ -244,7 +244,7 @@ func NewScheduler() *Scheduler {
 		err        error
 	)
 	// 实例化消息处理
-	if logHandler, err = NewMongoLogHandler(); err != nil {
+	if logHandler, err = NewMongoLogHandler(common.Config.Worker.Mongo); err != nil {
 		log.Panic(err)
 		return nil
 	} else {

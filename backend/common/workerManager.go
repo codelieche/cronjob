@@ -51,7 +51,7 @@ func (workerManager *WorkerManager) ListWorekr() (workerList []*WorkerInfo, err 
 }
 
 // 创建个新的workerManager
-func NewWorkerManager() (workerManager *WorkerManager, err error) {
+func NewWorkerManager(etcdConfig *EtcdConfig) (workerManager *WorkerManager, err error) {
 
 	var (
 		config clientv3.Config
@@ -61,7 +61,8 @@ func NewWorkerManager() (workerManager *WorkerManager, err error) {
 	)
 
 	config = clientv3.Config{
-		Endpoints:   []string{"127.0.0.1:2379"},
+		//Endpoints:   []string{"127.0.0.1:2379"},
+		Endpoints:   etcdConfig.Endpoints,
 		DialTimeout: 10 * time.Second,
 	}
 

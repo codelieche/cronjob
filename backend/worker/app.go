@@ -67,7 +67,7 @@ func NewWorkerApp() *Worker {
 	)
 
 	// 实例化jobManager
-	if jobManager, err = common.NewJobManager(); err != nil {
+	if jobManager, err = common.NewJobManager(common.Config.Worker.Etcd); err != nil {
 		log.Println(err.Error())
 		panic(err)
 	}

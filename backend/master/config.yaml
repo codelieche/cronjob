@@ -1,0 +1,39 @@
+
+# master相关配置
+master:
+  # apiserver相关配置
+  http:
+    host: "0.0.0.0"
+    port: 9000
+
+  # etcd相关配置
+  etcd:
+    endpoints:
+      - "127.0.0.1:2379"
+
+  # mongodb相关配置
+  mongo:
+    hosts:
+      - "127.0.0.1:27017"
+    user: root
+    password: "${MONGO_PASSWORD:password}"
+
+# worker相关配置
+worker:
+  # monitor web相关配置
+  http:
+    host: "0.0.0.0"
+    port: 8080
+
+  # etcd相关配置
+  etcd:
+    endpoints:
+      - "127.0.0.1:2379"
+
+  # mongodb相关配置
+  mongo:
+    # address: "127.0.0.1"
+    hosts:
+      - "127.0.0.1:27017"
+    user: root
+    password: "${MONGO_PASSWORD:password}"
