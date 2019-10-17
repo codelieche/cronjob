@@ -18,9 +18,6 @@ func init() {
 		err error
 	)
 
-	//webMonitorPort = 8080
-	parseParams()
-
 	executor = NewExecutor()
 	app = NewWorkerApp()
 	if register, err = newRegister(); err != nil {

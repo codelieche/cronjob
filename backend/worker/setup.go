@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/codelieche/cronjob/backend/common"
 )
@@ -38,6 +39,95 @@ func (w *Worker) setupExecuteEnvrionment() {
 			}
 		}
 	}
+}
+
+// worker add category
+func (w *Worker) addExecuteCategory(name string) (success bool, err error) {
+	var (
+		categoryName string
+	)
+
+	name = strings.TrimSpace(name)
+
+	// 检查是否存在于分类列表中了
+	for _, categoryName = range w.Categories {
+		if name == categoryName {
+			msg := fmt.Sprintf("%s已经存在于worker的categories中，无需再次添加", name)
+			err = errors.New(msg)
+			return false, err
+		}
+	}
+
+	// 开始添加
+	if success, err = w.checkOrSetUpJobExecuteEnvironment(name); err != nil {
+		return
+	} else {
+		// 如果成功了，需要修改w.Categories
+		if success {
+			w.Categories = append(w.Categories, name)
+		} else {
+			// 竟然没成功
+		}
+	}
+	return
+}
+
+// worker delete category
+func (w *Worker) removeExecuteCategory(name string) (success bool, err error) {
+	// 定义变量
+	var (
+		categoryName string
+		length       int
+		isExist      bool
+		index        int
+	)
+
+	// 判断name是否为空
+	name = strings.TrimSpace(name)
+	if name == "" {
+		err = errors.New("传入的name为空")
+		return
+	}
+
+	for index, categoryName = range w.Categories {
+		if name == categoryName {
+			isExist = true
+			break
+		}
+	}
+
+	if !isExist {
+		msg := fmt.Sprintf("%s不存在于worker的categories中", name)
+		err = errors.New(msg)
+		return
+	}
+
+	// 把分类移除
+	length = len(w.Categories)
+	// log.Println(index)
+	if index < length-1 && index > 0 {
+		//log.Println(w.Categories[:index])
+		//log.Println(w.Categories[index+1:])
+		w.Categories = append(w.Categories[:index], w.Categories[index+1:]...)
+	}
+
+	if index == 0 {
+		if len(w.Categories) > 1 {
+			w.Categories = w.Categories[1:]
+		} else {
+			w.Categories = []string{}
+		}
+	}
+
+	if index == length-1 {
+		if len(w.Categories) > 1 {
+			w.Categories = w.Categories[:length-1]
+		} else {
+			w.Categories = []string{}
+		}
+	}
+	//log.Println(w.Categories)
+	return true, nil
 }
 
 // 检查或者准备执行某类计划任务的环境
