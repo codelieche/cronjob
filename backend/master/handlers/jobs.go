@@ -59,7 +59,8 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	case "application/json":
 		//log.Println("application/json")
 		//log.Println(r.Body)
-		if err = json.NewDecoder(r.Body).Decode(&job); err != nil {
+		job = &common.Job{}
+		if err = json.NewDecoder(r.Body).Decode(job); err != nil {
 			goto ERR
 		}
 	default:
@@ -73,7 +74,7 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 	// 3. 实例化Job
 	if needParseForm {
-		// 2. 去表单中的job字段: name, time, command, description
+		// 2. 取表单中的job字段: name, time, command, description
 		category = r.PostForm.Get("category")
 		name = r.PostForm.Get("name")
 		time = r.PostForm.Get("time")

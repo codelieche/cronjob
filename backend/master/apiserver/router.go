@@ -20,6 +20,11 @@ func newApiRouter() *httprouter.Router {
 	// Worker相关
 	router.GET("/worker/list", handlers.WorkerList)
 
+	// category相关
+	router.GET("/categories/list", handlers.CategoriesList)
+	router.POST("/category/create", handlers.CategoryCreate)
+	router.GET("/category/:name", handlers.CategoryDetail)
+
 	// job相关
 	// job create
 	router.POST("/job/create", handlers.JobCreate)

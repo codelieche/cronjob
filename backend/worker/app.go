@@ -11,11 +11,17 @@ type Worker struct {
 	TimeStart   time.Time           // 启动时间
 	EtcdManager *common.EtcdManager // 计划任务管理器
 	Scheduler   *Scheduler          // 调度器
+	Categories  []string            // 执行计划任务的类型
 }
 
 func (w *Worker) Run() {
 	// 启动worker程序
 	log.Println("worker run ...")
+
+	// worker初始化：设置工作环境
+	config = common.Config.Worker
+	// log.Println(config)
+	w.setupExecuteEnvrionment()
 
 	// 启动worker的监控web协程
 	go runMonitorWeb()

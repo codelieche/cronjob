@@ -36,3 +36,8 @@ worker:
       - "127.0.0.1:27017"
     user: root
     password: "${MONGO_PASSWORD:password}"
+
+  # 当前worker可执行什么类型的任务
+  categories:
+    - "default"
+    - "test"

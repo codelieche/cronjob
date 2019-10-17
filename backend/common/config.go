@@ -41,9 +41,10 @@ type MasterConfig struct {
 
 // worker相关的配置
 type WorkerConfig struct {
-	Http  *HttpConfig  `json:"http", yaml:"http"`
-	Etcd  *EtcdConfig  `json:"etcd", yaml:"etcd"`
-	Mongo *MongoConfig `json:"mongo", yaml:"mongo"`
+	Http       *HttpConfig  `json:"http", yaml:"http"`
+	Etcd       *EtcdConfig  `json:"etcd", yaml:"etcd"`
+	Mongo      *MongoConfig `json:"mongo", yaml:"mongo"`
+	Categories []string     `json:"categories", yaml: "categories"`
 }
 
 // Master Worker相关的配置
@@ -54,6 +55,7 @@ type MasterWorkerConfig struct {
 
 func ParseConfig() (err error) {
 	var (
+		fileName     string
 		masterConfig *MasterConfig
 		workerConfig *WorkerConfig
 		content      []byte
@@ -65,7 +67,19 @@ func ParseConfig() (err error) {
 		return
 	}
 
-	if content, err = ioutil.ReadFile("./config.yaml"); err != nil {
+	// 获取配置文件: 每次要调试，执行的时候工作路径不同，所以设置成用环境变量来处理
+	// 如果传递的最后一个参数是.yaml那么它是配置文件
+	if strings.HasSuffix(os.Args[len(os.Args)-1], ".yaml") {
+		fileName = os.Args[len(os.Args)-1]
+	} else {
+		if os.Getenv("CRONJOB_CONFIG_FILENAME") != "" {
+			fileName = os.Getenv("CRONJOB_CONFIG_FILENAME")
+		} else {
+			fileName = "./config.yaml"
+		}
+	}
+
+	if content, err = ioutil.ReadFile(fileName); err != nil {
 		return
 	} else {
 		contentStr = string(content)

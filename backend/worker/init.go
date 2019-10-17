@@ -3,12 +3,15 @@ package worker
 import (
 	"log"
 	"os"
+
+	"github.com/codelieche/cronjob/backend/common"
 )
 
 // 计划任务的执行器
 var executor *Executor
 var app *Worker
 var register *Register
+var config *common.WorkerConfig
 
 func init() {
 	var (
