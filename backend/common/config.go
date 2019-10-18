@@ -41,10 +41,10 @@ type MasterConfig struct {
 
 // worker相关的配置
 type WorkerConfig struct {
-	Http       *HttpConfig  `json:"http", yaml:"http"`
-	Etcd       *EtcdConfig  `json:"etcd", yaml:"etcd"`
-	Mongo      *MongoConfig `json:"mongo", yaml:"mongo"`
-	Categories []string     `json:"categories", yaml: "categories"`
+	Http       *HttpConfig     `json:"http", yaml:"http"`
+	Etcd       *EtcdConfig     `json:"etcd", yaml:"etcd"`
+	Mongo      *MongoConfig    `json:"mongo", yaml:"mongo"`
+	Categories map[string]bool `json:"categories", yaml: "categories"`
 }
 
 // Master Worker相关的配置

@@ -39,4 +39,4 @@ worker:
     password: "${MONGO_PASSWORD:password}"
   # 当前worker可执行什么类型的任务
   categories:
-    - "default"
+    default: true

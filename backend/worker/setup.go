@@ -27,9 +27,11 @@ func (w *Worker) setupExecuteEnvrionment() {
 	// 遍历worker的计划任务类型，逐个设置
 	if len(w.Categories) < 1 {
 		log.Println("worker的Categories为空，程序自动加入default")
-		w.Categories = append(w.Categories, "default")
+		//w.Categories = append(w.Categories, "default")
+		w.Categories["default"] = true
 	}
-	for _, categoryName = range w.Categories {
+
+	for categoryName = range w.Categories {
 		if success, err = w.checkOrSetUpJobExecuteEnvironment(categoryName); err != nil {
 			log.Println(err)
 			os.Exit(1)
@@ -44,18 +46,17 @@ func (w *Worker) setupExecuteEnvrionment() {
 // worker add category
 func (w *Worker) addExecuteCategory(name string) (success bool, err error) {
 	var (
-		categoryName string
+		isExist       bool
+		categoryValue bool
 	)
 
 	name = strings.TrimSpace(name)
 
-	// 检查是否存在于分类列表中了
-	for _, categoryName = range w.Categories {
-		if name == categoryName {
-			msg := fmt.Sprintf("%s已经存在于worker的categories中，无需再次添加", name)
-			err = errors.New(msg)
-			return false, err
-		}
+	if categoryValue, isExist = w.Categories[name]; isExist {
+		msg := fmt.Sprintf("%s分类已经存在,值是：%v", name, categoryValue)
+		err = errors.New(msg)
+		return false, err
+	} else {
 	}
 
 	// 开始添加
@@ -64,7 +65,7 @@ func (w *Worker) addExecuteCategory(name string) (success bool, err error) {
 	} else {
 		// 如果成功了，需要修改w.Categories
 		if success {
-			w.Categories = append(w.Categories, name)
+			w.Categories[name] = true
 		} else {
 			// 竟然没成功
 		}
@@ -76,10 +77,8 @@ func (w *Worker) addExecuteCategory(name string) (success bool, err error) {
 func (w *Worker) removeExecuteCategory(name string) (success bool, err error) {
 	// 定义变量
 	var (
-		categoryName string
-		length       int
-		isExist      bool
-		index        int
+		categoryValue bool
+		isExist       bool
 	)
 
 	// 判断name是否为空
@@ -89,45 +88,20 @@ func (w *Worker) removeExecuteCategory(name string) (success bool, err error) {
 		return
 	}
 
-	for index, categoryName = range w.Categories {
-		if name == categoryName {
-			isExist = true
-			break
-		}
-	}
-
-	if !isExist {
+	if categoryValue, isExist = w.Categories[name]; !isExist {
 		msg := fmt.Sprintf("%s不存在于worker的categories中", name)
 		err = errors.New(msg)
 		return
-	}
-
-	// 把分类移除
-	length = len(w.Categories)
-	// log.Println(index)
-	if index < length-1 && index > 0 {
-		//log.Println(w.Categories[:index])
-		//log.Println(w.Categories[index+1:])
-		w.Categories = append(w.Categories[:index], w.Categories[index+1:]...)
-	}
-
-	if index == 0 {
-		if len(w.Categories) > 1 {
-			w.Categories = w.Categories[1:]
+	} else {
+		//log.Println(name, categoryValue)
+		if categoryValue {
+			delete(w.Categories, name)
+			return true, nil
 		} else {
-			w.Categories = []string{}
+			delete(w.Categories, name)
+			return true, nil
 		}
 	}
-
-	if index == length-1 {
-		if len(w.Categories) > 1 {
-			w.Categories = w.Categories[:length-1]
-		} else {
-			w.Categories = []string{}
-		}
-	}
-	//log.Println(w.Categories)
-	return true, nil
 }
 
 // 检查或者准备执行某类计划任务的环境

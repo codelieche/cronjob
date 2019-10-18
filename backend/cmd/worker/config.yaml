@@ -39,5 +39,5 @@ worker:
 
   # 当前worker可执行什么类型的任务
   categories:
-    - "default"
-    - "test"
+    default: true
+    test: true

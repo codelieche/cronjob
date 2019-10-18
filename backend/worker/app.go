@@ -11,7 +11,7 @@ type Worker struct {
 	TimeStart   time.Time           // 启动时间
 	EtcdManager *common.EtcdManager // 计划任务管理器
 	Scheduler   *Scheduler          // 调度器
-	Categories  []string            // 执行计划任务的类型
+	Categories  map[string]bool     // 执行计划任务的类型
 }
 
 func (w *Worker) Run() {
@@ -86,5 +86,6 @@ func NewWorkerApp() *Worker {
 		TimeStart:   time.Now(),
 		EtcdManager: etcdManager,
 		Scheduler:   scheduler,
+		Categories:  make(map[string]bool),
 	}
 }
