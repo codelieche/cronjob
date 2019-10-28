@@ -106,7 +106,7 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		}
 	}
 
-	log.Println(job)
+	// log.Println(job)
 
 	// 4. 保存Job到etcd中
 	if _, err = etcdManager.SaveJob(job); err != nil {

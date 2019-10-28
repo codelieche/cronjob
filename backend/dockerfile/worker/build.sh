@@ -8,8 +8,8 @@ TAG=v1
 # 2-1: 进入程序入口目录
 cd ../../cmd/worker
 # 2-2：执行构建命令
-GOOS=linux GOARCH=amd64 go build -o worker ./worker.go && echo "`date +"%F %T"`: 构建成功" \
-|| (echo "`date %"%F %T"`: 构建失败！！！" && exit 1)
+GOOS=linux GOARCH=amd64 go build -o worker ./worker.go && echo "$(date +"%F %T"): 构建成功" \
+|| (echo "$(date %"%F %T"): 构建失败！！！" && exit 1)
 tree
 
 # 第3步：打包镜像
@@ -23,7 +23,7 @@ cd ../../dockerfile/worker
 tree
 
 # 3-3: 执行docker build
-docker build . -t "$NAME:$TAG" && rm -rf ./app || (echo "`date +"%F %T"`: 构建失败！！！" && exit 1)
+docker build . -t "$NAME:$TAG" && rm -rf ./app || (echo "$(date +"%F %T"): 构建失败！！！" && exit 1)
 
 # 第4步：推送镜像到registry
 # 4-1: 打标签
