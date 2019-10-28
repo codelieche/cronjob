@@ -97,7 +97,7 @@ func (register *Register) keepOnlive() {
 func newRegister() (register *Register, err error) {
 	// 先连接etcd相关
 	var (
-		config clientv3.Config
+		//config clientv3.Config
 		client *clientv3.Client
 		kv     clientv3.KV
 		lease  clientv3.Lease
@@ -110,19 +110,22 @@ func newRegister() (register *Register, err error) {
 	)
 
 	// 初始化配置
-	config = clientv3.Config{
-		Endpoints:   []string{"127.0.0.1:2379"},
-		DialTimeout: time.Second * 10,
+	//config = clientv3.Config{
+	//	Endpoints:   []string{"127.0.0.1:2379"},
+	//	DialTimeout: time.Second * 10,
+	//}
+	//
+	//// 建立连接
+	//if client, err = clientv3.New(config); err != nil {
+	//	return
+	//}
+	//
+	//// 得到KV和Lease的API子集
+	//kv = clientv3.NewKV(client)
+	//lease = clientv3.NewLease(client)
+	if client, kv, lease, _, err = common.NewEtcdClientKvLeaseWatcher(common.Config.Worker.Etcd); err != nil {
+		return nil, err
 	}
-
-	// 建立连接
-	if client, err = clientv3.New(config); err != nil {
-		return
-	}
-
-	// 得到KV和Lease的API子集
-	kv = clientv3.NewKV(client)
-	lease = clientv3.NewLease(client)
 
 	// 获取到主机名
 	if hostName, err = os.Hostname(); err != nil {
@@ -146,8 +149,8 @@ func newRegister() (register *Register, err error) {
 		Host: hostName,
 		User: userName,
 		Ip:   ipAddress,
-		Port: webMonitorPort, // web监听的端口号
-		Pid:  os.Getppid(),   // 进程号
+		Port: common.Config.Worker.Http.Port, // web监听的端口号
+		Pid:  os.Getppid(),                   // 进程号
 	}
 
 	register = &Register{

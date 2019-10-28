@@ -126,7 +126,7 @@ func (etcdManager *EtcdManager) ListJobs() (jobList []*Job, err error) {
 	//jobsDirKey = endKey
 
 	// clientv3.WithFromKey() 会从传入的key开始获取，不可与WithPrefix同时使用
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Millisecond)
 	if getResponse, err = etcdManager.kv.Get(
 		ctx,
 		jobsDirKey,
@@ -178,7 +178,7 @@ func (etcdManager *EtcdManager) GetJob(jobKey string) (job *Job, err error) {
 
 	// 2. 从etcd中获取对象
 	jobKey = strings.Replace(jobKey, "//", "/", -1)
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Millisecond)
 	if getResponse, err = etcdManager.kv.Get(ctx, jobKey); err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (etcdManager *EtcdManager) DeleteJob(jobKey string) (success bool, err erro
 
 	// 2. 操作删除
 	jobKey = strings.Replace(jobKey, "//", "/", -1)
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Millisecond)
 	if deleteResponse, err = etcdManager.kv.Delete(
 		ctx,
 		jobKey,
@@ -285,7 +285,7 @@ func (etcdManager *EtcdManager) KillJob(category, name string) (err error) {
 	}
 	// 2. 通知worker杀死对应的任务
 	// 2-1: 创建个租约
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Millisecond)
 	if leaseGrantResponse, err = etcdManager.lease.Grant(ctx, 5); err != nil {
 		// 创建租约失败
 		return
@@ -331,12 +331,12 @@ func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler WatchHandl
 
 	// 2. get：/crontab/jobs/目录下的所有任务，并且获知当前集群的revision
 	//keyDir = "/crontab/jobs/"
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Millisecond)
 	if getResponse, err = etcdManager.kv.Get(
 		ctx, keyDir,
 		clientv3.WithPrefix(),
 	); err != nil {
-		log.Println(err)
+		log.Println("执行watchKeys出错：", err)
 		return
 	}
 

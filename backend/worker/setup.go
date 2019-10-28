@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -33,8 +32,9 @@ func (w *Worker) setupExecuteEnvrionment() {
 
 	for categoryName = range w.Categories {
 		if success, err = w.checkOrSetUpJobExecuteEnvironment(categoryName); err != nil {
-			log.Println(err)
-			os.Exit(1)
+			log.Printf("检查分类%s执行环境出错：%s", categoryName, err.Error())
+			// 不退出，让程序继续执行
+			//os.Exit(1)
 		} else {
 			if success {
 				log.Printf("已经准备好执行%s类型的任务", categoryName)

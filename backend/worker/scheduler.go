@@ -121,8 +121,20 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
 		if jobSchedulePlan, err = common.BuildJobSchedulePlan(jobEvent.Job); err != nil {
 			return
 		} else {
+			// 先生成key：根据：分类-名字
 			jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
-			scheduler.jobPlanTable[jobExecutingKey] = jobSchedulePlan
+
+			// 判断job是否是激活状态的
+			if jobSchedulePlan.Job.IsActive {
+				scheduler.jobPlanTable[jobExecutingKey] = jobSchedulePlan
+			} else {
+				// 如果Job存在那么需要删除
+				log.Println("当前Job状态是flase，无需执行：", jobSchedulePlan.Job)
+				if jobSchedulePlan, isExist = scheduler.jobPlanTable[jobExecutingKey]; isExist {
+					// 存在就删除，不存在就无需操作：
+					delete(scheduler.jobPlanTable, jobExecutingKey)
+				}
+			}
 		}
 
 	case common.JOB_EVENT_DELETE: // 删除job事件

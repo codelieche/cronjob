@@ -2,6 +2,7 @@
 package worker
 
 import (
+	"fmt"
 	"log"
 	"os/exec"
 	"time"
@@ -20,15 +21,17 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 	go func() {
 		// 执行shell命令
 		var (
-			cmd       *exec.Cmd                // shell执行命令
-			output    []byte                   // job执行的输出结果
-			result    *common.JobExecuteResult // Job执行的结果
-			timeStart time.Time                // 开始执行时间
-			jobLock   *common.JobLock          // 计划任务的锁
+			jobLockName string                   // job锁的名字
+			cmd         *exec.Cmd                // shell执行命令
+			output      []byte                   // job执行的输出结果
+			result      *common.JobExecuteResult // Job执行的结果
+			timeStart   time.Time                // 开始执行时间
+			jobLock     *common.JobLock          // 计划任务的锁
 		)
 
 		// 初始化分布式锁
-		jobLock = app.EtcdManager.CreateJobLock(info.Job.Name)
+		jobLockName = fmt.Sprintf("jobs/%s/%s", info.Job.Category, info.Job.Name)
+		jobLock = app.EtcdManager.CreateJobLock(jobLockName)
 		// log.Println(info.Job)
 		if !info.Job.IsActive {
 			log.Println("当前Job状态是false，无需执行：", info.Job)
