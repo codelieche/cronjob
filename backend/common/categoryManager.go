@@ -3,7 +3,6 @@ package common
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -113,7 +112,8 @@ func (etcdManager *EtcdManager) GetCategory(name string) (category *Category, er
 	}
 
 NotFound:
-	err = errors.New("category not fount")
+	//err = errors.New("category not fount")
+	err = NOT_FOUND
 	return nil, err
 }
 

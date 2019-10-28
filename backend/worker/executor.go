@@ -2,6 +2,7 @@
 package worker
 
 import (
+	"log"
 	"os/exec"
 	"time"
 
@@ -28,6 +29,11 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 
 		// 初始化分布式锁
 		jobLock = app.EtcdManager.CreateJobLock(info.Job.Name)
+		// log.Println(info.Job)
+		if !info.Job.IsActive {
+			log.Println("当前Job状态是false，无需执行：", info.Job)
+			return
+		}
 
 		// 尝试上锁
 		if err = jobLock.TryLock(); err != nil {
@@ -56,22 +62,31 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 		// 传入执行command的上下文
 		cmd = exec.CommandContext(info.ExecuteCtx, "/bin/bash", "-c", info.Job.Command)
 
-		// 执行并捕获输出
-		output, err = cmd.CombinedOutput()
+		// 如果需要日志就绑定output
+		if info.Job.SaveOutput {
+			// 执行并捕获输出
+			output, err = cmd.CombinedOutput()
 
-		// 任务执行完成后，把执行的结果返回给Scheduler
-		// Scheduler会从executingTable中删除执行记录
-		result = &common.JobExecuteResult{
-			ExecuteInfo: info,
-			IsExecute:   true, // 有执行到
-			Output:      output,
-			Err:         err,
-			StartTime:   timeStart,
-			EndTime:     time.Now(),
+			// 任务执行完成后，把执行的结果返回给Scheduler
+			// Scheduler会从executingTable中删除执行记录
+			result = &common.JobExecuteResult{
+				ExecuteInfo: info,
+				IsExecute:   true, // 有执行到
+				Output:      output,
+				Err:         err,
+				StartTime:   timeStart,
+				EndTime:     time.Now(),
+			}
+
+			// 推送结果
+			c <- result
+		} else {
+			//  log.Println("无需捕获输出结果")
+			err = cmd.Run()
+			if err != nil {
+				log.Println(err)
+			}
 		}
-
-		// 推送结果
-		c <- result
 
 	}()
 	return

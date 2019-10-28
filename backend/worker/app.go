@@ -2,6 +2,7 @@ package worker
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/codelieche/cronjob/backend/common"
@@ -75,7 +76,8 @@ func NewWorkerApp() *Worker {
 	// 实例化jobManager
 	if etcdManager, err = common.NewEtcdManager(common.Config.Worker.Etcd); err != nil {
 		log.Println(err.Error())
-		panic(err)
+		//panic(err)
+		os.Exit(1)
 	}
 
 	// 实例化调度器

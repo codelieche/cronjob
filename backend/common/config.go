@@ -17,12 +17,20 @@ var Config *MasterWorkerConfig
 type HttpConfig struct {
 	Host    string `json:"host", yaml:"host"`
 	Port    int    `json:"port", yaml: "port"`
-	Timeout int    `json:"timeout", yaml: "timeout"`
+	Timeout int    `json:"timeout", yaml: "timeout"` // 超时时间 毫秒
+}
+
+type EtcdTLSConfig struct {
+	CertFile string `json:"cert_file",yaml:"certfile"`
+	KeyFile  string `json:"key_file", yaml:"keyfile"`
+	CaFile   string `json:"ca_file", yaml:"cafile"`
 }
 
 // master etcd的相关配置
 type EtcdConfig struct {
-	Endpoints []string `json:"endpoints", yaml:"endpoints"`
+	Endpoints []string       `json:"endpoints", yaml:"endpoints"`
+	Timeout   int            `json:"timeout"` // etcd操作的超时时间 秒
+	TLS       *EtcdTLSConfig `json:"tls", yaml:"tls"`
 }
 
 // master mongodb config
@@ -121,6 +129,7 @@ func ParseConfig() (err error) {
 		},
 		Etcd: &EtcdConfig{
 			Endpoints: []string{"127.0.0.1:2379"},
+			Timeout:   5000,
 		},
 		Mongo: &MongoConfig{
 			Hosts:    []string{"127.0.0.1:27017"},
@@ -137,6 +146,7 @@ func ParseConfig() (err error) {
 		},
 		Etcd: &EtcdConfig{
 			Endpoints: []string{"127.0.0.1:2379"},
+			Timeout:   5000,
 		},
 		Mongo: &MongoConfig{
 			Hosts:    []string{"127.0.0.1:27017"},
@@ -160,6 +170,13 @@ func ParseConfig() (err error) {
 		//} else {
 		//	log.Println(string(data))
 		//}
+		//log.Println(Config.Worker.Etcd)
+		if Config.Master.Etcd.Timeout < 1000 {
+			Config.Master.Etcd.Timeout = 1000
+		}
+		if Config.Worker.Etcd.Timeout < 1000 {
+			Config.Worker.Etcd.Timeout = 1000
+		}
 	}
 
 	return

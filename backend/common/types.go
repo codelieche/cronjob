@@ -18,6 +18,8 @@ type Job struct {
 	Time        string `json:"time"`                  // 计划任务的时间
 	Command     string `json:"command"`               // 任务的命令
 	Description string `json:"description,omitempty"` // Job描述
+	IsActive    bool   `json:"is_active"`             // 是否激活，激活才执行
+	SaveOutput  bool   `json:"save_output"`           // 是否记录输出
 }
 
 // Job Manager

@@ -2,12 +2,15 @@ package common
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
+
+	"go.etcd.io/etcd/pkg/transport"
 
 	"go.etcd.io/etcd/mvcc/mvccpb"
 
@@ -35,6 +38,33 @@ func (etcdManager *EtcdManager) SaveJob(job *Job) (prevJob *Job, err error) {
 	// 如果job的分类为空，就设置其为default
 	if job.Category == "" {
 		job.Category = "default"
+	}
+
+	// 检查category是否存在
+	if category, err := etcdManager.GetCategory(job.Category); err != nil {
+		//log.Println(err)
+		if err == NOT_FOUND && job.Category == "default" {
+			// 创建默认：
+			c := Category{
+				Name:        "default",
+				IsActive:    true,
+				CheckCmd:    "which bash",
+				SetupCmd:    "echo `date`",
+				TearDownCmd: "echo `date`",
+			}
+
+			if category, err = etcdManager.SaveCategory(&c); err != nil {
+				return nil, err
+			} else {
+				log.Println("创建默认分类：", category)
+			}
+		} else {
+			msg := fmt.Sprintf("分类%s不存在，请先创建相关分类", job.Category)
+			err = errors.New(msg)
+			return nil, err
+		}
+	} else {
+		//log.Println(category)
 	}
 
 	// jobKey = ETCD_JOBS_DIR + job.Name
@@ -87,6 +117,7 @@ func (etcdManager *EtcdManager) ListJobs() (jobList []*Job, err error) {
 		getResponse *clientv3.GetResponse
 		kvPair      *mvccpb.KeyValue
 		job         *Job
+		ctx         context.Context
 	)
 	jobsDirKey = ETCD_JOBS_DIR
 
@@ -95,8 +126,9 @@ func (etcdManager *EtcdManager) ListJobs() (jobList []*Job, err error) {
 	//jobsDirKey = endKey
 
 	// clientv3.WithFromKey() 会从传入的key开始获取，不可与WithPrefix同时使用
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
 	if getResponse, err = etcdManager.kv.Get(
-		context.TODO(),
+		ctx,
 		jobsDirKey,
 		clientv3.WithPrefix(),
 		//clientv3.WithFromKey(),
@@ -131,6 +163,7 @@ func (etcdManager *EtcdManager) GetJob(jobKey string) (job *Job, err error) {
 		getResponse *clientv3.GetResponse
 		keyValue    *mvccpb.KeyValue
 		i           int
+		ctx         context.Context
 	)
 	// 1. 对jobKey做校验
 	jobKey = strings.TrimSpace(jobKey)
@@ -145,7 +178,8 @@ func (etcdManager *EtcdManager) GetJob(jobKey string) (job *Job, err error) {
 
 	// 2. 从etcd中获取对象
 	jobKey = strings.Replace(jobKey, "//", "/", -1)
-	if getResponse, err = etcdManager.kv.Get(context.TODO(), jobKey); err != nil {
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
+	if getResponse, err = etcdManager.kv.Get(ctx, jobKey); err != nil {
 		return nil, err
 	}
 
@@ -179,6 +213,7 @@ func (etcdManager *EtcdManager) DeleteJob(jobKey string) (success bool, err erro
 	// 定义变量
 	var (
 		deleteResponse *clientv3.DeleteResponse
+		ctx            context.Context
 	)
 	// 1. 对key做判断
 	jobKey = strings.TrimSpace(jobKey)
@@ -194,8 +229,9 @@ func (etcdManager *EtcdManager) DeleteJob(jobKey string) (success bool, err erro
 
 	// 2. 操作删除
 	jobKey = strings.Replace(jobKey, "//", "/", -1)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
 	if deleteResponse, err = etcdManager.kv.Delete(
-		context.TODO(),
+		ctx,
 		jobKey,
 		clientv3.WithPrevKV(),
 	); err != nil {
@@ -227,6 +263,7 @@ func (etcdManager *EtcdManager) KillJob(category, name string) (err error) {
 		leaseGrantResponse *clientv3.LeaseGrantResponse
 		leaseID            clientv3.LeaseID
 		putResponse        *clientv3.PutResponse
+		ctx                context.Context
 	)
 
 	// 校验key
@@ -248,7 +285,8 @@ func (etcdManager *EtcdManager) KillJob(category, name string) (err error) {
 	}
 	// 2. 通知worker杀死对应的任务
 	// 2-1: 创建个租约
-	if leaseGrantResponse, err = etcdManager.lease.Grant(context.TODO(), 5); err != nil {
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
+	if leaseGrantResponse, err = etcdManager.lease.Grant(ctx, 5); err != nil {
 		// 创建租约失败
 		return
 	}
@@ -288,14 +326,17 @@ func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler WatchHandl
 		watchChan          clientv3.WatchChan
 		//watchResponse      clientv3.WatchResponse
 		//watchEvent         *clientv3.Event
+		ctx context.Context
 	)
 
 	// 2. get：/crontab/jobs/目录下的所有任务，并且获知当前集群的revision
 	//keyDir = "/crontab/jobs/"
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Microsecond)
 	if getResponse, err = etcdManager.kv.Get(
-		context.TODO(), keyDir,
+		ctx, keyDir,
 		clientv3.WithPrefix(),
 	); err != nil {
+		log.Println(err)
 		return
 	}
 
@@ -341,14 +382,36 @@ func NewEtcdManager(etcdConfig *EtcdConfig) (*EtcdManager, error) {
 		watcher     clientv3.Watcher
 		err         error
 		etcdManager *EtcdManager
+		tlsInfo     transport.TLSInfo
+		tlsConfig   *tls.Config
 	)
+
+	// log.Println(etcdConfig.TLS)
+
+	if etcdConfig.TLS != nil {
+		// 检查其三个字段是否为空
+		if etcdConfig.TLS.CertFile == "" || etcdConfig.TLS.KeyFile == "" || etcdConfig.TLS.CaFile == "" {
+			log.Println(etcdConfig.TLS)
+			err = errors.New("传入的TLS配置不可为空")
+			return nil, err
+		} else {
+			tlsInfo = transport.TLSInfo{
+				CertFile:      etcdConfig.TLS.CertFile,
+				KeyFile:       etcdConfig.TLS.KeyFile,
+				TrustedCAFile: etcdConfig.TLS.CaFile,
+			}
+			if tlsConfig, err = tlsInfo.ClientConfig(); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	//	初始化etcd配置
 	config = clientv3.Config{
 		//Endpoints:   []string{"127.0.0.1:2379"}, // 集群地址
 		Endpoints:   etcdConfig.Endpoints,    // 集群地址
 		DialTimeout: 5000 * time.Microsecond, // 连接超时
-
+		TLS:         tlsConfig,
 	}
 
 	// 建立连接

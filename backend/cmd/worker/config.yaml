@@ -10,6 +10,11 @@ master:
   etcd:
     endpoints:
       - "127.0.0.1:2379"
+    timeout: 5000
+#    tls:
+#      certfile: "./etcd.pem"
+#      keyfile: "./etcd-key.pem"
+#      cafile: "./ca.pem"
 
   # mongodb相关配置
   mongo:
@@ -29,6 +34,11 @@ worker:
   etcd:
     endpoints:
       - "127.0.0.1:2379"
+    timeout: 5000
+#    tls:
+#      certfile: "./etcd.pem"
+#      keyfile: "./etcd-key.pem"
+#      cafile: "./ca.pem"
 
   # mongodb相关配置
   mongo:

@@ -26,6 +26,8 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		needParseForm bool
 
 		category, name, time, command, description string
+		isActive                                   string // 是否激活:true 或者 1
+		saveOutput                                 string // 是否保存输出：true 或者 1
 	)
 
 	// 1. 解析POST表单
@@ -80,6 +82,18 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		time = r.PostForm.Get("time")
 		command = r.PostForm.Get("command")
 		description = r.PostForm.Get("description")
+		isActive = r.PostForm.Get("is_active")
+		saveOutput = r.PostForm.Get("save_output")
+
+		isActiveValue := false
+		if isActive == "true" || isActive == "1" {
+			isActiveValue = true
+		}
+
+		saveOutputValue := false
+		if saveOutput == "true" || saveOutput == "1" {
+			saveOutputValue = true
+		}
 
 		job = &common.Job{
 			Category:    category,
@@ -87,17 +101,21 @@ func JobCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 			Time:        time,
 			Command:     command,
 			Description: description,
+			IsActive:    isActiveValue,
+			SaveOutput:  saveOutputValue,
 		}
 	}
 
-	//log.Println(job)
+	log.Println(job)
 
 	// 4. 保存Job到etcd中
 	if _, err = etcdManager.SaveJob(job); err != nil {
 		goto ERR
 	} else {
 		// 保存成功
-		job.Key = fmt.Sprintf("%s%s/%s", common.ETCD_JOBS_DIR, category, name)
+		jobKey := fmt.Sprintf("%s%s/%s", common.ETCD_JOBS_DIR, category, name)
+		jobKey = strings.ReplaceAll(jobKey, "//", "/")
+		job.Key = jobKey
 		//log.Println(prevJob)
 	}
 
