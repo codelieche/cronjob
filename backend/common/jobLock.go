@@ -8,20 +8,23 @@ import (
 
 // 分布式锁
 type JobLock struct {
-	name       string             // 任务名称
-	kv         clientv3.KV        // KV
-	lease      clientv3.Lease     // 租约
-	cancelFunc context.CancelFunc // 取消函数：用于取消自动续租
-	leaseId    clientv3.LeaseID   // 租约ID
-	isLocked   bool               // 释放上锁成功，也可根据leaseId是否不为0判断
+	name         string             // 任务名称
+	kv           clientv3.KV        // KV
+	lease        clientv3.Lease     // 租约
+	cancelFunc   context.CancelFunc // 取消函数：用于取消自动续租
+	leaseId      clientv3.LeaseID   // 租约ID
+	IsLocked     bool               // 释放上锁成功，也可根据leaseId是否不为0判断
+	NeedKillChan chan bool          // 是否需要杀掉jobLock对应的job程序: 正常退出的请传递个false
+
 }
 
 // 初始化一把锁
 func NewJobLock(name string, kv clientv3.KV, lease clientv3.Lease) (jobLock *JobLock) {
 	jobLock = &JobLock{
-		name:  name,
-		kv:    kv,
-		lease: lease,
+		name:         name,
+		kv:           kv,
+		lease:        lease,
+		NeedKillChan: make(chan bool),
 	}
 	return
 }
@@ -72,6 +75,14 @@ func (jobLock *JobLock) TryLock() (err error) {
 		}
 	END:
 		// 自动续租完毕
+		if jobLock.IsLocked {
+			// 这种情况当：worker在执行任务，然后etcd挂掉了，或者worker与etcd集群网络不通了
+			// 这个时候本程序不应该继续执行了，需要杀掉当前jobLock对应的程序
+			// log.Println("我开始是loceked的，现在执行到end了，应该是有问题的")
+			// jobLock.IsLocked = false
+			// TODO：这里有可能还需要优化：是否添加个重新续租？抢到就不kill，没抢到再kill
+			jobLock.NeedKillChan <- true
+		}
 	}()
 
 	// 4. 创建事务txn
@@ -104,7 +115,7 @@ func (jobLock *JobLock) TryLock() (err error) {
 	// 抢锁成功
 	jobLock.leaseId = leaseId
 	jobLock.cancelFunc = cancelFunc
-	jobLock.isLocked = true
+	jobLock.IsLocked = true
 	return
 FAIL:
 	// 取消自动续租
@@ -117,9 +128,14 @@ FAIL:
 
 func (jobLock *JobLock) Unlock() {
 
-	if jobLock.isLocked {
+	if jobLock.IsLocked {
+		// 设置jobLock.IsLocked为False
+		jobLock.IsLocked = false
 		// 取消我们续租的协程
 		jobLock.cancelFunc()
+
+		// 正常退出的程序也需要给它发送一条信息
+		jobLock.NeedKillChan <- false
 
 		// 释放租约：关联的key会自动删除
 		jobLock.lease.Revoke(context.TODO(), jobLock.leaseId)

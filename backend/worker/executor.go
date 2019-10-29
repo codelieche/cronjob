@@ -55,10 +55,23 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 			c <- result
 			return
 		} else {
-			// 上锁成功才执行shell命令
+			// 上锁成功才执行shell命令: 进入后续的命令
 			defer jobLock.Unlock()
 			// log.Println("获取到锁：", jobLock)
 		}
+		// log.Println("我是否上锁成功：", jobLock.IsLocked)
+		// 判断是否要执行取消函数
+		go func() {
+			// 检查执行程序
+			needKillJob := <-jobLock.NeedKillChan
+			if needKillJob {
+				//log.Println("需要执行取消函数")
+				info.ExceteCancelFun()
+			} else {
+				// 正常退出的程序无需执行
+				// log.Println("正常退出的程序，无需执行啥")
+			}
+		}()
 
 		// 开始执行时间: 得到锁才会去执行的
 		timeStart = time.Now()
@@ -90,7 +103,6 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 				log.Println(err)
 			}
 		}
-
 	}()
 	return
 }

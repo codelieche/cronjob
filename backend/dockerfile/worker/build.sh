@@ -37,7 +37,7 @@ docker images | grep $NAME
 # docker push "codelieche/$NAME:$TAG"
 
 # 第5步：创建测试容器
-# docker run -itd -v "${PWD}/config.yaml:/app/config.yaml" --name test1234 worker:v1
+# docker run -itd -v "${PWD}/config.yaml:/app/config.yaml" --name worker-t1 worker:v1
 
 # 创建容器,进入容器查看文件:
-# docker run -it --rm -v "${PWD}/config.yaml:/app/config.yaml" --name test1234 worker:v1 /bin/bash
+# docker run -it --rm -v "${PWD}/config.yaml:/app/config.yaml" --name worker-t1 worker:v1 /bin/bash
