@@ -67,7 +67,7 @@ func (etcdManager *EtcdManager) SaveJob(job *Job, isCreate bool) (prevJob *Job, 
 				TearDownCmd: "echo `date`",
 			}
 
-			if category, err = etcdManager.SaveCategory(&c); err != nil {
+			if category, err = etcdManager.SaveCategory(&c, true); err != nil {
 				return nil, err
 			} else {
 				log.Println("创建默认分类：", category)

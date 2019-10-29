@@ -24,6 +24,7 @@ func newApiRouter() *httprouter.Router {
 	router.GET("/categories/list", handlers.CategoriesList)
 	router.POST("/category/create", handlers.CategoryCreate)
 	router.GET("/category/:name", handlers.CategoryDetail)
+	router.PUT("/category/:name", handlers.CategoryUpdate)
 
 	// job相关
 	// job create

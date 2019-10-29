@@ -124,7 +124,7 @@ func (w *Worker) checkOrSetUpJobExecuteEnvironment(name string) (success bool, e
 				TearDownCmd: "echo `date`; sleep 1; echo `date`",
 			}
 			// 保存到etcd中
-			if _, err = w.EtcdManager.SaveCategory(category); err != nil {
+			if _, err = w.EtcdManager.SaveCategory(category, true); err != nil {
 				// 插入出错，返回
 				return
 			} else {

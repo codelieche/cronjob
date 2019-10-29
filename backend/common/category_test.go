@@ -25,7 +25,7 @@ func TestInsertCategory(t *testing.T) {
 		t.Error(err)
 		return
 	} else {
-		if prevCategory, err := etcdManager.SaveCategory(&c); err != nil {
+		if prevCategory, err := etcdManager.SaveCategory(&c, true); err != nil {
 			t.Error(err)
 		} else {
 			log.Println(prevCategory)

@@ -13,13 +13,13 @@ import (
 
 // 保存Category到etcd中
 // 返回上一次的Job和错误信息
-func (etcdManager *EtcdManager) SaveCategory(category *Category) (prevCategory *Category, err error) {
+// 如果isCreate为true就表示添加新的，false就表示更新
+func (etcdManager *EtcdManager) SaveCategory(category *Category, isCreate bool) (prevCategory *Category, err error) {
 	// 把任务保存到/crontab/jobs/:name中
 	var (
 		categoryKey   string
 		categoryValue []byte
-
-		putResponse *clientv3.PutResponse
+		putResponse   *clientv3.PutResponse
 	)
 
 	// 先处理下Job在etcd中的key
@@ -34,6 +34,26 @@ func (etcdManager *EtcdManager) SaveCategory(category *Category) (prevCategory *
 	categoryKey = ETCD_JOBS_CATEGORY_DIR + category.Name
 	// 设置key
 	category.Key = categoryKey
+	// 判断category是否存在
+	if prevCategory, err = etcdManager.GetCategory(category.Name); err != nil {
+		if err == NOT_FOUND {
+			// 未找到
+			if !isCreate {
+				// 是更新操作，必须存在
+				// err = fmt.Errorf("分类%s不存在，不可更新", category.Name)
+				return nil, err
+			}
+		}
+	} else {
+		// 找到了
+		if isCreate {
+			// 由于是创建：存在的话，报错
+			err = fmt.Errorf("分类%s已经存在，不可创建", category.Name)
+			return prevCategory, err
+		} else {
+			// 更新操作：在调用的地方记得校验name
+		}
+	}
 
 	// 任务信息json：对category序列化一下
 	if categoryValue, err = json.Marshal(category); err != nil {
