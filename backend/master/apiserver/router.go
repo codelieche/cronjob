@@ -32,6 +32,8 @@ func newApiRouter() *httprouter.Router {
 	router.GET("/job/list", handlers.JobList)
 	// job Detail
 	router.GET("/job/detail/:category/:name", handlers.JobDetail)
+	// job Update
+	router.PUT("/job/:category/:name", handlers.JobUpdate)
 	// job Delete
 	router.DELETE("/job/:category/:name", handlers.JobDelete)
 
@@ -45,5 +47,6 @@ func newApiRouter() *httprouter.Router {
 	// 静态文件相关： 需要以相对路径
 	//router.ServeFiles("/*filepath", http.Dir("./static"))
 	router.ServeFiles("/static/*filepath", http.Dir("./static"))
+
 	return router
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,8 +20,11 @@ import (
 
 // 保存Job到etcd中
 // 返回上一次的Job和错误信息
-func (etcdManager *EtcdManager) SaveJob(job *Job) (prevJob *Job, err error) {
+func (etcdManager *EtcdManager) SaveJob(job *Job, isCreate bool) (prevJob *Job, err error) {
 	// 把任务保存到/crontab/jobs/:name中
+	// isCreate是否是创建：
+	// 创建的时候：需要判断job是否存在，存在就报错
+	// 不是创建，那么就是更新，需要判断是否存在，不存在就报错
 	var (
 		jobsDir  string
 		jobKey   string
@@ -31,8 +35,18 @@ func (etcdManager *EtcdManager) SaveJob(job *Job) (prevJob *Job, err error) {
 
 	// 先处理下Job在etcd中的key
 	if job.Name == "" {
-		err = fmt.Errorf("Job的Name不能为空")
-		return nil, err
+		if isCreate {
+			// name为空就自动生成一个
+			timeNowUnix := time.Now().UnixNano()
+			job.Name = strconv.Itoa(int(timeNowUnix))
+		} else {
+			// 更新操作也是需要判断名称的
+			err = fmt.Errorf("Job的Name不能为空")
+			return nil, err
+		}
+	} else {
+		// 如果是更新需要判断name是否可key匹配：
+		// 这里交给http接口来处理
 	}
 
 	// 如果job的分类为空，就设置其为default
@@ -76,7 +90,34 @@ func (etcdManager *EtcdManager) SaveJob(job *Job) (prevJob *Job, err error) {
 	// 组合jobKey
 	jobKey = fmt.Sprintf("%s/%s/%s", jobsDir, job.Category, job.Name)
 
+	// 判断Job是否已经存在了
+	// TODO：这里应该加个锁，抢到锁才创建，要不大量频繁创建，可能会造成name重复：
+	if prevJob, err = etcdManager.GetJob(jobKey); err != nil {
+		if isCreate {
+			if err != NOT_FOUND {
+				return nil, err
+			} else {
+				// 返回的是说不存在，那么可以创建
+			}
+		} else {
+			// 更新操作：只要报错就返回
+			return nil, err
+		}
+
+	} else {
+		if isCreate {
+			// 是创建：如果存在就返回
+			err = fmt.Errorf("%s已经存在，不可创建", jobKey)
+			return nil, err
+		} else {
+			// 更新操作：获取到，可以执行后续的更新操作
+		}
+
+	}
+
 	// 任务信息json：对job序列化一下
+	// 把自身的key也加入到job中
+	job.Key = jobKey
 	if jobValue, err = json.Marshal(job); err != nil {
 		return nil, err
 	}
@@ -146,7 +187,10 @@ func (etcdManager *EtcdManager) ListJobs() (jobList []*Job, err error) {
 		if err = json.Unmarshal(kvPair.Value, job); err != nil {
 			continue
 		} else {
-			job.Key = string(kvPair.Key)
+			// 如果job未保存key，那么就添加一下
+			if job.Key == "" {
+				job.Key = string(kvPair.Key)
+			}
 			jobList = append(jobList, job)
 		}
 	}
@@ -204,7 +248,7 @@ func (etcdManager *EtcdManager) GetJob(jobKey string) (job *Job, err error) {
 	}
 
 NotFound:
-	err = fmt.Errorf("job not fount!")
+	err = NOT_FOUND
 	return nil, err
 }
 
