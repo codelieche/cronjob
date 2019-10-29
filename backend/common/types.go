@@ -65,6 +65,7 @@ type JobExecuteResult struct {
 
 // 任务执行日志
 type JobExecuteLog struct {
+	Worker       string    `json:"worker", bson:"worker"`              // 执行者
 	Category     string    `json:"category", bson:"category"`          // 任务类型
 	Name         string    `json:"name", bson:"name"`                  // 任务名字
 	Command      string    `json:"command", bson: "command"`           // 任务命令

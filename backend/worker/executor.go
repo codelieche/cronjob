@@ -82,27 +82,34 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 		if info.Job.SaveOutput {
 			// 执行并捕获输出
 			output, err = cmd.CombinedOutput()
+			//	如果想不保存执行信息，可把推送结果的放到这里来处理：c <- result
 
-			// 任务执行完成后，把执行的结果返回给Scheduler
-			// Scheduler会从executingTable中删除执行记录
-			result = &common.JobExecuteResult{
-				ExecuteInfo: info,
-				IsExecute:   true, // 有执行到
-				Output:      output,
-				Err:         err,
-				StartTime:   timeStart,
-				EndTime:     time.Now(),
-			}
-
-			// 推送结果
-			c <- result
 		} else {
-			//  log.Println("无需捕获输出结果")
+			//  log.Println("无需捕获输出结果：依然也需要执行")
+
 			err = cmd.Run()
 			if err != nil {
-				log.Println(err)
+				log.Println(info.Job.Key, "执行出错：", err)
 			}
+			output = []byte("Don't save output")
 		}
+
+		// 无论是否需要saveOutput，都记录执行信息
+		// 任务执行完成后，把执行的结果返回给Scheduler
+		// Scheduler会从executingTable中删除执行记录
+		result = &common.JobExecuteResult{
+
+			ExecuteInfo: info,
+			IsExecute:   true, // 有执行到
+			Output:      output,
+			Err:         err,
+			StartTime:   timeStart,
+			EndTime:     time.Now(),
+		}
+
+		// 推送结果
+		c <- result
+
 	}()
 	return
 }

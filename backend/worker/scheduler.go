@@ -218,6 +218,7 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 	if result.IsExecute {
 		// 记录日志
 		jobExecuteLog = &common.JobExecuteLog{
+			Worker:       register.Info.Name, // 填入woker的Name：ip地址:port
 			Category:     result.ExecuteInfo.Job.Category,
 			Name:         result.ExecuteInfo.Job.Name,
 			Command:      result.ExecuteInfo.Job.Command,
