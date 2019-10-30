@@ -37,8 +37,13 @@ func (etcdManager *EtcdManager) SaveJob(job *Job, isCreate bool) (prevJob *Job, 
 	if job.Name == "" {
 		if isCreate {
 			// name为空就自动生成一个
-			timeNowUnix := time.Now().UnixNano()
-			job.Name = strconv.Itoa(int(timeNowUnix))
+			if name, err := generateName(); err != nil {
+				timeNowUnix := time.Now().UnixNano()
+				job.Name = strconv.Itoa(int(timeNowUnix))
+			} else {
+				job.Name = name
+			}
+
 		} else {
 			// 更新操作也是需要判断名称的
 			err = fmt.Errorf("Job的Name不能为空")
@@ -151,37 +156,110 @@ func (etcdManager *EtcdManager) SaveJob(job *Job, isCreate bool) (prevJob *Job, 
 }
 
 // List Jobs
-func (etcdManager *EtcdManager) ListJobs() (jobList []*Job, err error) {
+// prevLastKey是上次查询的最后一条key
+// limit是想查询的数量
+func (etcdManager *EtcdManager) ListJobs(page int, pageSize int) (jobList []*Job, err error) {
 	// 定义变量
 	var (
-		jobsDirKey  string
-		getResponse *clientv3.GetResponse
-		kvPair      *mvccpb.KeyValue
-		job         *Job
-		ctx         context.Context
+		prevLastKeyCreateRevision int64 // 分页的时候上一页的：kvParir.CreateRevision
+		jobsDirKey                string
+		getResponse               *clientv3.GetResponse
+		kvPair                    *mvccpb.KeyValue
+		job                       *Job
+		ctx                       context.Context
+		needDropPrevLastKey       bool
+		count                     int
+		limit                     int
 	)
+	// 想通过page + pageSize 计算prevLastKey的值
+	// 这样的话用户只需要访问：jobs/list?page=5&pageSize=10 这种方式获取了
 	jobsDirKey = ETCD_JOBS_DIR
+
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	if pageSize < 0 {
+		pageSize = 10
+	}
 
 	// 获取job对象
 	//endKey := "/crontab/jobs/test2"
 	//jobsDirKey = endKey
 
-	// clientv3.WithFromKey() 会从传入的key开始获取，不可与WithPrefix同时使用
 	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Millisecond)
+
+	if page > 1 {
+		// 这种传page的方式也许不优，比如当数据量大了之后，查询prevLastKeyCreateRevision要点时间
+		// 推荐继续兼容：传递prevLastKey的方式
+		// 计算：prevLastKey，这样可快速的得到prevLastKeyCreateRevision
+		limit = (page - 1) * pageSize
+		if getResponse, err = etcdManager.kv.Get(
+			ctx, jobsDirKey,
+			clientv3.WithFromKey(),
+			clientv3.WithKeysOnly(),
+			clientv3.WithLimit(int64(limit)),
+			clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend),
+		); err != nil {
+			return nil, err
+		} else {
+			if len(getResponse.Kvs) != limit {
+				// 超过了范围了
+				return nil, nil
+			} else {
+				kvP := getResponse.Kvs[len(getResponse.Kvs)-1]
+				// 后面会根据这个来做分页
+				prevLastKeyCreateRevision = kvP.CreateRevision
+			}
+		}
+	}
+
+	// jobsDirKey = "/crontab/jobs/default/test5"
+	if prevLastKeyCreateRevision == 0 {
+		//prevLastKey = jobsDirKey
+		limit = pageSize
+	} else {
+		// 需要去除prevLastKey
+		needDropPrevLastKey = true
+		limit = pageSize + 1
+	}
+
+	// clientv3.WithFromKey() 会从传入的key开始获取，不可与WithPrefix同时使用
 	if getResponse, err = etcdManager.kv.Get(
 		ctx,
 		jobsDirKey,
 		clientv3.WithPrefix(),
 		//clientv3.WithFromKey(),
-		//clientv3.WithLimit(10),
-		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithMinCreateRev(prevLastKeyCreateRevision),
+		clientv3.WithLimit(int64(limit)),
+		clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend),
+		//clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend),
 	); err != nil {
-		// 出错
+		// 获取列表出错，直接返回
 		return
 	}
 
 	// 变量kv
 	for _, kvPair = range getResponse.Kvs {
+		// log.Println(string(kvPair.Key), kvPair.ModRevision, kvPair.CreateRevision, kvPair.Version)
+		count += 1
+		if needDropPrevLastKey {
+			if count > pageSize {
+				// 不可大于pageSize条数据
+				break
+			}
+			if kvPair.CreateRevision == prevLastKeyCreateRevision {
+				// 需要过滤这条
+				needDropPrevLastKey = false
+				continue
+			} else {
+				// 不相等
+				// 如果count=1 直接返回
+				if count == 1 {
+					return jobList, nil
+				}
+			}
+		}
+
 		//	对值序列化
 		job = &Job{}
 		if err = json.Unmarshal(kvPair.Value, job); err != nil {

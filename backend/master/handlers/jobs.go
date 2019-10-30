@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/codelieche/cronjob/backend/common"
@@ -358,10 +359,37 @@ func JobList(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		results      []*common.Job
 		err          error
 		data         []byte
+		//prevLastKey  string // 上一页最后一条数据
+		pageStr     string // 页码
+		page        int    // 页码
+		pageSizeStr string // 页面大小
+		pageSize    int
 	)
 
+	r.ParseForm()
+	//prevLastKey = r.FormValue("lastKey")
+	pageStr = r.FormValue("page")
+	pageSizeStr = r.FormValue("pageSize")
+
+	if pageStr == "" {
+		page = 1
+	} else {
+		if page, err = strconv.Atoi(pageStr); err != nil {
+			// 解析页码错误，就设置默认页码为1
+			page = 1
+		}
+	}
+
+	if pageSizeStr == "" {
+		pageSize = 10
+	} else {
+		if pageSize, err = strconv.Atoi(pageSizeStr); err != nil {
+			pageSize = 10
+		}
+	}
+
 	// 获取列表数据
-	if results, err = etcdManager.ListJobs(); err != nil {
+	if results, err = etcdManager.ListJobs(page, pageSize); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
