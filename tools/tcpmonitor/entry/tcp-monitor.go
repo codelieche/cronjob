@@ -21,6 +21,8 @@ func main() {
 		Times:    2,
 		Interval: 30,
 		Timemout: 5,
+		Phones:   []string{},
+		Emails:   []string{},
 		Users:    []string{"admin"},
 		Status:   "Start",
 	}

@@ -27,8 +27,8 @@ type TCPMonitor struct {
 type monitorExecuteInfo struct {
 	address                string // tcp监控的地址
 	count                  int    // 总共执行尝试连接的次数
-	successCount           int    // 执行成功的次数
-	errorCount             int    // 执行错误的次数
+	successTimes           int    // 执行成功的次数
+	errorTimes             int    // 执行错误的次数
 	needSendErrorMessage   bool   // 是否需要发送错误信息
 	errorMessageSended     bool   // 错误消息是否已经发送
 	needSendRecoverMessage bool   // 是否需要发送恢复消息

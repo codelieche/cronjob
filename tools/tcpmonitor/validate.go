@@ -30,7 +30,11 @@ func (tcpMonitor *TCPMonitor) validate() (err error) {
 		tcpMonitor.Times = 2
 	}
 
-	// 对users做校验
+	// 对users/phones/emails做校验
+	if len(tcpMonitor.Users) == 0 && len(tcpMonitor.Emails) == 0 && len(tcpMonitor.Phones) == 0 {
+		err = errors.New("请传入接收告警信息的：users/photos/emails")
+		return
+	}
 
 	return nil
 }

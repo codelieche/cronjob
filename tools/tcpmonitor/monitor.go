@@ -43,8 +43,8 @@ func (tcpMonitor *TCPMonitor) ExecuteMonitorLoop() {
 				executeInfo = &monitorExecuteInfo{
 					address:                address,
 					count:                  0, // 这个以及后面的值其实都用默认值即可
-					successCount:           0,
-					errorCount:             0,
+					successTimes:           0,
+					errorTimes:             0,
 					needSendErrorMessage:   false,
 					errorMessageSended:     false,
 					needSendRecoverMessage: false,
@@ -94,8 +94,8 @@ func (tcpMonitor *TCPMonitor) executeMonitor(address string, info *monitorExecut
 		// 情况1： 执行监控就报错了
 		log.Printf("%s: 连接出现了错误: %s\n", address, err)
 		// 对错误数赋值，且重置当前执行的成功数
-		info.errorCount++
-		info.successCount = 0
+		info.errorTimes++
+		info.successTimes = 0
 
 		// 只要出错：就重新统计监控成功数
 		tcpMonitor.lock.Lock()
@@ -105,8 +105,8 @@ func (tcpMonitor *TCPMonitor) executeMonitor(address string, info *monitorExecut
 		// 判断是否需要重置times
 		if info.needSendRecoverMessage && info.recoverMessageSended {
 			// 这种情况是：曾经出过错误，但是恢复了；然后又出错了。需要重置相关信息
-			info.errorCount = 1
-			info.successCount = 0
+			info.errorTimes = 1
+			info.successTimes = 0
 			info.needSendErrorMessage = false
 			info.errorMessageSended = false
 			info.needSendRecoverMessage = false
@@ -114,7 +114,7 @@ func (tcpMonitor *TCPMonitor) executeMonitor(address string, info *monitorExecut
 		}
 
 		// 判断是否需要【设置】发送错误信息
-		if info.errorCount >= tcpMonitor.Times {
+		if info.errorTimes >= tcpMonitor.Times {
 			info.needSendErrorMessage = true
 		} else {
 			info.needSendErrorMessage = false
@@ -140,11 +140,11 @@ func (tcpMonitor *TCPMonitor) executeMonitor(address string, info *monitorExecut
 		// 情况2：连接执行成功
 		log.Printf("%s -> %s: 连接成功\n", conn.LocalAddr(), conn.RemoteAddr())
 		// 判断是否以前出过错
-		if info.errorCount > 0 {
+		if info.errorTimes > 0 {
 			// 曾经出过错
-			info.successCount++
+			info.successTimes++
 			// 如果发送过错误消息了，判断是否需要发送恢复消息
-			if info.successCount >= tcpMonitor.Times {
+			if info.successTimes >= tcpMonitor.Times {
 				if info.needSendErrorMessage && info.errorMessageSended {
 					// 需要发送出错恢复消息
 					info.needSendRecoverMessage = true
@@ -198,9 +198,9 @@ func (tcpMonitor *TCPMonitor) executeMonitor(address string, info *monitorExecut
 	}
 
 	// 打印出一点信息：
-	if info.errorCount > 0 && info.successCount <= tcpMonitor.Times {
+	if info.errorTimes > 0 && info.successTimes <= tcpMonitor.Times {
 		log.Printf("%s: 检查次数: %d, 出错次数: %d，成功次数: %d\n", info.address,
-			info.count, info.errorCount, info.successCount)
+			info.count, info.errorTimes, info.successTimes)
 	}
 
 }
