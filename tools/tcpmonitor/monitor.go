@@ -70,7 +70,9 @@ func (tcpMonitor *TCPMonitor) ExecuteMonitorLoop() {
 		}
 
 		// 第7步：延时一会后，程序继续执行下一轮检查
-		time.Sleep(time.Duration(tcpMonitor.Interval) * time.Second)
+		//time.Sleep(time.Duration(tcpMonitor.Interval) * time.Second)
+		timer := time.NewTimer(time.Duration(tcpMonitor.Interval) * time.Second)
+		<-timer.C
 	}
 	// log.Println("程序跳出了for循环，执行到这里就表示出问题了！")
 }
