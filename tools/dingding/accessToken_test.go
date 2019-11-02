@@ -1,10 +1,12 @@
 package dingding
 
 import (
+	"log"
 	"os"
 	"testing"
 )
 
+// 测试获取Access Token
 func TestGetAccessToken(t *testing.T) {
 
 	ding := DingDing{
@@ -13,5 +15,10 @@ func TestGetAccessToken(t *testing.T) {
 		AppSecret:   os.Getenv("DINGDING_APP_SECRET"),
 		AccessToken: "",
 	}
-	ding.GetAccessToken()
+
+	if token, err := ding.GetAccessToken(); err != nil {
+		t.Error(err.Error())
+	} else {
+		log.Println("Token:", token)
+	}
 }
