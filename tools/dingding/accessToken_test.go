@@ -10,7 +10,7 @@ import (
 func TestGetAccessToken(t *testing.T) {
 
 	ding := DingDing{
-		AgentId:     "",
+		AgentId:     0,
 		AppKey:      os.Getenv("DINGDING_APP_KEY"),
 		AppSecret:   os.Getenv("DINGDING_APP_SECRET"),
 		AccessToken: "",
