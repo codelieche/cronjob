@@ -52,4 +52,5 @@
 - [示例6：http template(模板) 基本使用](http/template01/main.go)
 - [示例7：httprouter 的基本使用](http/router/main.go)
 
-
+#### GORM示例
+- [示例1：快速入门](gorm/helloworld/main.go)
