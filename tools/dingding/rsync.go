@@ -41,7 +41,7 @@ func RsyncDingDingData() (err error) {
 			// 第3步：同步部门用户
 			msg := fmt.Sprintf("开始同步部门(%s:%d)用户", department.Name, department.DingID)
 			log.Println(msg)
-			if err = rsyncDepartmentUser(department.DingID); err != nil {
+			if err = rsyncDepartmentUser(department); err != nil {
 				log.Printf("同步部门(%s:%d)用户出错：%s\n", department.Name, department.DingID, err.Error())
 			} else {
 				msg := fmt.Sprintf("同步部门用户成功\n")
@@ -53,7 +53,7 @@ func RsyncDingDingData() (err error) {
 }
 
 // 同步部门用户
-func rsyncDepartmentUser(departmentID int) (err error) {
+func rsyncDepartmentUser(department *Department) (err error) {
 	var (
 		offSet   int
 		pageSize int
@@ -64,7 +64,7 @@ func rsyncDepartmentUser(departmentID int) (err error) {
 	haveNext = true
 
 	for haveNext {
-		if dingUsers, err := ding.GetDepartmentUserList(departmentID, offSet, pageSize); err != nil {
+		if dingUsers, err := ding.GetDepartmentUserList(department.DingID, offSet, pageSize); err != nil {
 			log.Println(err.Error())
 			return err
 		} else {
@@ -91,6 +91,9 @@ func rsyncDepartmentUser(departmentID int) (err error) {
 				// 保存到数据库中
 				db.Model(user).Update(user)
 				log.Println(user.Model.ID, user.Username, user.DingID, user.Mobile)
+
+				//	保存关系：M2M
+				db.Model(user).Association("Departments").Append(department)
 			}
 		}
 	}
