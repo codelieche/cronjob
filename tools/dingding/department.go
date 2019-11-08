@@ -12,7 +12,7 @@ import (
 // 部门相关api
 // 请求方式：GET（HTTPS）
 // 请求地址：https://oapi.dingtalk.com/department/list?access_token=ACCESS_TOKEN
-func (ding *DingDing) ListDepartment() (departments []*Department, err error) {
+func (ding *DingDing) ListDepartment() (departments []*DingDepartment, err error) {
 	var (
 		url         string
 		accessToken string
