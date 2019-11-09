@@ -1,7 +1,12 @@
 package main
 
-import "log"
+import (
+	"log"
+
+	"cronjob.codelieche/tools/dingding/app"
+)
 
 func main() {
-	log.Println("good")
+	log.Println("Start App")
+	app.Run()
 }
