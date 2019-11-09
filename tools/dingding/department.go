@@ -1,104 +1,57 @@
 package dingding
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"log"
+	"strings"
 
-	"github.com/levigross/grequests"
+	"github.com/juju/errors"
 )
 
-// 部门相关api
-// 请求方式：GET（HTTPS）
-// 请求地址：https://oapi.dingtalk.com/department/list?access_token=ACCESS_TOKEN
-func (ding *DingDing) ListDepartment() (departments []*DingDepartment, err error) {
-	var (
-		url         string
-		accessToken string
-		ro          *grequests.RequestOptions
-		response    *grequests.Response
-		apiResponse *ApiResponse
-	)
-	if accessToken, err = ding.GetAccessToken(); err != nil {
-		log.Println(err.Error())
+// 根据部门ID或者dingId获取到用户
+func GetDepartmentByid(departmentId string) (department *Department, err error) {
+	departmentId = strings.TrimSpace(departmentId)
+	if departmentId == "" {
+		err = errors.New("传入的ID不可为空")
 		return nil, err
 	}
-	url = fmt.Sprintf("https://oapi.dingtalk.com/department/list?access_token=%s", accessToken)
 
-	ro = &grequests.RequestOptions{
-		Headers: map[string]string{"Content-Type": "application/json"},
-	}
-	if response, err = grequests.Get(url, ro); err != nil {
-		log.Println(err.Error())
-		return nil, err
+	department = &Department{}
+
+	db.First(department, "id=? or ding_id=?", departmentId, departmentId)
+	if department.ID > 0 {
+		// 获取到了用户
+		return department, nil
 	} else {
-		// 对响应的结果进行解析
-		apiResponse = &ApiResponse{}
-		if err = json.Unmarshal(response.Bytes(), apiResponse); err != nil {
-			log.Println(err.Error())
-			return nil, err
-		} else {
-			// 判断是否获取结果成功
-			if apiResponse.Errcode != 0 {
-				msg := fmt.Sprintf("获取数据出错，错误代码:%d(%s)", apiResponse.Errcode, apiResponse.Errmsg)
-				err = errors.New(msg)
-				return nil, err
-			} else {
-				// 到这里获取的结果正确
-				return apiResponse.Department, nil
-			}
-		}
+		// 未获取到
+		return nil, NotFountError
 	}
 }
 
-// 获取部门用户详情列表
-// Method: GET
-// URL: https://oapi.dingtalk.com/user/listbypage?access_token=ACCESS_TOKEN&department_id=1
-func (ding *DingDing) GetDepartmentUserList(departmentID int, offset int, size int) (userList []*DingUser, err error) {
-	var (
-		url         string
-		accessToken string
-		ro          *grequests.RequestOptions
-		response    *grequests.Response
-		apiResponse *ApiResponse
-	)
-	if size <= 0 {
-		size = 10
+// 根据部门名字获取到用户
+func GetDepartmentByName(name string) (department *Department, err error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		err = errors.New("传入的名字不可为空")
+		return nil, err
 	}
+	department = &Department{}
 
-	if accessToken, err = ding.GetAccessToken(); err != nil {
-		log.Println(err.Error())
-		return
-	}
-	// 开始获取用户
-	url = fmt.Sprintf("https://oapi.dingtalk.com/user/listbypage?"+
-		"access_token=%s&department_id=%d&offset=%d&size=%d",
-		accessToken, departmentID, offset, size)
-
-	ro = &grequests.RequestOptions{
-		Headers: map[string]string{"Content-Type": "application/json"},
-	}
-	if response, err = grequests.Get(url, ro); err != nil {
-		log.Println(err.Error())
-		return
-	}
-
-	// 处理响应结果
-	apiResponse = &ApiResponse{}
-	if err = json.Unmarshal(response.Bytes(), apiResponse); err != nil {
-		log.Println(err.Error())
-		return
+	db.First(department, "name=?", name)
+	if department.ID > 0 {
+		// 获取到了用户
+		return department, nil
 	} else {
-		// 判断结果是否成功
-		if apiResponse.Errcode != 0 {
-			msg := fmt.Sprintf("获取数据出错，错误代码:%d(%s)", apiResponse.Errcode, apiResponse.Errmsg)
-			err = errors.New(msg)
-			return nil, err
-		} else {
-			// 到这里处理成功
-			return apiResponse.UserList, nil
-		}
+		// 未获取到
+		return nil, NotFountError
 	}
-	return
+}
+
+// 获取部门的用户
+func GetDepartmentUsers(department *Department) (users []User, err error) {
+	//log.Println("Get Department User")
+	query := db.Model(department).Related(&users, "Users")
+	if query.Error != nil {
+		return nil, query.Error
+	} else {
+		return users, nil
+	}
 }

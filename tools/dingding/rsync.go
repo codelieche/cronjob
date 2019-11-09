@@ -83,6 +83,7 @@ func rsyncDepartmentUser(department *Department) (err error) {
 				user.Username = dingUser.Name
 				user.DingID = dingUser.UserId
 				user.Mobile = dingUser.Mobile
+				user.Position = dingUser.Position
 				if dingData, err := json.Marshal(dingUser); err != nil {
 					dingData = []byte{}
 				} else {

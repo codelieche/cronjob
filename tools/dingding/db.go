@@ -19,7 +19,7 @@ func init() {
 	// 连接数据库
 	log.Println(os.Getenv("PWD"))
 	var err error
-	db, err = gorm.Open("sqlite3", "dingding2.db")
+	db, err = gorm.Open("sqlite3", "dingding.db")
 	if err != nil {
 		panic(err)
 		return
