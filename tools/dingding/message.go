@@ -24,6 +24,9 @@ func (ding *DingDing) SendWorkerMessage(workMessage *WorkerMessage) (success boo
 		//data        []byte
 		apiResponse *ApiResponse
 	)
+	// 设置AgentID
+	workMessage.AgentID = ding.AgentId
+
 	// 对接收的人做校验
 	if workMessage.ToAllUser {
 		// 如果设置了所有人，注意提醒

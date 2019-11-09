@@ -47,6 +47,25 @@ func GetUserByName(name string) (user *User, err error) {
 	}
 }
 
+// 根据手机号获取用户
+func GetUserByMobile(mobile string) (user *User, err error) {
+	mobile = strings.TrimSpace(mobile)
+	if mobile == "" {
+		err = errors.New("传入的手机号不可为空")
+		return nil, err
+	}
+	user = &User{}
+
+	db.First(user, "mobile = ?", mobile)
+	if user.ID > 0 {
+		// 获取到了用户
+		return user, nil
+	} else {
+		// 未获取到
+		return nil, NotFountError
+	}
+}
+
 // 获取用户的部门
 func GetUserDepartments(user *User) (departments []*Department, err error) {
 	//log.Println("Get User Departments")

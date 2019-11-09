@@ -22,4 +22,7 @@ func setAppRouter(app *iris.Application) {
 	// 部门相关api
 	app.Get("/api/v1/department/{name:string}", handlers.GetDepartmentDetail)
 	app.Get("/api/v1/department/list/{page:int min(1)}", handlers.DepartmentListApi)
+
+	//	发送消息
+	app.Post("/api/v1/message/create", handlers.SendWorkerMessageToUser)
 }
