@@ -14,4 +14,8 @@ func setAppRouter(app *iris.Application) {
 	app.Use(middlewares.PrintRequestUrl)
 
 	app.Get("/", handlers.IndexPageWithBasicAuth)
+
+	// 用户相关api
+	app.Get("/api/v1/user/list/{page:int min(1)}", handlers.UserListApi)
+	app.Get("/api/v1/department/list/{page:int min(1)}", handlers.DepartmentListApi)
 }

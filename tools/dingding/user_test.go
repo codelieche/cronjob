@@ -60,3 +60,28 @@ func TestGetUserByName(t *testing.T) {
 		}
 	}
 }
+
+// 获取用户列表
+func TestGetUserList(t *testing.T) {
+	var offset int = 0
+	var limit int = 1
+	var haveNext = true
+
+	for haveNext {
+		if users, err := GetUserList(offset, limit); err != nil {
+			t.Error(err.Error())
+		} else {
+			// 判断是否有下一页
+			if len(users) != limit {
+				haveNext = false
+			} else {
+				offset += limit
+			}
+			// 输出获取到的用户
+			for i, user := range users {
+				log.Println(i, user.ID, user.Username, user.Position, user.Mobile)
+			}
+		}
+	}
+
+}

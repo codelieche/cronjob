@@ -48,13 +48,24 @@ func GetUserByName(name string) (user *User, err error) {
 }
 
 // 获取用户的部门
-func GetUserDepartments(user *User) (departments []Department, err error) {
+func GetUserDepartments(user *User) (departments []*Department, err error) {
 	//log.Println("Get User Departments")
-	departments = []Department{}
+	//departments = []*Department{}
 	query := db.Model(user).Related(&departments, "Departments")
 	if query.Error != nil {
 		return nil, query.Error
 	} else {
 		return departments, nil
+	}
+}
+
+// 获取用户列表
+func GetUserList(offset int, limit int) (users []*User, err error) {
+	//users = []User{}
+	query := db.Model(&User{}).Offset(offset).Limit(limit).Find(&users)
+	if query.Error != nil {
+		return nil, err
+	} else {
+		return users, err
 	}
 }

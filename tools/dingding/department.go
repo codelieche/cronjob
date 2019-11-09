@@ -55,3 +55,14 @@ func GetDepartmentUsers(department *Department) (users []User, err error) {
 		return users, nil
 	}
 }
+
+// 获取部门列表
+func GetDepartmentList(offset int, limit int) (departments []*Department, err error) {
+	//users = []User{}
+	query := db.Model(&Department{}).Offset(offset).Limit(limit).Find(&departments)
+	if query.Error != nil {
+		return nil, err
+	} else {
+		return departments, err
+	}
+}
