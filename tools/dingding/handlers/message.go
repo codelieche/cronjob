@@ -15,6 +15,7 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 		dingApp       *dingding.DingDing
 		workerMessage *dingding.WorkerMessage
 		user          *dingding.User
+		dingMessage   *dingding.Message
 		success       bool
 		err           error
 	)
@@ -24,6 +25,9 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 	// 获取到用户以及获取消息内容
 	userName := ctx.PostValue("user")
 	mobile := ctx.PostValue("mobile")
+	msgType := ctx.PostValueDefault("type", "text")
+	title := ctx.PostValueDefault("title", "通知消息")
+
 	content := ctx.PostValue("content")
 	if userName == "" && mobile == "" {
 		err = errors.New("用户名/手机号不可为空")
@@ -51,15 +55,30 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 		panic(err)
 	}
 
-	msg := &dingding.Message{
-		MsgType: "text",
-		Text:    &dingding.TextMsg{Content: content},
+	if msgType == "text" {
+		dingMessage = &dingding.Message{
+			MsgType: "text",
+			Text:    &dingding.TextMsg{Content: content},
+		}
+	} else {
+		if msgType == "markdown" {
+			dingMessage = &dingding.Message{
+				MsgType: msgType,
+				Markdown: &dingding.MarkdownMsg{
+					Title: title,
+					Text:  content,
+				},
+			}
+		} else {
+			err = errors.New("消息类型错误")
+			ctx.WriteString(err.Error())
+		}
 	}
 
 	workerMessage = &dingding.WorkerMessage{
 		AgentID:    dingApp.AgentId,
 		UseridList: user.DingID,
-		Msg:        msg,
+		Msg:        dingMessage,
 	}
 
 	if success, err = dingApp.SendWorkerMessage(workerMessage); err != nil {
