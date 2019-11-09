@@ -7,8 +7,8 @@ import (
 
 // 测试根据部门ID获取部门相关信息
 func TestGetDepartmentByid(t *testing.T) {
-	departmentId := "2"
-	// departmentId := "118434421"
+	departmentId := 2
+	// departmentId := 118434421
 	var (
 		department *Department
 		err        error

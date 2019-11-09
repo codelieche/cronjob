@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log"
+	"strconv"
 
 	"cronjob.codelieche/tools/dingding"
 	"github.com/kataras/iris"
@@ -35,4 +36,30 @@ func DepartmentListApi(ctx iris.Context) {
 	} else {
 		ctx.JSON(departments)
 	}
+}
+
+// 获取部门详情By Name OR ID
+func GetDepartmentDetail(ctx iris.Context) {
+	var (
+		nameOrId     string
+		departmentId int
+		department   *dingding.Department
+		err          error
+	)
+
+	// 获取传递过来的值
+	nameOrId = ctx.Params().Get("name")
+	if departmentId, err = strconv.Atoi(nameOrId); err != nil {
+		department, err = dingding.GetDepartmentByName(nameOrId)
+	} else {
+		department, err = dingding.GetDepartmentByid(departmentId)
+	}
+
+	// 判断是否出错
+	if err != nil {
+		ctx.WriteString(err.Error())
+	} else {
+		ctx.JSON(department)
+	}
+
 }

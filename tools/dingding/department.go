@@ -7,9 +7,9 @@ import (
 )
 
 // 根据部门ID或者dingId获取到用户
-func GetDepartmentByid(departmentId string) (department *Department, err error) {
-	departmentId = strings.TrimSpace(departmentId)
-	if departmentId == "" {
+func GetDepartmentByid(departmentId int) (department *Department, err error) {
+	//departmentId = strings.TrimSpace(departmentId)
+	if departmentId <= 0 {
 		err = errors.New("传入的ID不可为空")
 		return nil, err
 	}
