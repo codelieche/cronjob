@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"cronjob.codelieche/tools/dingding/app"
+	"github.com/codelieche/cronjob/tools/dingding/app"
 )
 
 func main() {
