@@ -104,3 +104,55 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 		ctx.JSON(iris.Map{"status": success, "message": "消息发送成功"})
 	}
 }
+
+// 发送的消息列表api
+func MessageListApi(ctx iris.Context) {
+	// 定义变量
+	var (
+		page     int
+		pageSize int
+		offset   int
+		limit    int
+		messages []*dingding.Message
+		err      error
+	)
+
+	//	得到page
+	page = ctx.Params().GetIntDefault("page", 1)
+	pageSize = ctx.URLParamIntDefault("pageSize", 10)
+
+	limit = pageSize
+	if page > 1 {
+		offset = (page - 1) * pageSize
+	}
+
+	// 获取用户
+	if messages, err = dingding.GetMessageList(offset, limit); err != nil {
+		log.Println(err)
+		ctx.HTML("<div>%s</div>", err.Error())
+	} else {
+		ctx.JSON(messages)
+	}
+}
+
+// 消息详情
+func GetMessageDetailApi(ctx iris.Context) {
+	var (
+		msgID   int
+		message *dingding.Message
+		err     error
+	)
+
+	if msgID, err = ctx.Params().GetInt("id"); err != nil {
+		ctx.WriteString(err.Error())
+		return
+	}
+
+	if message, err = dingding.GetMessageByid(msgID); err != nil {
+		if err == dingding.NotFountError {
+			ctx.WriteString(err.Error())
+		}
+	} else {
+		ctx.JSON(message)
+	}
+}

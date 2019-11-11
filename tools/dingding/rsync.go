@@ -87,6 +87,7 @@ func rsyncDepartmentUser(department *Department) (err error) {
 				if dingData, err := json.Marshal(dingUser); err != nil {
 					dingData = []byte{}
 				} else {
+					log.Println(string(dingData))
 					user.DingData = dingData
 				}
 				// 保存到数据库中

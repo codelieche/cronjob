@@ -80,9 +80,10 @@ func GetUserDepartments(user *User) (departments []*Department, err error) {
 
 // 获取用户列表
 func GetUserList(offset int, limit int) (users []*User, err error) {
-	//users = []User{}
+	//users = []*User{}
 	query := db.Model(&User{}).Offset(offset).Limit(limit).Find(&users)
 	if query.Error != nil {
+		log.Println(err.Error())
 		return nil, err
 	} else {
 		return users, err

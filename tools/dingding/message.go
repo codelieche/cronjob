@@ -111,3 +111,34 @@ func (ding *DingDing) SendWorkerMessage(workMessage *WorkerMessage, message *Mes
 		}
 	}
 }
+
+// 获取发送的钉钉消息列表
+func GetMessageList(offset int, limit int) (messages []*Message, err error) {
+	//messages = []Message{}
+	query := db.Model(&Message{}).Offset(offset).Limit(limit).Find(&messages)
+	if query.Error != nil {
+		return nil, err
+	} else {
+		return messages, err
+	}
+}
+
+// 根据消息id获取消息
+func GetMessageByid(msgId int) (message *Message, err error) {
+	//msgId = strings.TrimSpace(msgId)
+	if msgId == 0 {
+		err = errors.New("传入的ID不可为空")
+		return nil, err
+	}
+
+	message = &Message{}
+
+	db.First(message, "id=?", msgId)
+	if message.ID > 0 {
+		// 获取到了用户
+		return message, nil
+	} else {
+		// 未获取到
+		return nil, NotFountError
+	}
+}

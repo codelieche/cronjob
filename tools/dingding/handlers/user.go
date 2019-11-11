@@ -33,6 +33,7 @@ func UserListApi(ctx iris.Context) {
 		log.Println(err)
 		ctx.HTML("<div>%s</div>", err.Error())
 	} else {
+		// log.Println(users)
 		ctx.JSON(users)
 	}
 }
