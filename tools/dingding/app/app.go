@@ -1,7 +1,10 @@
 package app
 
 import (
+	"fmt"
 	"log"
+
+	"cronjob.codelieche/tools/dingding"
 
 	"github.com/kataras/iris"
 )
@@ -38,6 +41,9 @@ func newApp() *iris.Application {
 func Run() {
 	app := newApp()
 
+	config := dingding.GetConfig()
+	addr := fmt.Sprintf("%s:%d", config.Http.Host, config.Http.Port)
+
 	// 运行程序
-	app.Run(iris.Addr(":9000"), iris.WithoutServerError(iris.ErrServerClosed))
+	app.Run(iris.Addr(addr), iris.WithoutServerError(iris.ErrServerClosed))
 }

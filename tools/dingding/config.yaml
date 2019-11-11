@@ -1,9 +1,26 @@
 
-# 钉钉工具配置文件
-host: 0.0.0.0
-port: 9000
-basic_auth:
-  - username: user01
-    passowrd: password02
-  - username: user02
-    password: password03
+# 项目配置文件
+
+# web相关配置
+http:
+  host: 0.0.0.0
+  port: 9000
+  basic_auth:
+    - username: user01
+      passowrd: password02
+    - username: user02
+      password: password03
+
+# 钉钉开发者相关配置
+dingding:
+  agentid: ${DINGDING_AGENT_ID:1234}
+  appkey: "${DINGDING_APP_KEY}"
+  secretkey: "${DINGDING_SECRET_KEY}"
+
+# 数据库相关配置
+database:
+  host: "${MYSQL_HOST:127.0.0.1}"
+  port: ${MYSQL_PORT:3306}
+  user: "${MYSQL_USER:root}"
+  password: "${MYSQL_PASSWORD}"
+  database: "${MYSQL_DB_NAME:dingding}"
