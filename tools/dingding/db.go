@@ -58,6 +58,7 @@ func init() {
 	// Migrate the schema
 	db.AutoMigrate(&Department{})
 	db.AutoMigrate(&User{})
+	db.AutoMigrate(&Message{})
 }
 
 func Close() {

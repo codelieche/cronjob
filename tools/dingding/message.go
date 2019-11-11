@@ -14,7 +14,7 @@ import (
 // URL：https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=ACCESS_TOKEN
 // 参数：
 //
-func (ding *DingDing) SendWorkerMessage(workMessage *WorkerMessage) (success bool, err error) {
+func (ding *DingDing) SendWorkerMessage(workMessage *WorkerMessage, message *Message) (success bool, err error) {
 	// 发送工作消息
 	var (
 		accessToken string
@@ -24,6 +24,9 @@ func (ding *DingDing) SendWorkerMessage(workMessage *WorkerMessage) (success boo
 		//data        []byte
 		apiResponse *ApiResponse
 	)
+	if message != nil {
+		defer message.Save()
+	}
 	// 设置AgentID
 	workMessage.AgentID = ding.AgentId
 
@@ -78,15 +81,31 @@ func (ding *DingDing) SendWorkerMessage(workMessage *WorkerMessage) (success boo
 		apiResponse = &ApiResponse{}
 		if err = json.Unmarshal(response.Bytes(), apiResponse); err != nil {
 			log.Println(err.Error())
+			if message != nil {
+				message.Success = false
+			}
 			return false, err
 		} else {
 			// 对结果进行判断
 			if apiResponse.Errcode != 0 {
+				if message != nil {
+					message.Success = false
+					message.DingResponse = response.Bytes()
+					//message.Save()
+				}
+
 				msg := fmt.Sprintf("获取数据出错，错误代码:%d(%s)", apiResponse.Errcode, apiResponse.Errmsg)
 				err = errors.New(msg)
 				return false, err
 			} else {
 				// 发送消息成功
+				if message != nil {
+					// 保存发送消息的记录
+					message.Success = true
+					message.DingResponse = response.Bytes()
+					//message.Save()
+				}
+
 				return true, nil
 			}
 		}

@@ -5,11 +5,10 @@
 http:
   host: 0.0.0.0
   port: 9000
-  basic_auth:
-    - username: user01
-      passowrd: password02
-    - username: user02
-      password: password03
+  basicauth:
+    user01: password01
+    user02: password02
+    user03: password03
 
 # 钉钉开发者相关配置
 dingding:

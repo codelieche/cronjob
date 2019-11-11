@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/codelieche/cronjob/tools/dingding"
@@ -12,12 +13,14 @@ import (
 func SendWorkerMessageToUser(ctx iris.Context) {
 	// 定义变量
 	var (
-		dingApp       *dingding.DingDing
-		workerMessage *dingding.WorkerMessage
-		user          *dingding.User
-		dingMessage   *dingding.Message
-		success       bool
-		err           error
+		dingApp         *dingding.DingDing
+		workerMessage   *dingding.WorkerMessage
+		user            *dingding.User
+		dingMessage     *dingding.DingMessage
+		dingMessageData []byte
+		message         *dingding.Message
+		success         bool
+		err             error
 	)
 
 	dingApp = dingding.NewDing()
@@ -56,13 +59,13 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 	}
 
 	if msgType == "text" {
-		dingMessage = &dingding.Message{
+		dingMessage = &dingding.DingMessage{
 			MsgType: "text",
 			Text:    &dingding.TextMsg{Content: content},
 		}
 	} else {
 		if msgType == "markdown" {
-			dingMessage = &dingding.Message{
+			dingMessage = &dingding.DingMessage{
 				MsgType: msgType,
 				Markdown: &dingding.MarkdownMsg{
 					Title: title,
@@ -81,7 +84,21 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 		Msg:        dingMessage,
 	}
 
-	if success, err = dingApp.SendWorkerMessage(workerMessage); err != nil {
+	if dingMessageData, err = json.Marshal(workerMessage); err != nil {
+		log.Println(err.Error())
+	}
+
+	//	记录消息内容
+	message = &dingding.Message{
+		Success:  false,
+		UserID:   user.ID,
+		Title:    title,
+		MsgType:  msgType,
+		Content:  content,
+		DingData: dingMessageData,
+	}
+
+	if success, err = dingApp.SendWorkerMessage(workerMessage, message); err != nil {
 		ctx.WriteString(err.Error())
 	} else {
 		ctx.JSON(iris.Map{"status": success, "message": "消息发送成功"})

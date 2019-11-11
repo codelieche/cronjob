@@ -54,7 +54,7 @@ type DingUser struct {
 
 // DingDing Message
 // 参考文档：https://ding-doc.dingtalk.com/doc#/serverapi2/ye8tup
-type Message struct {
+type DingMessage struct {
 	MsgType  string       `json:"msgtype"`             // 消息类型
 	Text     *TextMsg     `json:"text, omitempty"`     // msgType是text的消息内容
 	Image    *ImageMsg    `json:"image, omitempty"`    // msgType是image的消息内容
@@ -78,9 +78,9 @@ type ImageMsg struct {
 
 // 发送工作通知消息
 type WorkerMessage struct {
-	AgentID    int      `json:"agent_id"`               // 【必须】应用agentId
-	UseridList string   `json:"userid_list,omitempty"`  // 接受者的用户userid列表，最大列表长度：100，逗号分隔
-	DeptIdList string   `json:"dept_id_list,omitempty"` // 接受者的部门id列表，最大列表长度:20，接受者是部门id下(包括子部门)的所有用户
-	ToAllUser  bool     `json:"to_all_user,omitempty"`  // 是否发送给企业全部用户
-	Msg        *Message `json:"msg"`                    // 【必须】消息内容
+	AgentID    int          `json:"agent_id"`               // 【必须】应用agentId
+	UseridList string       `json:"userid_list,omitempty"`  // 接受者的用户userid列表，最大列表长度：100，逗号分隔
+	DeptIdList string       `json:"dept_id_list,omitempty"` // 接受者的部门id列表，最大列表长度:20，接受者是部门id下(包括子部门)的所有用户
+	ToAllUser  bool         `json:"to_all_user,omitempty"`  // 是否发送给企业全部用户
+	Msg        *DingMessage `json:"msg"`                    // 【必须】消息内容
 }

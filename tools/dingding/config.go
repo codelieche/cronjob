@@ -21,9 +21,10 @@ type Config struct {
 
 // Http Config
 type HttpConfig struct {
-	Host    string `json:"host",yaml:"host"`
-	Port    int    `json:"port", yaml:"port"`
-	Timeout int    `json:"timeout", yaml: "timeout"`
+	Host      string            `json:"host",yaml:"host"`
+	Port      int               `json:"port", yaml:"port"`
+	Timeout   int               `json:"timeout", yaml: "timeout"`
+	BasicAuth map[string]string `json:"basicauth", yaml: "basicauth"`
 }
 
 // DingDing开发者相关配置

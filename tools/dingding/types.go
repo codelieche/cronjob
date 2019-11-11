@@ -24,4 +24,27 @@ type User struct {
 	Position    string          `gorm:"type:varchar(40)",json:"position"`       // 职位
 	Departments []*Department   `gorm:"many2many:user_departments;"`            // 用户所在的部门
 	DingData    json.RawMessage `json:"ding_data,omitempty"`                    // 对应的钉钉数据
+	//Messages    []Message       `gorm:"foregnkey: UserID"`                      // 用户的消息
+}
+
+// 发送的消息
+type Message struct {
+	gorm.Model
+	Success      bool            `gorm:"index",json:"success"`                     // 消息是否成功
+	UserID       uint            `gorm:"index",json:"user_id"`                     // 用户ID
+	Title        string          `gorm:"type:varchar(128)",json:"title,omitempty"` // 消息标题
+	MsgType      string          `gorm:"type:varchar(40)",json:"msg_type"`         // 消息类型：text、markdown等
+	Content      string          `gorm:"type:text",json:"content"`                 // 消息内容
+	DingData     json.RawMessage `json:"ding_data,omitempty"`                      // Ding Message
+	DingResponse json.RawMessage `json:"ding_response",omitempty`                  // 发送消息的响应结果
+}
+
+func (msg *Message) Save() {
+	//	保存消息到数据库中
+	if msg.ID == 0 {
+		// 新创建
+		db.Model(&Message{}).Create(msg)
+	} else {
+		db.Model(&Message{}).Update(msg)
+	}
 }
