@@ -9,10 +9,16 @@ TAG=v1
 cd ../entry
 # 2-2: 执行构建命令
 # MacOS下编译，会报错：go-sqlite3/sqlite3_opt_preupdate.go:12:16: undefined: SQLiteConn
-# 原因：MacOS上未安装linux的交叉编译器
+# 原因：MacOS上未安装linux的交叉编译器: http://crossgcc.rts-software.org/doku.php?id=compiling_for_linux
 # 故可以启动个docker容器来编译程序： docker run -it --rm -v "$GOPATH:/go" golang:1.13
-GOOS=linux GOARCH=amd64 go build -o dingding ./dingding && echo "$(date "%F %T"):构建成功！" \
-|| (echo "$(date "%F %T"): 构建失败!！" && exit 1;)
+
+# 故改用MySQL存储数据，不用sqlite3
+GOOS=linux GOARCH=amd64 go build -o dingding ./dingding.go && echo "$(date "%F %T"):构建成功！" \
+ || (echo "$(date "%F %T"): 构建失败!！" && exit 1;)
+
+#docker run -it --rm -v "$GOPATH:/go" golang:1.13 \
+# /bin/bash -c "echo '进入容器了' && cd /go/src/github.com/codelieche/cronjob/tools/dingding/entry && echo $PWD && GOOS=linux GOARCH=amd64 go build -o dingding ./dingding.go && ls -alh"
+
 # 2-3: 查看当前目录文件
 tree
 

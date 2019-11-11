@@ -3,7 +3,7 @@ package handlers
 import (
 	"log"
 
-	"cronjob.codelieche/tools/dingding"
+	"github.com/codelieche/cronjob/tools/dingding"
 	"github.com/juju/errors"
 	"github.com/kataras/iris"
 )

@@ -15,6 +15,9 @@ func setAppRouter(app *iris.Application) {
 
 	app.Get("/", handlers.IndexPageWithBasicAuth)
 
+	// 同步钉钉数据
+	app.Get("/api/v1/dingding/rsync", handlers.RsyncDingdingData)
+
 	// 用户相关api
 	app.Get("/api/v1/user/{id:string}", handlers.GetUserDetail)
 	app.Get("/api/v1/user/list/{page:int min(1)}", handlers.UserListApi)

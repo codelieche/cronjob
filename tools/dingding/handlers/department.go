@@ -4,7 +4,7 @@ import (
 	"log"
 	"strconv"
 
-	"cronjob.codelieche/tools/dingding"
+	"github.com/codelieche/cronjob/tools/dingding"
 	"github.com/kataras/iris"
 )
 
