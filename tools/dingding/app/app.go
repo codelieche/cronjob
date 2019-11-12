@@ -7,6 +7,7 @@ import (
 	"cronjob.codelieche/tools/dingding"
 
 	"github.com/kataras/iris"
+	"github.com/kataras/iris/middleware/logger"
 )
 
 func init() {
@@ -21,6 +22,10 @@ func newApp() *iris.Application {
 
 	// 设置auth
 	appAddBasictAuth(app)
+
+	// 使用中间件：添加loger
+	//app.Use(recover.New())
+	app.Use(logger.New())
 
 	// 处理错误页面
 	handleAppOnError(app)

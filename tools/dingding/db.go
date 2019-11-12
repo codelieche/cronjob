@@ -59,6 +59,9 @@ func init() {
 	db.AutoMigrate(&Department{})
 	db.AutoMigrate(&User{})
 	db.AutoMigrate(&Message{})
+
+	// 显示SQL
+	db.LogMode(config.Debug)
 }
 
 func Close() {

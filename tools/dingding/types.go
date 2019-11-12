@@ -24,7 +24,7 @@ type User struct {
 	Position    string          `gorm:"type:varchar(40)" json:"position"`                         // 职位
 	Departments []*Department   `gorm:"many2many:user_departments;" json:"departments,omitempty"` // 用户所在的部门
 	DingData    json.RawMessage `gorm:"type:text" json:"ding_data,omitempty"`                     // 对应的钉钉数据
-	Messages    []*Message      `gorm:"many2many:message_users" json:"messages"`                  // 用户的消息
+	Messages    []*Message      `gorm:"many2many:message_users" json:"messages,omitempty"`        // 用户的消息
 }
 
 // 发送的消息

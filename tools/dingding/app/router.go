@@ -1,9 +1,13 @@
 package app
 
 import (
+	"github.com/codelieche/cronjob/tools/dingding/datasource"
 	"github.com/codelieche/cronjob/tools/dingding/handlers"
-	"github.com/codelieche/cronjob/tools/dingding/middlewares"
+	"github.com/codelieche/cronjob/tools/dingding/repositories"
+	"github.com/codelieche/cronjob/tools/dingding/web/crontollers"
+	"github.com/codelieche/cronjob/tools/dingding/web/services"
 	"github.com/kataras/iris"
+	"github.com/kataras/iris/mvc"
 )
 
 // 设置app的router
@@ -11,7 +15,8 @@ import (
 func setAppRouter(app *iris.Application) {
 
 	// 使用中间件
-	app.Use(middlewares.PrintRequestUrl)
+	// app.Use(logger.New())
+	// app.Use(middlewares.PrintRequestUrl) // Demo
 
 	app.Get("/", handlers.IndexPageWithBasicAuth)
 
@@ -34,4 +39,20 @@ func setAppRouter(app *iris.Application) {
 	app.Get("/api/v1/message/list/{page:int min(1)}", handlers.MessageListApi)
 	// 消息详情
 	app.Get("/api/v1/message/{id:int min(1)}", handlers.GetMessageDetailApi)
+
+	// 测试MVC
+	//repo := repositories.NewMovieRepository(datasource.Movies)
+	//movieService := services.NewMoviewService(repo)
+	//mvc.New(app).Handle(movieService)
+	//m := app.Party("/movies")
+	//mvc.New(m).Handle(movieService)
+
+	mvc.Configure(app.Party("/movies"), func(app *mvc.Application) {
+		repo := repositories.NewMovieRepository(datasource.Movies)
+		movieService := services.NewMoviewService(repo)
+		app.Register(movieService)
+
+		app.Handle(new(crontollers.MovieController))
+	})
+
 }

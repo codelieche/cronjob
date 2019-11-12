@@ -17,6 +17,7 @@ type Config struct {
 	Http     *HttpConfig
 	DingDing *DingConfig
 	Database *Database
+	Debug    bool
 }
 
 // Http Config
@@ -117,6 +118,7 @@ func ParseConfig() (err error) {
 			Password: "",
 			Database: "dingding",
 		},
+		Debug: false,
 	}
 
 	if err = yaml.Unmarshal(content, config); err != nil {
