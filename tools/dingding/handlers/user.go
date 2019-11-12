@@ -61,3 +61,44 @@ func GetUserDetail(ctx iris.Context) {
 		ctx.JSON(user)
 	}
 }
+
+// 用户消息列表api
+func GetUserMessageListApi(ctx iris.Context) {
+	// 定义变量
+	var (
+		page         int
+		pageSize     int
+		offset       int
+		limit        int
+		userIdOrName string
+		user         *dingding.User
+		messages     []*dingding.Message
+		err          error
+	)
+
+	//	得到url传递的参数：userID, page, pageSize
+	userIdOrName = ctx.Params().Get("id")
+	page = ctx.URLParamIntDefault("page", 1)
+	pageSize = ctx.URLParamIntDefault("pageSize", 10)
+
+	limit = pageSize
+	if page > 1 {
+		offset = (page - 1) * pageSize
+	}
+
+	// 获取用户
+	if user, err = dingding.GetUserByid(userIdOrName); err != nil {
+		ctx.StatusCode(400)
+		ctx.WriteString(err.Error())
+		return
+	}
+
+	// 获取用户消息
+	if messages, err = dingding.GetUserMessageList(user, offset, limit); err != nil {
+		log.Println(err)
+		ctx.HTML("<div>%s</div>", err.Error())
+	} else {
+		// log.Println(users)
+		ctx.JSON(messages)
+	}
+}

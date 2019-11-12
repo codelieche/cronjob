@@ -13,7 +13,6 @@ import (
 // Method： POST
 // URL：https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=ACCESS_TOKEN
 // 参数：
-//
 func (ding *DingDing) SendWorkerMessage(workMessage *WorkerMessage, message *Message) (success bool, err error) {
 	// 发送工作消息
 	var (

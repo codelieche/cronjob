@@ -85,3 +85,44 @@ func TestGetUserList(t *testing.T) {
 	}
 
 }
+
+// 获取用户消息
+func TestGetUserMessageList(t *testing.T) {
+	// 1. 先测试获取到用户
+	userID := "1"
+	offset := 0
+	limit := 2
+	haveNext := true
+
+	if user, err := GetUserByid(userID); err != nil {
+		t.Error(err.Error())
+	} else {
+		// 2. 获取用户的消息
+		for haveNext {
+			if messages, err := GetUserMessageList(user, offset, limit); err != nil {
+				t.Error(err.Error())
+				haveNext = false
+			} else {
+				// 判断是否还有下一页，以及修改offset
+				if len(messages) == limit {
+					haveNext = true
+					offset += limit
+				} else {
+					haveNext = false
+				}
+				// 3. 打印出消息
+				for _, message := range messages {
+					log.Println(message.ID, message.MsgType, message.Success, message.Users)
+					for _, u := range message.Users {
+						log.Println(u.ID, u.DingID, u.Username)
+					}
+				}
+			}
+
+			if haveNext {
+				log.Println("查找下一页：", offset, limit)
+			}
+		}
+
+	}
+}

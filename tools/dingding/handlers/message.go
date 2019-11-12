@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"strings"
 
 	"github.com/codelieche/cronjob/tools/dingding"
 	"github.com/juju/errors"
@@ -16,6 +18,8 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 		dingApp         *dingding.DingDing
 		workerMessage   *dingding.WorkerMessage
 		user            *dingding.User
+		userList        []*dingding.User // 消息接收用户列表
+		useridListStr   string           // 接收消息用户的钉钉ip，多个以逗号分隔
 		dingMessage     *dingding.DingMessage
 		dingMessageData []byte
 		message         *dingding.Message
@@ -26,36 +30,72 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 	dingApp = dingding.NewDing()
 
 	// 获取到用户以及获取消息内容
-	userName := ctx.PostValue("user")
-	mobile := ctx.PostValue("mobile")
+	userNames := ctx.PostValue("users") // 一次是可以给多个用户发送消息的,分割
+	mobiles := ctx.PostValue("mobiles")
 	msgType := ctx.PostValueDefault("type", "text")
 	title := ctx.PostValueDefault("title", "通知消息")
 
 	content := ctx.PostValue("content")
-	if userName == "" && mobile == "" {
+	if userNames == "" && mobiles == "" {
 		err = errors.New("用户名/手机号不可为空")
 		log.Println(err)
-		panic(err)
+		ctx.StatusCode(400)
+		ctx.WriteString(err.Error())
+		return
 	} else {
 		// 获取到用户
-		if mobile != "" {
-			// 根据手机号获取用户
-			if user, err = dingding.GetUserByMobile(mobile); err != nil {
-				panic(err)
+		if mobiles != "" {
+			for _, mobile := range strings.Split(mobiles, ",") {
+				// 根据手机号获取用户
+				if user, err = dingding.GetUserByMobile(mobile); err != nil {
+					panic(err)
+				} else {
+					// 把用户加入到列表中
+					userList = append(userList, user)
+
+					if useridListStr == "" {
+						useridListStr = user.DingID
+					} else {
+						useridListStr += fmt.Sprintf(",%s", user.DingID)
+					}
+				}
 			}
+
 		} else {
-			if user, err = dingding.GetUserByName(userName); err != nil {
-				panic(err)
-				log.Println(err.Error())
+			for _, userName := range strings.Split(userNames, ",") {
+				if user, err = dingding.GetUserByName(userName); err != nil {
+					panic(err)
+					log.Println(err.Error())
+				} else {
+					// 把用户加入到列表中
+					userList = append(userList, user)
+
+					if useridListStr == "" {
+						useridListStr = user.DingID
+					} else {
+						useridListStr += fmt.Sprintf(",%s", user.DingID)
+					}
+				}
 			}
 		}
-
 	}
 
 	if content == "" {
 		err = errors.New("消息内容不可为空")
 		log.Println(err)
-		panic(err)
+		//panic(err)
+		ctx.StatusCode(400)
+		ctx.WriteString(err.Error())
+		return
+	}
+
+	// 判断用户是否为空
+	if len(userList) < 1 {
+		err = errors.New("传入的用户为空")
+		log.Println(err.Error())
+		ctx.StatusCode(400)
+		ctx.WriteString(err.Error())
+		return
 	}
 
 	if msgType == "text" {
@@ -80,7 +120,7 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 
 	workerMessage = &dingding.WorkerMessage{
 		AgentID:    dingApp.AgentId,
-		UseridList: user.DingID,
+		UseridList: useridListStr,
 		Msg:        dingMessage,
 	}
 
@@ -90,8 +130,9 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 
 	//	记录消息内容
 	message = &dingding.Message{
-		Success:  false,
-		UserID:   user.ID,
+		Success: false,
+		//UserID:   user.ID,
+		Users:    userList,
 		Title:    title,
 		MsgType:  msgType,
 		Content:  content,

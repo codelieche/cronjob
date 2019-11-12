@@ -1,8 +1,8 @@
 package app
 
 import (
-	"cronjob.codelieche/tools/dingding/handlers"
-	"cronjob.codelieche/tools/dingding/middlewares"
+	"github.com/codelieche/cronjob/tools/dingding/handlers"
+	"github.com/codelieche/cronjob/tools/dingding/middlewares"
 	"github.com/kataras/iris"
 )
 
@@ -21,6 +21,8 @@ func setAppRouter(app *iris.Application) {
 	// 用户相关api
 	app.Get("/api/v1/user/{id:string}", handlers.GetUserDetail)
 	app.Get("/api/v1/user/list/{page:int min(1)}", handlers.UserListApi)
+	// 获取用户消息列表
+	app.Get("/api/v1/user/{id:string}/message/list", handlers.GetUserMessageListApi)
 
 	// 部门相关api
 	app.Get("/api/v1/department/{name:string}", handlers.GetDepartmentDetail)

@@ -89,3 +89,13 @@ func GetUserList(offset int, limit int) (users []*User, err error) {
 		return users, err
 	}
 }
+
+// 获取用户消息列表
+func GetUserMessageList(user *User, offset int, limit int) (messages []*Message, err error) {
+	query := db.Model(user).Offset(offset).Limit(limit).Preload("Users").Related(&messages, "Messages")
+	if query.Error != nil {
+		return nil, query.Error
+	} else {
+		return messages, nil
+	}
+}

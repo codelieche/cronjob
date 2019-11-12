@@ -11,14 +11,14 @@ import (
 func TestDingDing_SendWorkerMessage(t *testing.T) {
 	ding := NewDing()
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
-	msg := &Message{
+	msg := &DingMessage{
 		MsgType: "text",
 		Text: &TextMsg{
 			Content: fmt.Sprintf("这个是消息内容:%s", nowStr),
 		},
 	}
 
-	msg2 := &Message{
+	msg2 := &DingMessage{
 		MsgType: "markdown",
 		Markdown: &MarkdownMsg{
 			Title: "这个是标题内容",
@@ -34,7 +34,7 @@ func TestDingDing_SendWorkerMessage(t *testing.T) {
 		Msg:        msg,
 	}
 
-	if success, err := ding.SendWorkerMessage(&workMessage); err != nil {
+	if success, err := ding.SendWorkerMessage(&workMessage, nil); err != nil {
 		t.Error(err.Error())
 		return
 	} else {
