@@ -24,8 +24,8 @@ func setAppRouter(app *iris.Application) {
 	app.Get("/api/v1/dingding/rsync", handlers.RsyncDingdingData)
 
 	// 用户相关api
-	app.Get("/api/v1/user/{id:string}", handlers.GetUserDetail)
-	app.Get("/api/v1/user/list/{page:int min(1)}", handlers.UserListApi)
+	app.Get("/api/v0/user/{id:string}", handlers.GetUserDetail)
+	app.Get("/api/v0/user/list/{page:int min(1)}", handlers.UserListApi)
 	// 获取用户消息列表
 	app.Get("/api/v1/user/{id:string}/message/list", handlers.GetUserMessageListApi)
 
@@ -40,13 +40,27 @@ func setAppRouter(app *iris.Application) {
 	// 消息详情
 	app.Get("/api/v1/message/{id:int min(1)}", handlers.GetMessageDetailApi)
 
-	// 测试MVC
-	//repo := repositories.NewMovieRepository(datasource.Movies)
-	//movieService := services.NewMoviewService(repo)
-	//mvc.New(app).Handle(movieService)
-	//m := app.Party("/movies")
-	//mvc.New(m).Handle(movieService)
+	apiV1 := app.Party("/api/v1")
+	mvc.Configure(apiV1.Party("/user"), func(app *mvc.Application) {
+		// 实例化User的Repository
+		repo := repositories.NewUserRepository(datasource.DB)
+		// 实例化User的Service
+		userService := services.NewUserService(repo)
+		// 注册Service
+		app.Register(userService)
+		// 添加Crontroller
+		app.Handle(new(crontollers.UserController))
+	})
 
+	//mvc.Configure(app.Party("/api/v1/user"), func(app *mvc.Application) {
+	//	repo := repositories.NewUserRepository(datasource.DB)
+	//	userService := services.NewUserService(repo)
+	//	app.Register(userService)
+	//
+	//	app.Handle(new(crontollers.UserController))
+	//})
+
+	// 测试MVC
 	mvc.Configure(app.Party("/movies"), func(app *mvc.Application) {
 		repo := repositories.NewMovieRepository(datasource.Movies)
 		movieService := services.NewMoviewService(repo)
