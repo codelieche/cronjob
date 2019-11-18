@@ -1,7 +1,6 @@
 package services
 
 import (
-	"log"
 	"time"
 
 	"github.com/codelieche/cronjob/tools/dingding/datasource"
@@ -32,7 +31,7 @@ func (s *movieService) GetAll() []*datamodels.Movie {
 }
 
 func (s *movieService) GetByID(id int64) (movie *datamodels.Movie, ok bool) {
-	log.Println(id)
+	// log.Println(id)
 	return s.repo.GetById(id)
 }
 
