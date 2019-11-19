@@ -27,20 +27,31 @@ func setAppRouter(app *iris.Application) {
 	app.Get("/api/v0/user/{id:string}", handlers.GetUserDetail)
 	app.Get("/api/v0/user/list/{page:int min(1)}", handlers.UserListApi)
 	// 获取用户消息列表
-	app.Get("/api/v1/user/{id:string}/message/list", handlers.GetUserMessageListApi)
+	app.Get("/api/v0/user/{id:string}/message/list", handlers.GetUserMessageListApi)
 
 	// 部门相关api
-	app.Get("/api/v1/department/{name:string}", handlers.GetDepartmentDetail)
-	app.Get("/api/v1/department/list/{page:int min(1)}", handlers.DepartmentListApi)
+	app.Get("/api/v0/department/{name:string}", handlers.GetDepartmentDetail)
+	app.Get("/api/v0/department/list/{page:int min(1)}", handlers.DepartmentListApi)
 
 	//	发送消息
-	app.Post("/api/v1/message/create", handlers.SendWorkerMessageToUser)
+	app.Post("/api/v0/message/create", handlers.SendWorkerMessageToUser)
 	//	消息列表
-	app.Get("/api/v1/message/list/{page:int min(1)}", handlers.MessageListApi)
+	app.Get("/api/v0/message/list/{page:int min(1)}", handlers.MessageListApi)
 	// 消息详情
-	app.Get("/api/v1/message/{id:int min(1)}", handlers.GetMessageDetailApi)
+	app.Get("/api/v0/message/{id:int min(1)}", handlers.GetMessageDetailApi)
 
 	apiV1 := app.Party("/api/v1")
+	mvc.Configure(apiV1.Party("/department"), func(app *mvc.Application) {
+		// 实例化User的Repository
+		repo := repositories.NewDepartmentRepository(datasource.DB)
+		// 实例化User的Service
+		deptmentService := services.NewDepartmentService(repo)
+		// 注册Service
+		app.Register(deptmentService)
+		// 添加Crontroller
+		app.Handle(new(crontollers.DepartmentController))
+	})
+
 	mvc.Configure(apiV1.Party("/user"), func(app *mvc.Application) {
 		// 实例化User的Repository
 		repo := repositories.NewUserRepository(datasource.DB)

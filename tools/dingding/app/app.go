@@ -31,7 +31,7 @@ func newApp() *iris.Application {
 	handleAppOnError(app)
 
 	// 设置View路径
-	app.RegisterView(iris.HTML("./templates/", ".html"))
+	app.RegisterView(iris.HTML("./web/templates/", ".html"))
 
 	// 当执行kill的时候执行操作：关闭数据库啊等
 	iris.RegisterOnInterrupt(handleAppInterupt)

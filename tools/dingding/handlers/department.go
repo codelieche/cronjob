@@ -61,5 +61,4 @@ func GetDepartmentDetail(ctx iris.Context) {
 	} else {
 		ctx.JSON(department)
 	}
-
 }

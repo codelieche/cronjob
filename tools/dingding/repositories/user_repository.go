@@ -17,6 +17,8 @@ type UserRepository interface {
 	GetById(id string) (user *datamodels.User, err error)
 	// 根据名字获取用户
 	GetByName(name string) (user *datamodels.User, err error)
+	// 通过ID或者名字获取到用户
+	GetByIdOrName(idOrName string) (user *datamodels.User, err error)
 	// 根据手机号获取用户
 	GetByMobile(mobile string) (user *datamodels.User, err error)
 	// 获取用户列表
@@ -68,6 +70,26 @@ func (r *userRepository) GetByName(name string) (user *datamodels.User, err erro
 	log.Println(name)
 
 	r.db.First(user, "username = ?", name)
+	if user.ID > 0 {
+		// 获取到了用户
+		return user, nil
+	} else {
+		// 未获取到
+		return nil, common.NotFountError
+	}
+}
+
+// 通过id或者用户名获取到用户
+func (r *userRepository) GetByIdOrName(idOrName string) (user *datamodels.User, err error) {
+	idOrName = strings.TrimSpace(idOrName)
+	if idOrName == "" {
+		err = errors.New("传入的ID/Name不可为空")
+		return nil, err
+	}
+
+	user = &datamodels.User{}
+
+	r.db.First(user, "id=? or ding_id=? or username=?", idOrName, idOrName, idOrName)
 	if user.ID > 0 {
 		// 获取到了用户
 		return user, nil
