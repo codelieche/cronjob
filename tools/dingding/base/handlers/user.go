@@ -3,7 +3,8 @@ package handlers
 import (
 	"log"
 
-	"github.com/codelieche/cronjob/tools/dingding"
+	"github.com/codelieche/cronjob/tools/dingding/base"
+
 	"github.com/kataras/iris"
 )
 
@@ -15,7 +16,7 @@ func UserListApi(ctx iris.Context) {
 		pageSize int
 		offset   int
 		limit    int
-		users    []*dingding.User
+		users    []*base.User
 		err      error
 	)
 
@@ -29,7 +30,7 @@ func UserListApi(ctx iris.Context) {
 	}
 
 	// 获取用户
-	if users, err = dingding.GetUserList(offset, limit); err != nil {
+	if users, err = base.GetUserList(offset, limit); err != nil {
 		log.Println(err)
 		ctx.HTML("<div>%s</div>", err.Error())
 	} else {
@@ -42,16 +43,16 @@ func UserListApi(ctx iris.Context) {
 func GetUserDetail(ctx iris.Context) {
 	var (
 		userID string
-		user   *dingding.User
+		user   *base.User
 		err    error
 	)
 
 	userID = ctx.Params().Get("id")
 
-	if user, err = dingding.GetUserByid(userID); err != nil {
-		if err == dingding.NotFountError {
+	if user, err = base.GetUserByid(userID); err != nil {
+		if err == base.NotFountError {
 			// 通过名字再查找一次
-			if user, err = dingding.GetUserByName(userID); err != nil {
+			if user, err = base.GetUserByName(userID); err != nil {
 				ctx.WriteString(err.Error())
 			} else {
 				ctx.JSON(user)
@@ -71,8 +72,8 @@ func GetUserMessageListApi(ctx iris.Context) {
 		offset       int
 		limit        int
 		userIdOrName string
-		user         *dingding.User
-		messages     []*dingding.Message
+		user         *base.User
+		messages     []*base.Message
 		err          error
 	)
 
@@ -87,14 +88,14 @@ func GetUserMessageListApi(ctx iris.Context) {
 	}
 
 	// 获取用户
-	if user, err = dingding.GetUserByid(userIdOrName); err != nil {
+	if user, err = base.GetUserByid(userIdOrName); err != nil {
 		ctx.StatusCode(400)
 		ctx.WriteString(err.Error())
 		return
 	}
 
 	// 获取用户消息
-	if messages, err = dingding.GetUserMessageList(user, offset, limit); err != nil {
+	if messages, err = base.GetUserMessageList(user, offset, limit); err != nil {
 		log.Println(err)
 		ctx.HTML("<div>%s</div>", err.Error())
 	} else {

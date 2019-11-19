@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/codelieche/cronjob/tools/dingding/common"
 	"github.com/codelieche/cronjob/tools/dingding/datamodels"
-	"github.com/codelieche/cronjob/tools/dingding/settings"
 
 	"github.com/jinzhu/gorm"
 	//_ "github.com/jinzhu/gorm/dialects/sqlite"
@@ -14,7 +14,7 @@ import (
 )
 
 var DB *gorm.DB
-var config *settings.Config
+var config *common.Config
 
 func init() {
 
@@ -22,11 +22,11 @@ func init() {
 	// 实例化DingDing
 
 	if config == nil {
-		if err := settings.ParseConfig(); err != nil {
+		if err := common.ParseConfig(); err != nil {
 			log.Println(err.Error())
 			os.Exit(1)
 		}
-		config = settings.GetConfig()
+		config = common.GetConfig()
 	}
 
 	// 连接数据库

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"cronjob.codelieche/tools/dingding"
+	"github.com/codelieche/cronjob/tools/dingding/common"
 
 	"github.com/kataras/iris"
 	"github.com/kataras/iris/middleware/logger"
@@ -46,7 +46,7 @@ func newApp() *iris.Application {
 func Run() {
 	app := newApp()
 
-	config := dingding.GetConfig()
+	config := common.GetConfig()
 	addr := fmt.Sprintf("%s:%d", config.Http.Host, config.Http.Port)
 
 	// 运行程序

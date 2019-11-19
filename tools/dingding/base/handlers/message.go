@@ -6,7 +6,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/codelieche/cronjob/tools/dingding"
+	"github.com/codelieche/cronjob/tools/dingding/base"
+
 	"github.com/juju/errors"
 	"github.com/kataras/iris"
 )
@@ -15,19 +16,19 @@ import (
 func SendWorkerMessageToUser(ctx iris.Context) {
 	// 定义变量
 	var (
-		dingApp         *dingding.DingDing
-		workerMessage   *dingding.WorkerMessage
-		user            *dingding.User
-		userList        []*dingding.User // 消息接收用户列表
-		useridListStr   string           // 接收消息用户的钉钉ip，多个以逗号分隔
-		dingMessage     *dingding.DingMessage
+		dingApp         *base.DingDing
+		workerMessage   *base.WorkerMessage
+		user            *base.User
+		userList        []*base.User // 消息接收用户列表
+		useridListStr   string       // 接收消息用户的钉钉ip，多个以逗号分隔
+		dingMessage     *base.DingMessage
 		dingMessageData []byte
-		message         *dingding.Message
+		message         *base.Message
 		success         bool
 		err             error
 	)
 
-	dingApp = dingding.NewDing()
+	dingApp = base.NewDing()
 
 	// 获取到用户以及获取消息内容
 	userNames := ctx.PostValue("users") // 一次是可以给多个用户发送消息的,分割
@@ -47,7 +48,7 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 		if mobiles != "" {
 			for _, mobile := range strings.Split(mobiles, ",") {
 				// 根据手机号获取用户
-				if user, err = dingding.GetUserByMobile(mobile); err != nil {
+				if user, err = base.GetUserByMobile(mobile); err != nil {
 					panic(err)
 				} else {
 					// 把用户加入到列表中
@@ -63,7 +64,7 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 
 		} else {
 			for _, userName := range strings.Split(userNames, ",") {
-				if user, err = dingding.GetUserByName(userName); err != nil {
+				if user, err = base.GetUserByName(userName); err != nil {
 					panic(err)
 					log.Println(err.Error())
 				} else {
@@ -99,15 +100,15 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 	}
 
 	if msgType == "text" {
-		dingMessage = &dingding.DingMessage{
+		dingMessage = &base.DingMessage{
 			MsgType: "text",
-			Text:    &dingding.TextMsg{Content: content},
+			Text:    &base.TextMsg{Content: content},
 		}
 	} else {
 		if msgType == "markdown" {
-			dingMessage = &dingding.DingMessage{
+			dingMessage = &base.DingMessage{
 				MsgType: msgType,
-				Markdown: &dingding.MarkdownMsg{
+				Markdown: &base.MarkdownMsg{
 					Title: title,
 					Text:  content,
 				},
@@ -118,7 +119,7 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 		}
 	}
 
-	workerMessage = &dingding.WorkerMessage{
+	workerMessage = &base.WorkerMessage{
 		AgentID:    dingApp.AgentId,
 		UseridList: useridListStr,
 		Msg:        dingMessage,
@@ -129,7 +130,7 @@ func SendWorkerMessageToUser(ctx iris.Context) {
 	}
 
 	//	记录消息内容
-	message = &dingding.Message{
+	message = &base.Message{
 		Success: false,
 		//UserID:   user.ID,
 		Users:    userList,
@@ -154,7 +155,7 @@ func MessageListApi(ctx iris.Context) {
 		pageSize int
 		offset   int
 		limit    int
-		messages []*dingding.Message
+		messages []*base.Message
 		err      error
 	)
 
@@ -168,7 +169,7 @@ func MessageListApi(ctx iris.Context) {
 	}
 
 	// 获取用户
-	if messages, err = dingding.GetMessageList(offset, limit); err != nil {
+	if messages, err = base.GetMessageList(offset, limit); err != nil {
 		log.Println(err)
 		ctx.HTML("<div>%s</div>", err.Error())
 	} else {
@@ -180,7 +181,7 @@ func MessageListApi(ctx iris.Context) {
 func GetMessageDetailApi(ctx iris.Context) {
 	var (
 		msgID   int
-		message *dingding.Message
+		message *base.Message
 		err     error
 	)
 
@@ -189,8 +190,8 @@ func GetMessageDetailApi(ctx iris.Context) {
 		return
 	}
 
-	if message, err = dingding.GetMessageByid(msgID); err != nil {
-		if err == dingding.NotFountError {
+	if message, err = base.GetMessageByid(msgID); err != nil {
+		if err == base.NotFountError {
 			ctx.WriteString(err.Error())
 		}
 	} else {

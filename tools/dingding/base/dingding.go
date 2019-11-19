@@ -1,4 +1,4 @@
-package dingding
+package base
 
 import (
 	"log"

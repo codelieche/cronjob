@@ -1,4 +1,4 @@
-package dingding
+package base
 
 // DingDing 注册应用后可获取到的信息
 // 企业内部应用/小程序 --> 创建应用-->应用首页 --> 查看信息： 可看到相关字段

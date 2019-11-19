@@ -24,13 +24,13 @@ tree
 
 # 第3步：打包镜像
 # 3-1：移动程序执行文件
-mkdir ../dockerfile/app ../dockerfile/app/templates ../dockerfile/app/static
+mkdir ../dockerfile/app ../dockerfile/app/web ../dockerfile/app/web/templates ../dockerfile/app/web/public
 mv ./dingding ../dockerfile/app/
 
 # 3-2: 复制其它文件
 cp ../config.yaml ../dockerfile/app/
-cp -rf ../templates/* ../dockerfile/app/templates
-#cp -rf ../static/* ../dockerfile/app/static
+cp -rf ../web/templates/* ../dockerfile/app/web/templates
+#cp -rf ../web/public/* ../dockerfile/app/web/public
 
 # 3-3 进入Dockerfile目录
 cd ../dockerfile

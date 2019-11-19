@@ -3,7 +3,7 @@ package app
 import (
 	"time"
 
-	"github.com/codelieche/cronjob/tools/dingding"
+	"github.com/codelieche/cronjob/tools/dingding/common"
 
 	"github.com/kataras/iris"
 	"github.com/kataras/iris/middleware/basicauth"
@@ -11,7 +11,7 @@ import (
 
 // 设置Basic Auth仅供测试使用
 func appAddBasictAuth(app *iris.Application) {
-	config := dingding.GetConfig()
+	config := common.GetConfig()
 
 	authConfig := basicauth.Config{
 		//Users:   map[string]string{"user01": "password01", "user02": "password02"},

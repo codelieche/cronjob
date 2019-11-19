@@ -3,11 +3,7 @@ package common
 import (
 	"log"
 	"os"
-
-	"github.com/codelieche/cronjob/tools/dingding/settings"
 )
-
-var config *settings.Config
 
 // DingDing 注册应用后可获取到的信息
 // 企业内部应用/小程序 --> 创建应用-->应用首页 --> 查看信息： 可看到相关字段
@@ -25,11 +21,11 @@ func NewDing() (ding *DingDing) {
 	)
 	if config == nil {
 		if config == nil {
-			if err := settings.ParseConfig(); err != nil {
+			if err := ParseConfig(); err != nil {
 				log.Println(err.Error())
 				os.Exit(1)
 			}
-			config = settings.GetConfig()
+			config = GetConfig()
 		}
 	}
 

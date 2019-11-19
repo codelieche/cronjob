@@ -4,7 +4,8 @@ import (
 	"log"
 	"strconv"
 
-	"github.com/codelieche/cronjob/tools/dingding"
+	"github.com/codelieche/cronjob/tools/dingding/base"
+
 	"github.com/kataras/iris"
 )
 
@@ -16,7 +17,7 @@ func DepartmentListApi(ctx iris.Context) {
 		pageSize    int
 		offset      int
 		limit       int
-		departments []*dingding.Department
+		departments []*base.Department
 		err         error
 	)
 
@@ -30,7 +31,7 @@ func DepartmentListApi(ctx iris.Context) {
 	}
 
 	// 获取用户
-	if departments, err = dingding.GetDepartmentList(offset, limit); err != nil {
+	if departments, err = base.GetDepartmentList(offset, limit); err != nil {
 		log.Println(err)
 		ctx.HTML("<div>%s</div>", err.Error())
 	} else {
@@ -43,16 +44,16 @@ func GetDepartmentDetail(ctx iris.Context) {
 	var (
 		nameOrId     string
 		departmentId int
-		department   *dingding.Department
+		department   *base.Department
 		err          error
 	)
 
 	// 获取传递过来的值
 	nameOrId = ctx.Params().Get("name")
 	if departmentId, err = strconv.Atoi(nameOrId); err != nil {
-		department, err = dingding.GetDepartmentByName(nameOrId)
+		department, err = base.GetDepartmentByName(nameOrId)
 	} else {
-		department, err = dingding.GetDepartmentByid(departmentId)
+		department, err = base.GetDepartmentByid(departmentId)
 	}
 
 	// 判断是否出错
