@@ -8,6 +8,10 @@ import (
 type UserService interface {
 	GetById(idOrName string) (user *datamodels.User, success bool)
 	GetByIdOrName(idOrName string) (user *datamodels.User, success bool)
+	// 通过名字获取用户
+	GetByName(name string) (user *datamodels.User, err error)
+	// 通过手机号获取用户
+	GetByMobile(mobile string) (user *datamodels.User, err error)
 	List(offset int, limit int) (users []*datamodels.User, success bool)
 	GetMessageList(user *datamodels.User, offset int, limit int) (messages []*datamodels.Message, success bool)
 }
@@ -48,6 +52,28 @@ func (s *userService) GetByIdOrName(idOrName string) (user *datamodels.User, suc
 		return nil, false
 	} else {
 		return user, true
+	}
+}
+
+// 通过名字获取用户名获取到用户
+func (s *userService) GetByName(name string) (user *datamodels.User, err error) {
+
+	// 通过name获取到用户
+	if user, err = s.repo.GetByName(name); err != nil {
+		return nil, err
+	} else {
+		return user, nil
+	}
+}
+
+// 通过mobile获取用户名获取到用户
+func (s *userService) GetByMobile(mobile string) (user *datamodels.User, err error) {
+
+	// 通过mobile获取到用户
+	if user, err = s.repo.GetByMobile(mobile); err != nil {
+		return nil, err
+	} else {
+		return user, nil
 	}
 }
 

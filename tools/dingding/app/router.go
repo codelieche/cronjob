@@ -1,10 +1,11 @@
 package app
 
 import (
+	"github.com/codelieche/cronjob/tools/dingding/common"
 	"github.com/codelieche/cronjob/tools/dingding/datasource"
 	"github.com/codelieche/cronjob/tools/dingding/handlers"
 	"github.com/codelieche/cronjob/tools/dingding/repositories"
-	"github.com/codelieche/cronjob/tools/dingding/web/crontollers"
+	"github.com/codelieche/cronjob/tools/dingding/web/controllers"
 	"github.com/codelieche/cronjob/tools/dingding/web/services"
 	"github.com/kataras/iris"
 	"github.com/kataras/iris/mvc"
@@ -18,10 +19,13 @@ func setAppRouter(app *iris.Application) {
 	// app.Use(logger.New())
 	// app.Use(middlewares.PrintRequestUrl) // Demo
 
-	app.Get("/", handlers.IndexPageWithBasicAuth)
+	//app.Get("/", handlers.IndexPageWithBasicAuth)
+	mvc.Configure(app.Party("/"), func(app *mvc.Application) {
+		app.Handle(new(controllers.IndexController))
+	})
 
 	// 同步钉钉数据
-	app.Get("/api/v1/dingding/rsync", handlers.RsyncDingdingData)
+	app.Get("/api/v0/dingding/rsync", handlers.RsyncDingdingData)
 
 	// 用户相关api
 	app.Get("/api/v0/user/{id:string}", handlers.GetUserDetail)
@@ -41,6 +45,7 @@ func setAppRouter(app *iris.Application) {
 	app.Get("/api/v0/message/{id:int min(1)}", handlers.GetMessageDetailApi)
 
 	apiV1 := app.Party("/api/v1")
+	// 部门相关api
 	mvc.Configure(apiV1.Party("/department"), func(app *mvc.Application) {
 		// 实例化User的Repository
 		repo := repositories.NewDepartmentRepository(datasource.DB)
@@ -49,9 +54,10 @@ func setAppRouter(app *iris.Application) {
 		// 注册Service
 		app.Register(deptmentService)
 		// 添加Crontroller
-		app.Handle(new(crontollers.DepartmentController))
+		app.Handle(new(controllers.DepartmentController))
 	})
 
+	// 用户相关api
 	mvc.Configure(apiV1.Party("/user"), func(app *mvc.Application) {
 		// 实例化User的Repository
 		repo := repositories.NewUserRepository(datasource.DB)
@@ -60,16 +66,29 @@ func setAppRouter(app *iris.Application) {
 		// 注册Service
 		app.Register(userService)
 		// 添加Crontroller
-		app.Handle(new(crontollers.UserController))
+		app.Handle(new(controllers.UserController))
 	})
 
-	//mvc.Configure(app.Party("/api/v1/user"), func(app *mvc.Application) {
-	//	repo := repositories.NewUserRepository(datasource.DB)
-	//	userService := services.NewUserService(repo)
-	//	app.Register(userService)
-	//
-	//	app.Handle(new(crontollers.UserController))
-	//})
+	// 消息相关api
+	mvc.Configure(apiV1.Party("/message"), func(app *mvc.Application) {
+		ding := common.NewDing()
+		// 实例化User的Repository
+		repo := repositories.NewMessageRepository(datasource.DB, ding)
+		userRepo := repositories.NewUserRepository(datasource.DB)
+
+		// 实例化Message的Service
+		messageService := services.NewMessageService(repo, userRepo)
+
+		// 注册Service
+		app.Register(messageService)
+		// 添加Crontroller
+		app.Handle(new(controllers.MessageController))
+	})
+
+	// 同步钉钉数据
+	mvc.Configure(apiV1.Party("/dingding/rsync"), func(app *mvc.Application) {
+		app.Handle(new(controllers.RsyncController))
+	})
 
 	// 测试MVC
 	mvc.Configure(app.Party("/movies"), func(app *mvc.Application) {
@@ -77,7 +96,7 @@ func setAppRouter(app *iris.Application) {
 		movieService := services.NewMoviewService(repo)
 		app.Register(movieService)
 
-		app.Handle(new(crontollers.MovieController))
+		app.Handle(new(controllers.MovieController))
 	})
 
 }

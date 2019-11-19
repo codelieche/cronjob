@@ -1,4 +1,4 @@
-package crontollers
+package controllers
 
 import (
 	"github.com/kataras/iris"

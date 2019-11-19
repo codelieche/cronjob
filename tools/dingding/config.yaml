@@ -25,4 +25,4 @@ database:
   database: "${MYSQL_DB_NAME:dingding}"
 
 # 是否为开发环境
-debug: true
+debug: false
