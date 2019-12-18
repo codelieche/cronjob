@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gorhill/cronexpr"
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 // 定时任务

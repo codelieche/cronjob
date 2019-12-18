@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"go.etcd.io/etcd/pkg/transport"
+	"github.com/coreos/etcd/pkg/transport"
 
-	"go.etcd.io/etcd/mvcc/mvccpb"
+	"github.com/coreos/etcd/mvcc/mvccpb"
 
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 // 保存Job到etcd中

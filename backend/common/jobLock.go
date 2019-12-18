@@ -3,7 +3,7 @@ package common
 import (
 	"context"
 
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 // 分布式锁

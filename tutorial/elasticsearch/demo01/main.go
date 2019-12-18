@@ -6,9 +6,9 @@ import (
 	"log"
 	"strings"
 
-	"github.com/elastic/go-elasticsearch/esapi"
+	"github.com/elastic/go-elasticsearch/v6/esapi"
 
-	"github.com/elastic/go-elasticsearch"
+	"github.com/elastic/go-elasticsearch/v6"
 )
 
 func main() {

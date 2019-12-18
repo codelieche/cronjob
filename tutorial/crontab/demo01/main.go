@@ -21,7 +21,7 @@ func main() {
 	log.Println(expr)
 
 	// 表达式错误的实例
-	if expr, err := cronexpr.Parse("*5 * * * *"); err != nil {
+	if expr, err := cronexpr.Parse("*/5 * * * *"); err != nil {
 		// syntax error in minute field: '*5'
 		log.Panic(err)
 	} else {

@@ -13,11 +13,11 @@
 
 ### Package
 - [godep](https://github.com/tools/godep)：`go get -u github.com/tools/godep`
-- [etcd](https://github.com/etcd-io/etcd/tree/master/clientv3): `go get go.etcd.io/etcd/clientv3`
+- [etcd](https://github.com/etcd-io/etcd/tree/master/clientv3): `go get github.com/coreos/etcd/clientv3`
 - [cronexpr](https://github.com/gorhill/cronexpr)：`go get github.com/gorhill/cronexpr`
 - [go-elasticsearch](https://github.com/elastic/go-elasticsearch/tree/6.x)
   - `git clone --branch 6.x https://github.com/elastic/go-elasticsearch.git $GOPATH/src/github.com/elastic/go-elasticsearch`
 - [mongo](https://github.com/mongodb/mongo-go-driver): `go get go.mongodb.org/mongo-driver`
 
 ### 参考文档
-- [etcd docs](https://godoc.org/go.etcd.io/etcd/clientv3)
+- [etcd docs](https://godoc.org/github.com/coreos/etcd/clientv3)

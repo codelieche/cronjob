@@ -17,7 +17,7 @@
 - [示例3：crontab持续调度Demo](crontab/demo03/main.go)
 
 #### etcd示例
-> https://godoc.org/go.etcd.io/etcd/clientv3
+> https://godoc.org/github.com/coreos/etcd/clientv3
 
 - [示例1：etcd put操作](etcd/put/main.go)
 - [示例2：etcd get操作](etcd/get/main.go)
@@ -54,3 +54,6 @@
 
 #### GORM示例
 - [示例1：快速入门](gorm/helloworld/main.go)
+
+#### iris示例
+- [示例1：基本使用](iris/base/main.go)

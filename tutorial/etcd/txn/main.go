@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"time"
 
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 func main() {

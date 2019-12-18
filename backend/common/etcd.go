@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"go.etcd.io/etcd/clientv3"
-	"go.etcd.io/etcd/pkg/transport"
+	"github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/pkg/transport"
 )
 
 func NewEtcdClientKvLeaseWatcher(etcdConfig *EtcdConfig) (*clientv3.Client, clientv3.KV, clientv3.Lease, clientv3.Watcher, error) {

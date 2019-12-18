@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"go.etcd.io/etcd/mvcc/mvccpb"
+	"github.com/coreos/etcd/mvcc/mvccpb"
 
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 func main() {

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"cronjob.codelieche/backend/common"
+	"github.com/codelieche/cronjob/backend/common"
 
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 // 注册节点信息到master
