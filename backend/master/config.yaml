@@ -6,6 +6,22 @@ master:
     host: "0.0.0.0"
     port: 9000
 
+  # MySQL相关配置
+  mysql:
+    host: "${MYSQL_HOST:127.0.0.1}"
+    port: ${MYSQL_PORT:3306}
+    user: "${MYSQL_USER:root111}"
+    password: "${MYSQL_PASSWORD}"
+    database: "${MYSQL_DB_NAME:cronjob}"
+
+  # redis相关配置
+  redis:
+    host: "127.0.0.1:6379"
+    clusters:
+      - "127.0.0.1:6379"
+    password: ""
+    db: 9
+
   # etcd相关配置
   etcd:
     endpoints:

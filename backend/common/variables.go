@@ -17,3 +17,4 @@ const ETCD_JOBS_LOCK_DIR = "/crontab/lock/"
 
 // 错误类
 var NOT_FOUND = fmt.Errorf("404 not found")
+var NotFountError = fmt.Errorf("404 not fount")

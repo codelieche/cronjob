@@ -42,23 +42,42 @@ type MongoConfig struct {
 
 // master相关的配置
 type MasterConfig struct {
-	Http  *HttpConfig  `json:"http", yaml:"http"`
-	Etcd  *EtcdConfig  `json:"etcd", yaml:"etcd"`
-	Mongo *MongoConfig `json:"mongo", yaml:"mongo"`
+	Http  *HttpConfig    `json:"http" yaml:"http"`
+	MySQL *MySQLDatabase `json:"mysql" yaml:"mysql"`
+	Redis *RedisDatabase `json:"redis" yaml:"redis"`
+	Etcd  *EtcdConfig    `json:"etcd" yaml:"etcd"`
+	Mongo *MongoConfig   `json:"mongo" yaml:"mongo"`
 }
 
 // worker相关的配置
 type WorkerConfig struct {
-	Http       *HttpConfig     `json:"http", yaml:"http"`
-	Etcd       *EtcdConfig     `json:"etcd", yaml:"etcd"`
-	Mongo      *MongoConfig    `json:"mongo", yaml:"mongo"`
-	Categories map[string]bool `json:"categories", yaml: "categories"`
+	Http       *HttpConfig     `json:"http" yaml:"http"`
+	Etcd       *EtcdConfig     `json:"etcd" yaml:"etcd"`
+	Mongo      *MongoConfig    `json:"mongo" yaml:"mongo"`
+	Categories map[string]bool `json:"categories" yaml: "categories"`
 }
 
 // Master Worker相关的配置
 type MasterWorkerConfig struct {
 	Master *MasterConfig `json:"master", yaml:"master"`
 	Worker *WorkerConfig `json:"worker", yaml: "worker"`
+}
+
+// MySQL数据库相关配置
+type MySQLDatabase struct {
+	Host     string `json:"host" yaml:"host"`          // 数据库地址
+	Port     int    `json:"port" yaml:"port"`          // 端口号
+	User     string `json:"user" yaml:"user"`          // 用户
+	Password string `json:"password" yaml:"password"`  // 用户密码
+	Database string `json:"database" yaml: "database"` // 数据库
+}
+
+// Redis配置
+type RedisDatabase struct {
+	Host     string   `json:"host" yaml:"host"`         // redis主机，不填会是默认的127.0.0.1：6739
+	Clusters []string `json:"clusters" yaml:"clusters"` // Redis集群地址
+	Password string   `json:"password" yaml:"password"` // redis的密码
+	DB       int      `json:"db" yaml:db`               // 哪个库
 }
 
 func ParseConfig() (err error) {
@@ -86,6 +105,19 @@ func ParseConfig() (err error) {
 			fileName = "./config.yaml"
 		}
 	}
+
+	// 判断文件是否存在
+	if _, err = os.Stat(fileName); err != nil {
+		if os.IsNotExist(err) {
+			if fileName == "./config.yaml" {
+				fileName = "../config.yaml"
+			} else {
+				log.Println("配置文件不存在：", fileName)
+				return
+			}
+		}
+	}
+	//log.Println(fileName)
 
 	if content, err = ioutil.ReadFile(fileName); err != nil {
 		return
@@ -127,6 +159,13 @@ func ParseConfig() (err error) {
 			Port:    9000,
 			Timeout: 5000,
 		},
+		MySQL: &MySQLDatabase{
+			Host:     "127.0.0.1",
+			Port:     0,
+			User:     "root",
+			Password: "root",
+			Database: "cronjob",
+		},
 		Etcd: &EtcdConfig{
 			Endpoints: []string{"127.0.0.1:2379"},
 			Timeout:   5000,
@@ -159,7 +198,7 @@ func ParseConfig() (err error) {
 		Master: masterConfig,
 		Worker: workerConfig,
 	}
-
+	//log.Println(string(content))
 	if err = yaml.Unmarshal(content, Config); err != nil {
 		return err
 	} else {
