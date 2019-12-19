@@ -47,7 +47,7 @@ type categoryRepository struct {
 }
 
 // 保存Category
-func (r categoryRepository) Save(category *datamodels.Category) (*datamodels.Category, error) {
+func (r *categoryRepository) Save(category *datamodels.Category) (*datamodels.Category, error) {
 	if category.ID > 0 {
 		// 是更新操作
 		if err := r.db.Model(&datamodels.Category{}).Update(category).Error; err != nil {
@@ -88,7 +88,7 @@ func (r categoryRepository) Save(category *datamodels.Category) (*datamodels.Cat
 }
 
 // 获取Category的列表
-func (r categoryRepository) List(offset int, limit int) (categories []*datamodels.Category, err error) {
+func (r *categoryRepository) List(offset int, limit int) (categories []*datamodels.Category, err error) {
 	query := r.db.Model(&datamodels.Category{}).Select(r.infoFields).Offset(offset).Limit(limit).Find(&categories)
 	if query.Error != nil {
 		return nil, query.Error
@@ -98,7 +98,7 @@ func (r categoryRepository) List(offset int, limit int) (categories []*datamodel
 }
 
 // 根据ID获取Category
-func (r categoryRepository) Get(id int64) (category *datamodels.Category, err error) {
+func (r *categoryRepository) Get(id int64) (category *datamodels.Category, err error) {
 	category = &datamodels.Category{}
 	r.db.Select(r.infoFields).First(category, "id = ?", id)
 	if category.ID > 0 {
@@ -109,7 +109,7 @@ func (r categoryRepository) Get(id int64) (category *datamodels.Category, err er
 }
 
 // 根据Name获取Category
-func (r categoryRepository) GetByName(name string) (category *datamodels.Category, err error) {
+func (r *categoryRepository) GetByName(name string) (category *datamodels.Category, err error) {
 	category = &datamodels.Category{}
 	r.db.Select(r.infoFields).First(category, "name = ?", name)
 	if category.ID > 0 {
@@ -120,7 +120,7 @@ func (r categoryRepository) GetByName(name string) (category *datamodels.Categor
 }
 
 // 根据ID或者name获取Category
-func (r categoryRepository) GetByIdOrName(idOrName string) (category *datamodels.Category, err error) {
+func (r *categoryRepository) GetByIdOrName(idOrName string) (category *datamodels.Category, err error) {
 	category = &datamodels.Category{}
 	r.db.Select(r.infoFields).First(category, "id = ? or name = ?", idOrName, idOrName)
 	if category.ID > 0 {
@@ -131,7 +131,7 @@ func (r categoryRepository) GetByIdOrName(idOrName string) (category *datamodels
 }
 
 // 删除分类
-func (r categoryRepository) Delete(category *datamodels.Category) (err error) {
+func (r *categoryRepository) Delete(category *datamodels.Category) (err error) {
 	if category.IsActive {
 		category.IsActive = false
 		log.Println(category)
@@ -146,7 +146,7 @@ func (r categoryRepository) Delete(category *datamodels.Category) (err error) {
 }
 
 // 更新分类
-func (r categoryRepository) Update(category *datamodels.Category, fields map[string]interface{}) (*datamodels.Category, error) {
+func (r *categoryRepository) Update(category *datamodels.Category, fields map[string]interface{}) (*datamodels.Category, error) {
 	// 判断ID：
 	// 如果传入的是0，那么会更新全部
 	// 如果fields中传入了ID，那么会更新ID是它的对象
@@ -173,7 +173,7 @@ func (r categoryRepository) Update(category *datamodels.Category, fields map[str
 }
 
 // 更新分类
-func (r categoryRepository) UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Category, error) {
+func (r *categoryRepository) UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Category, error) {
 	// 判断ID
 	if id <= 0 {
 		err := errors.New("传入的ID为0，会更新全部数据")

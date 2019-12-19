@@ -17,6 +17,7 @@ var db *gorm.DB
 var config *common.MasterWorkerConfig
 
 func initDb() {
+	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	var (
 		err      error
 		mysqlUri string
@@ -51,6 +52,7 @@ func initDb() {
 
 	// 3. Migrate the Schema
 	db.AutoMigrate(&datamodels.Category{})
+	db.AutoMigrate(&datamodels.Job{})
 
 	//
 	db.LogMode(config.Debug)
