@@ -53,7 +53,7 @@ func initDb() {
 	db.AutoMigrate(&datamodels.Category{})
 
 	//
-	db.LogMode(true)
+	db.LogMode(config.Debug)
 
 }
 

@@ -59,17 +59,18 @@ type WorkerConfig struct {
 
 // Master Worker相关的配置
 type MasterWorkerConfig struct {
-	Master *MasterConfig `json:"master", yaml:"master"`
-	Worker *WorkerConfig `json:"worker", yaml: "worker"`
+	Master *MasterConfig `json:"master" yaml:"master"`
+	Worker *WorkerConfig `json:"worker" yaml:"worker"`
+	Debug  bool          `json:"debug" yaml:"debug"`
 }
 
 // MySQL数据库相关配置
 type MySQLDatabase struct {
-	Host     string `json:"host" yaml:"host"`          // 数据库地址
-	Port     int    `json:"port" yaml:"port"`          // 端口号
-	User     string `json:"user" yaml:"user"`          // 用户
-	Password string `json:"password" yaml:"password"`  // 用户密码
-	Database string `json:"database" yaml: "database"` // 数据库
+	Host     string `json:"host" yaml:"host"`         // 数据库地址
+	Port     int    `json:"port" yaml:"port"`         // 端口号
+	User     string `json:"user" yaml:"user"`         // 用户
+	Password string `json:"password" yaml:"password"` // 用户密码
+	Database string `json:"database" yaml:"database"` // 数据库
 }
 
 // Redis配置

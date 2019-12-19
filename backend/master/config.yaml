@@ -67,3 +67,6 @@ worker:
   # 当前worker可执行什么类型的任务
   categories:
     default: true
+
+# 是否是测试
+debug: true

@@ -32,9 +32,10 @@ func setAppRoute(app *iris.Application) {
 
 	// 分类相关的api
 	db := datasources.GetDb()
+	etcd := datasources.GetEtcd()
 	mvc.Configure(apiV1.Party("/category"), func(app *mvc.Application) {
 		// 实例化category的Repository
-		repo := repositories.NewCategoryRepository(db)
+		repo := repositories.NewCategoryRepository(db, etcd)
 		// 实例化category的Service
 		service := services.NewCategoryService(repo)
 		// 注册service
