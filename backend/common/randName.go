@@ -10,7 +10,7 @@ import (
 
 // 随机生成个名字
 // 创建job，未传入name的时候会调用它
-func generateName() (string, error) {
+func GenerateName() (string, error) {
 	var (
 		name            string
 		hostName        string

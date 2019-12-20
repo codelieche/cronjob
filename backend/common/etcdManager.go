@@ -37,7 +37,7 @@ func (etcdManager *EtcdManager) SaveJob(job *Job, isCreate bool) (prevJob *Job, 
 	if job.Name == "" {
 		if isCreate {
 			// name为空就自动生成一个
-			if name, err := generateName(); err != nil {
+			if name, err := GenerateName(); err != nil {
 				timeNowUnix := time.Now().UnixNano()
 				job.Name = strconv.Itoa(int(timeNowUnix))
 			} else {

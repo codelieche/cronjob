@@ -23,6 +23,8 @@ type JobRepository interface {
 	// 修改Job
 	Update(job *datamodels.Job, fields map[string]interface{}) (*datamodels.Job, error)
 	UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Job, error)
+	// 根据ID或者Name获取分类
+	GetCategoryByIDOrName(idOrName string) (category *datamodels.Category, err error)
 }
 
 func NewJobRespository(db *gorm.DB, etcd *datasources.Etcd) JobRepository {
@@ -88,7 +90,9 @@ func (r *jobRepository) Save(job *datamodels.Job) (*datamodels.Job, error) {
 }
 
 func (r *jobRepository) List(offset int, limit int) (jobs []*datamodels.Job, err error) {
-	query := r.db.Model(&datamodels.Job{}).Select(r.infoFields).Offset(offset).Limit(limit).Find(&jobs)
+	query := r.db.Model(&datamodels.Job{}).Preload("Category", func(d *gorm.DB) *gorm.DB {
+		return d.Select("id, name, is_active")
+	}).Select(r.infoFields).Offset(offset).Limit(limit).Find(&jobs)
 	if query.Error != nil {
 		return nil, query.Error
 	} else {
@@ -216,4 +220,15 @@ func (r *jobRepository) getOrCreateDefaultCategory() (category *datamodels.Categ
 	} else {
 		return category, nil
 	}
+}
+
+// 根据ID或者Name获取分类
+func (r *jobRepository) GetCategoryByIDOrName(idOrName string) (category *datamodels.Category, err error) {
+	if idOrName == "default" {
+		return r.getOrCreateDefaultCategory()
+	} else {
+		rCategory := NewCategoryRepository(r.db, r.etcd)
+		return rCategory.GetByIdOrName(idOrName)
+	}
+
 }

@@ -17,7 +17,7 @@ var db *gorm.DB
 var config *common.MasterWorkerConfig
 
 func initDb() {
-	log.SetFlags(log.Lshortfile | log.LstdFlags)
+	log.SetFlags(log.Lshortfile)
 	var (
 		err      error
 		mysqlUri string

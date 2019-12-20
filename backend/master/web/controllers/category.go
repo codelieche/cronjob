@@ -211,3 +211,29 @@ func (c *CategoryController) DeleteBy(idOrName string) mvc.Result {
 		}
 	}
 }
+
+func (c *CategoryController) GetByJobsList(idOrName string, ctx iris.Context) (jobs []*datamodels.Job, err error) {
+	return c.GetByJobsListBy(idOrName, 1, ctx)
+}
+
+func (c *CategoryController) GetByJobsListBy(idOrName string, page int, ctx iris.Context) (jobs []*datamodels.Job, err error) {
+	// 定义变量
+	var (
+		pageSize int
+		offset   int
+		limit    int
+	)
+	// 获取变量
+	pageSize = ctx.URLParamIntDefault("pageSize", 10)
+	limit = pageSize
+	if page > 1 {
+		offset = (page - 1) * pageSize
+	}
+	// 获取分类
+	if category, err := c.Service.GetByIdORName(idOrName); err != nil {
+		return nil, err
+	} else {
+		// 获取分类的Jobs
+		return c.Service.GetJobsList(category, offset, limit)
+	}
+}

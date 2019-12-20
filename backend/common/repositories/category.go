@@ -27,6 +27,8 @@ type CategoryRepository interface {
 	Update(category *datamodels.Category, fields map[string]interface{}) (*datamodels.Category, error)
 	// Update By Id
 	UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Category, error)
+	// 获取Job的列表
+	GetJobsList(category *datamodels.Category, offset int, limit int) (jobs []*datamodels.Job, err error)
 }
 
 // 实例化Category Repository
@@ -186,5 +188,20 @@ func (r *categoryRepository) UpdateByID(id int64, fields map[string]interface{})
 	} else {
 		// 返回获取到的对象
 		return r.Get(id)
+	}
+}
+
+// 获取分类的Jobs列表
+func (r *categoryRepository) GetJobsList(category *datamodels.Category, offset int, limit int) (jobs []*datamodels.Job, err error) {
+	query := r.db.Model(&datamodels.Job{}).
+		Select("id, created_at, category_id, name, time, command, description, is_active, save_output").
+		Preload("Category", func(d *gorm.DB) *gorm.DB {
+			return d.Select("id, name, description, is_active, setup_cmd, check_cmd")
+		}).
+		Offset(offset).Limit(limit).Where("category_id = ?", category.ID).Find(&jobs)
+	if query.Error != nil {
+		return nil, query.Error
+	} else {
+		return jobs, nil
 	}
 }

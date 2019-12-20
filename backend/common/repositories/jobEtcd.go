@@ -43,7 +43,7 @@ func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevJ
 			return nil, err
 		} else {
 			// 获取到job
-			log.Println(job.Category)
+			//log.Println(job.Category)
 		}
 	}
 	if job.Category == nil || job.Category.Name == "" || job.Category.ID == 0 {
@@ -99,7 +99,7 @@ func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevJ
 	}
 
 	// 保存数据到etcd中
-	log.Println(jobEtcdKey, jobEtcdValue)
+	//log.Println(jobEtcdKey, jobEtcdValue)
 	if putResponse, err = r.etcd.KV.Put(
 		context.TODO(),        // 上下文
 		jobEtcdKey,            // key
@@ -308,4 +308,46 @@ func (r *jobRepository) listJobsFromEtcd(page int, pageSize int) (jobs []*datamo
 	//	返回结果
 	return jobs, nil
 
+}
+
+// 从etcd中删除Job
+func (r *jobRepository) deleteJobFromEtcd(jobKey string) (success bool, err error) {
+	// 1. 定义变量
+	var (
+		deleteResponse *clientv3.DeleteResponse
+		ctx            context.Context
+	)
+
+	// 2. 对jobkey做判断
+	jobKey = strings.TrimSpace(jobKey)
+	if !strings.HasPrefix(jobKey, common.ETCD_JOBS_DIR) {
+		err = errors.New("传入的key前缀不正确")
+		return false, err
+	}
+
+	if jobKey == "" {
+		err = errors.New("jobKey不可为空")
+		return false, err
+	}
+
+	// 3. 操作删除
+	jobKey = strings.Replace(jobKey, "//", "/", -1)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(5)*time.Second)
+
+	if deleteResponse, err = r.etcd.KV.Delete(
+		ctx,
+		jobKey,
+		clientv3.WithPrevKV(),
+	); err != nil {
+		return false, err
+	}
+
+	// 4. 校验被删除的keyValue
+	if len(deleteResponse.PrevKvs) < 1 {
+		err = fmt.Errorf("%s不存在", jobKey)
+		return false, err
+	} else {
+		// 删除成功
+		return true, nil
+	}
 }

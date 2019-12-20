@@ -39,8 +39,20 @@ func setAppRoute(app *iris.Application) {
 		// 实例化category的Service
 		service := services.NewCategoryService(repo)
 		// 注册service
-		app.Register(service)
+		app.Register(service, sess.Start)
 		// 添加Controller
 		app.Handle(new(controllers.CategoryController))
+	})
+
+	// Job相关的api
+	mvc.Configure(apiV1.Party("/job"), func(app *mvc.Application) {
+		// 实例化Job的repository
+		repo := repositories.NewJobRespository(db, etcd)
+		// 实例化Job的Service
+		service := services.NewJobService(repo)
+		// 注册Service
+		app.Register(service, sess.Start)
+		// 添加Controller
+		app.Handle(new(controllers.JobController))
 	})
 }

@@ -25,6 +25,8 @@ type CategoryService interface {
 	Update(category *datamodels.Category, fields map[string]interface{}) (*datamodels.Category, error)
 	// 更新分类
 	UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Category, error)
+	// 获取分类的jobs列表
+	GetJobsList(category *datamodels.Category, offset int, limit int) (jobs []*datamodels.Job, err error)
 }
 
 // 实例化Category Service
@@ -38,46 +40,51 @@ type categoryService struct {
 }
 
 // 创建分类
-func (s categoryService) Create(category *datamodels.Category) (*datamodels.Category, error) {
+func (s *categoryService) Create(category *datamodels.Category) (*datamodels.Category, error) {
 	return s.repo.Save(category)
 }
 
 // 保存分类
-func (s categoryService) Save(category *datamodels.Category) (*datamodels.Category, error) {
+func (s *categoryService) Save(category *datamodels.Category) (*datamodels.Category, error) {
 	return s.repo.Save(category)
 }
 
 // 根据ID获取分类
-func (s categoryService) GetByID(id int64) (category *datamodels.Category, err error) {
+func (s *categoryService) GetByID(id int64) (category *datamodels.Category, err error) {
 	return s.repo.Get(id)
 }
 
 // 根据Name获取分类
-func (s categoryService) GetByName(name string) (category *datamodels.Category, err error) {
+func (s *categoryService) GetByName(name string) (category *datamodels.Category, err error) {
 	return s.repo.GetByName(name)
 }
 
 // 根据ID或者Name获取分类
-func (s categoryService) GetByIdORName(idOrName string) (category *datamodels.Category, err error) {
+func (s *categoryService) GetByIdORName(idOrName string) (category *datamodels.Category, err error) {
 	return s.repo.GetByIdOrName(idOrName)
 }
 
 // 获取分类的列表
-func (s categoryService) List(offset int, limit int) (categories []*datamodels.Category, err error) {
+func (s *categoryService) List(offset int, limit int) (categories []*datamodels.Category, err error) {
 	return s.repo.List(offset, limit)
 }
 
 // 删除分类
-func (s categoryService) Delete(category *datamodels.Category) (err error) {
+func (s *categoryService) Delete(category *datamodels.Category) (err error) {
 	return s.repo.Delete(category)
 }
 
 // 更新分类
-func (s categoryService) Update(category *datamodels.Category, fields map[string]interface{}) (*datamodels.Category, error) {
+func (s *categoryService) Update(category *datamodels.Category, fields map[string]interface{}) (*datamodels.Category, error) {
 	return s.repo.Update(category, fields)
 }
 
 // 更新分类By ID
-func (s categoryService) UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Category, error) {
+func (s *categoryService) UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Category, error) {
 	return s.repo.UpdateByID(id, fields)
+}
+
+// 获取分类的Jobs列表
+func (s *categoryService) GetJobsList(category *datamodels.Category, offset int, limit int) (jobs []*datamodels.Job, err error) {
+	return s.repo.GetJobsList(category, offset, limit)
 }
