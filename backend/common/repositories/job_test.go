@@ -19,7 +19,7 @@ func TestJobRepository_Save(t *testing.T) {
 
 	// 2. init repository
 	rCategory := NewCategoryRepository(db, etcd)
-	r := NewJobRespository(db, etcd)
+	r := NewJobRepository(db, etcd)
 
 	// 3. 插入10条Job
 	// 3-1: 获取默认的分类
@@ -80,7 +80,7 @@ func TestJobRepository_List(t *testing.T) {
 	etcd := datasources.GetEtcd()
 
 	// 2. init repository
-	r := NewJobRespository(db, etcd)
+	r := NewJobRepository(db, etcd)
 
 	// 3. list jobs
 	var (
@@ -115,7 +115,7 @@ func TestJobRepository_Update(t *testing.T) {
 
 	// 2. init repository
 	rCategory := NewCategoryRepository(db, etcd)
-	r := NewJobRespository(db, etcd)
+	r := NewJobRepository(db, etcd)
 
 	// 3. 获取Job
 	var (
@@ -152,7 +152,7 @@ func TestJobRepository_Delete(t *testing.T) {
 	etcd := datasources.GetEtcd()
 
 	// 2. init repository
-	r := NewJobRespository(db, etcd)
+	r := NewJobRepository(db, etcd)
 
 	// 3. Delete
 	// 3-1: 获取job

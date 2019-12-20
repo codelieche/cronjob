@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/codelieche/cronjob/backend/common"
 	"github.com/codelieche/cronjob/backend/common/datamodels"
@@ -27,12 +29,12 @@ type JobRepository interface {
 	GetCategoryByIDOrName(idOrName string) (category *datamodels.Category, err error)
 }
 
-func NewJobRespository(db *gorm.DB, etcd *datasources.Etcd) JobRepository {
+func NewJobRepository(db *gorm.DB, etcd *datasources.Etcd) JobRepository {
 	return &jobRepository{
 		db:   db,
 		etcd: etcd,
 		infoFields: []string{
-			"id", "created_at", "updated_at", "deleted_at",
+			"id", "created_at", "updated_at", "deleted_at", "etcd_key",
 			"name", "category_id", "time", "command", "description", "is_active", "save_output",
 		},
 	}
@@ -48,6 +50,17 @@ type jobRepository struct {
 func (r *jobRepository) Save(job *datamodels.Job) (*datamodels.Job, error) {
 	if job.ID > 0 {
 		// 是更新操作
+		if job.EtcdKey == "" && job.CategoryID > 0 {
+			idOrName := strconv.Itoa(int(job.CategoryID))
+			if jobCategory, err := r.GetCategoryByIDOrName(idOrName); err != nil {
+				log.Println("获取Job的分类出错：", err.Error())
+			} else {
+				job.Category = jobCategory
+				// 设置一下job的etcdKey
+				jobEtcdKey := fmt.Sprintf("%s%s/%d", common.ETCD_JOBS_DIR, job.Category.Name, job.ID)
+				job.EtcdKey = jobEtcdKey
+			}
+		}
 		if err := r.db.Model(&datamodels.Job{}).Update(job).Error; err != nil {
 			return nil, err
 		} else {
@@ -76,14 +89,21 @@ func (r *jobRepository) Save(job *datamodels.Job) (*datamodels.Job, error) {
 		} else {
 			// 需要插入到etcd中
 			// 需要更新一下etcd中的数据
-			if prevJob, err := r.saveJobToEtcd(job, true); err != nil {
+			if prevEtcdJob, err := r.saveJobToEtcd(job, true); err != nil {
 				// 保存去etcd出错
 				log.Println("保存到mysql成功了，但是保存到etcd的时候，出错了", err.Error())
 
 			} else {
-				log.Println(prevJob)
+				//log.Println(prevEtcdJob)
+				// 保存到etcd成功
+				if prevEtcdJob.ID > 0 {
+					jobEtcdKey := fmt.Sprintf("%s%s/%d", common.ETCD_JOBS_DIR, prevEtcdJob.Category, prevEtcdJob.ID)
+					updateFields := make(map[string]interface{})
+					updateFields["EtcdKey"] = jobEtcdKey
+					// 更新job的key
+					r.db.Model(job).Limit(1).Update(updateFields)
+				}
 			}
-
 			return job, nil
 		}
 	}
@@ -158,7 +178,7 @@ func (r *jobRepository) Update(job *datamodels.Job, fields map[string]interface{
 		return nil, err
 	} else {
 		// 需要更新一下etcd中的数据
-		if prevJob, err := r.saveJobToEtcd(job, false); err != nil {
+		if prevEtcdJob, err := r.saveJobToEtcd(job, false); err != nil {
 			// 保存去etcd出错
 			// 当不存在的时候，就需要重新创建一下
 			if err == common.NotFountError {
@@ -171,7 +191,10 @@ func (r *jobRepository) Update(job *datamodels.Job, fields map[string]interface{
 			}
 
 		} else {
-			log.Println(prevJob)
+			//log.Println(prevEtcdJob)
+			if prevEtcdJob == nil {
+				log.Println("更新etcd没成功！")
+			}
 		}
 
 		return job, nil
@@ -190,7 +213,30 @@ func (r *jobRepository) UpdateByID(id int64, fields map[string]interface{}) (*da
 		return nil, err
 	} else {
 		// 返回获取到的对象
-		return r.Get(id)
+		if job, err := r.Get(id); err != nil {
+			return nil, err
+		} else {
+			// 需要更新一下etcd中的数据
+			if prevEtcdJob, err := r.saveJobToEtcd(job, false); err != nil {
+				// 保存去etcd出错
+				// 当不存在的时候，就需要重新创建一下
+				if err == common.NotFountError {
+					// 不存在etcd中，我们需要创建一下
+					if _, err = r.saveJobToEtcd(job, true); err != nil {
+						log.Println("创建Job成功了，但是保存到etcd的时候，出错了", err.Error())
+					}
+				} else {
+					log.Println("保存到mysql成功了，但是保存到etcd的时候，出错了", err.Error())
+				}
+
+			} else {
+				//log.Println(prevEtcdJob)
+				if prevEtcdJob == nil {
+					log.Println("更新etcd没成功！")
+				}
+			}
+			return job, nil
+		}
 	}
 }
 

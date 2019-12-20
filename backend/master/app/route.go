@@ -47,12 +47,24 @@ func setAppRoute(app *iris.Application) {
 	// Job相关的api
 	mvc.Configure(apiV1.Party("/job"), func(app *mvc.Application) {
 		// 实例化Job的repository
-		repo := repositories.NewJobRespository(db, etcd)
+		repo := repositories.NewJobRepository(db, etcd)
 		// 实例化Job的Service
 		service := services.NewJobService(repo)
 		// 注册Service
 		app.Register(service, sess.Start)
 		// 添加Controller
 		app.Handle(new(controllers.JobController))
+	})
+
+	// Job Kill相关的api
+	mvc.Configure(apiV1.Party("/job/kill"), func(app *mvc.Application) {
+		// 实例化JobKill的repository
+		repo := repositories.NewJobKillRepository(db, etcd)
+		// 实例化Job的Service
+		service := services.NewJobKillService(repo)
+		// 注册Service
+		app.Register(service, sess.Start)
+		// 添加Controller
+		app.Handle(new(controllers.JobKillController))
 	})
 }

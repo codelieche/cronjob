@@ -18,12 +18,13 @@ import (
 )
 
 // 保存Job到Etcd中
-func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevJob *datamodels.Job, err error) {
+func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevEtcdJob *datamodels.JobEtcd, err error) {
 	// 把任务保存到：/crontab/jobs/:id中
 	// isCreate是否是创建
 	// 创建的时候：需要判断job是否存在，存在就报错
 	// 不是创建，那么就是更新，需要判断是否存在，不存在就报错
 	var (
+		jobEtcd      *datamodels.JobEtcd
 		jobsEtcdDir  string // job在etcd中的上级目录
 		jobEtcdKey   string // job在etcd中的key
 		jobEtcdValue []byte // job在etcd中的value
@@ -38,7 +39,6 @@ func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevJ
 
 	// 对job的分类进行校验
 	if job.Category == nil {
-
 		if job, err = r.GetWithCategory(int64(job.ID)); err != nil {
 			return nil, err
 		} else {
@@ -46,6 +46,7 @@ func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevJ
 			//log.Println(job.Category)
 		}
 	}
+
 	if job.Category == nil || job.Category.Name == "" || job.Category.ID == 0 {
 		err = errors.New("job的分类为空")
 		return nil, err
@@ -72,9 +73,19 @@ func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevJ
 
 	jobEtcdKey = fmt.Sprintf("%s/%s/%d", jobsEtcdDir, job.Category.Name, job.ID)
 
+	// 检查一下etcd的Key
+	if job.EtcdKey == "" {
+		// 设置一下job的etcdKey
+		job.EtcdKey = jobEtcdKey
+		updateFields := make(map[string]interface{})
+		updateFields["EtcdKey"] = jobEtcdKey
+		// 更新job的key
+		r.db.Model(job).Limit(1).Update(updateFields)
+	}
+
 	// 判断job是否已经存在了
 	// TOOD: 这里应该加个锁，抢到锁才创建，要不大量频繁创建，可能会造成name重复
-	if prevJob, err = r.getJobFromEtcd(job.Category.Name, job.ID); err != nil {
+	if prevEtcdJob, err = r.getJobFromEtcd(job.Category.Name, job.ID); err != nil {
 		if err == common.NotFountError {
 			// 为找到Job
 			if !isCreate {
@@ -87,14 +98,15 @@ func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevJ
 		if isCreate {
 			// 由于是创建：存在的话，报错
 			err = fmt.Errorf("job:%s已经存在于etcd中，不可创建", jobEtcdKey)
-			return prevJob, err
+			return prevEtcdJob, err
 		} else {
 			// 更新操作：在调用的地方记得校验name
 		}
 	}
 
-	// 对job反序列化
-	if jobEtcdValue, err = json.Marshal(job); err != nil {
+	// 对jobEtcd反序列化
+	jobEtcd = job.ToEtcdStruct()
+	if jobEtcdValue, err = json.Marshal(jobEtcd); err != nil {
 		return nil, err
 	}
 
@@ -115,21 +127,21 @@ func (r *jobRepository) saveJobToEtcd(job *datamodels.Job, isCreate bool) (prevJ
 	// 如果是更新，那么返回上一个版本的job
 	if putResponse.PrevKv != nil {
 		// 对旧值反序列化
-		if err = json.Unmarshal(putResponse.PrevKv.Value, &prevJob); err != nil {
+		if err = json.Unmarshal(putResponse.PrevKv.Value, &prevEtcdJob); err != nil {
 			log.Println(err)
 			// 这里虽然反序列化出错了，但是不影响保存的操作，这里我们可以把err设置为空
-			return nil, nil
+			return jobEtcd, nil
 		} else {
 			// 返回上一个就的值
-			return prevJob, nil
+			return prevEtcdJob, nil
 		}
 	} else {
 		// 没有上一个job的值
-		return nil, nil
+		return jobEtcd, nil
 	}
 }
 
-func (r *jobRepository) getJobFromEtcd(categoryName string, id uint) (job *datamodels.Job, err error) {
+func (r *jobRepository) getJobFromEtcd(categoryName string, id uint) (jobEtcd *datamodels.JobEtcd, err error) {
 	// 1. 定义变量
 	var (
 		jobEtcdKey  string
@@ -166,13 +178,13 @@ func (r *jobRepository) getJobFromEtcd(categoryName string, id uint) (job *datam
 			keyValue = getResponse.Kvs[i]
 			//log.Println(keyValue.Value)
 			// 4-2: json反序列化
-			job = &datamodels.Job{}
-			if err = json.Unmarshal(keyValue.Value, job); err != nil {
+			jobEtcd = &datamodels.JobEtcd{}
+			if err = json.Unmarshal(keyValue.Value, jobEtcd); err != nil {
 				log.Println("获取Job反序列化出错：", err)
 				return nil, err
 			} else {
-				job.EtcdKey = jobEtcdKey
-				return job, nil
+				//jobEtcd.EtcdKey = jobEtcdKey
+				return jobEtcd, nil
 			}
 		}
 		return nil, nil
