@@ -67,4 +67,16 @@ func setAppRoute(app *iris.Application) {
 		// 添加Controller
 		app.Handle(new(controllers.JobKillController))
 	})
+
+	// JobExecute相关的api
+	mvc.Configure(apiV1.Party("/job/execute"), func(app *mvc.Application) {
+		// 实例化JobExecute的repository
+		repo := repositories.NewJobExecuteRepository(db)
+		// 实例化JobExecute的Service
+		service := services.NewJobExecuteService(repo)
+		// 注册Service
+		app.Register(service, sess.Start)
+		// 添加Controller
+		app.Handle(new(controllers.JobExecuteController))
+	})
 }

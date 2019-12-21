@@ -54,6 +54,7 @@ func initDb() {
 	db.AutoMigrate(&datamodels.Category{})
 	db.AutoMigrate(&datamodels.Job{})
 	db.AutoMigrate(&datamodels.JobKill{})
+	db.AutoMigrate(&datamodels.JobExecute{})
 
 	//
 	db.LogMode(config.Debug)
