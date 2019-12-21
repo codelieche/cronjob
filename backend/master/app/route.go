@@ -80,4 +80,17 @@ func setAppRoute(app *iris.Application) {
 		// 添加Controller
 		app.Handle(new(controllers.JobExecuteController))
 	})
+
+	// Worker相关的api
+	mvc.Configure(apiV1.Party("/worker"), func(app *mvc.Application) {
+		// 实例化Worker的repository
+		etcd := datasources.GetEtcd()
+		repo := repositories.NewWorkerRepository(etcd)
+		// 实例化Worker的Service
+		service := services.NewWorkerService(repo)
+		// 注册Service
+		app.Register(service, sess.Start)
+		// 添加Controller
+		app.Handle(new(controllers.WorkerController))
+	})
 }

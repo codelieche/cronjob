@@ -28,7 +28,7 @@ type JobEtcd struct {
 	Command     string    `json:"command"`
 	Description string    `json:"description"`
 	IsActive    bool      `json:"is_active"`
-	SaveOutPut  bool      `json:"save_out_put"`
+	SaveOutput  bool      `json:"save_output"`
 }
 
 // Job To JobEtcd
@@ -42,6 +42,6 @@ func (job *Job) ToEtcdStruct() *JobEtcd {
 		Command:     job.Command,
 		Description: job.Description,
 		IsActive:    job.IsActive,
-		SaveOutPut:  job.SaveOutput,
+		SaveOutput:  job.SaveOutput,
 	}
 }

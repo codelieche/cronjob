@@ -1,7 +1,7 @@
-package common
+package datamodels
 
 // Worker节点的信息
-type WorkerInfo struct {
+type Worker struct {
 	Name string `json:"name"` // 节点的名称：Ip:Port（这样就算唯一的了）
 	Host string `json:"host"` // 主机名
 	User string `json:"user"` // 执行程序的用户

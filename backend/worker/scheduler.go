@@ -19,7 +19,6 @@ type Scheduler struct {
 
 // 计算任务调度状态
 func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
-
 	var (
 		jobPlan  *common.JobSchedulePlan
 		now      time.Time
