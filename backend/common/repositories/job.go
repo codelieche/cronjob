@@ -27,6 +27,8 @@ type JobRepository interface {
 	UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Job, error)
 	// 根据ID或者Name获取分类
 	GetCategoryByIDOrName(idOrName string) (category *datamodels.Category, err error)
+	// 获取Job的执行列表
+	GetJobExecuteList(jobID int64, offset int, limit int) (jobExecutes []*datamodels.JobExecute, err error)
 }
 
 func NewJobRepository(db *gorm.DB, etcd *datasources.Etcd) JobRepository {
@@ -37,13 +39,19 @@ func NewJobRepository(db *gorm.DB, etcd *datasources.Etcd) JobRepository {
 			"id", "created_at", "updated_at", "deleted_at", "etcd_key",
 			"name", "category_id", "time", "command", "description", "is_active", "save_output",
 		},
+		executeFields: []string{
+			"id", "created_at", "updated_at", "deleted_at",
+			"worker", "category", "name", "command", "job_id",
+			"plan_time", "schedule_time", "status", "log_id",
+		},
 	}
 }
 
 type jobRepository struct {
-	db         *gorm.DB
-	etcd       *datasources.Etcd
-	infoFields []string
+	db            *gorm.DB
+	etcd          *datasources.Etcd
+	infoFields    []string
+	executeFields []string
 }
 
 // 保存Job
@@ -277,4 +285,16 @@ func (r *jobRepository) GetCategoryByIDOrName(idOrName string) (category *datamo
 		return rCategory.GetByIdOrName(idOrName)
 	}
 
+}
+
+// 获取Job的执行列表
+func (r *jobRepository) GetJobExecuteList(jobID int64, offset int, limit int) (jobExecutes []*datamodels.JobExecute, err error) {
+	query := r.db.Model(&datamodels.JobExecute{}).
+		Select(r.executeFields).Where("job_id = ?", jobID).
+		Offset(offset).Limit(limit).Find(&jobExecutes)
+	if err = query.Error; err != nil {
+		return nil, err
+	} else {
+		return jobExecutes, nil
+	}
 }

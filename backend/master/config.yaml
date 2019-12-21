@@ -39,6 +39,7 @@ master:
       - "127.0.0.1:27017"
     user: root
     password: "${MONGO_PASSWORD:password}"
+    database: cronjob_develop
 
 # worker相关配置
 worker:
@@ -64,6 +65,7 @@ worker:
       - "127.0.0.1:27017"
     user: root
     password: "${MONGO_PASSWORD:password}"
+    database: cronjob_develop
   # 当前worker可执行什么类型的任务
   categories:
     default: true

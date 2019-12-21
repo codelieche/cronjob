@@ -24,6 +24,8 @@ type JobService interface {
 	UpdateByID(id int64, fields map[string]interface{}) (*datamodels.Job, error)
 	// 根据ID或者Name获取分类
 	GetCategoryByIDOrName(idOrName string) (category *datamodels.Category, err error)
+	// 获取Job的执行列表
+	GetJobExecuteList(jobID int64, offset int, limit int) (jobExecutes []*datamodels.JobExecute, err error)
 }
 
 // 实例化Job Service
@@ -73,4 +75,9 @@ func (s *jobService) UpdateByID(id int64, fields map[string]interface{}) (*datam
 
 func (s *jobService) GetCategoryByIDOrName(idOrName string) (category *datamodels.Category, err error) {
 	return s.repo.GetCategoryByIDOrName(idOrName)
+}
+
+// 获取Job的执行列表
+func (s *jobService) GetJobExecuteList(jobID int64, offset int, limit int) (jobExecutes []*datamodels.JobExecute, err error) {
+	return s.repo.GetJobExecuteList(jobID, offset, limit)
 }

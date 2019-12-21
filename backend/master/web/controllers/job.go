@@ -232,3 +232,32 @@ func (c *JobController) DeleteBy(id int64) mvc.Result {
 		}
 	}
 }
+
+// 获取Job的执行列表
+func (c *JobController) GetByExecuteList(jobID int64, ctx iris.Context) (jobExecutes []*datamodels.JobExecute, success bool) {
+	return c.GetByExecuteListBy(jobID, 1, ctx)
+}
+
+func (c *JobController) GetByExecuteListBy(jobID int64, page int, ctx iris.Context) (jobExecutes []*datamodels.JobExecute, success bool) {
+	// 定义变量
+	var (
+		pageSize int
+		offset   int
+		limit    int
+		err      error
+	)
+
+	// 获取变量
+	pageSize = ctx.URLParamIntDefault("pageSize", 10)
+	limit = pageSize
+	if page > 1 {
+		offset = (page - 1) * pageSize
+	}
+
+	// 获取Job列表
+	if jobExecutes, err = c.Service.GetJobExecuteList(jobID, offset, limit); err != nil {
+		return nil, false
+	} else {
+		return jobExecutes, true
+	}
+}

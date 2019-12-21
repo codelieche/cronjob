@@ -22,6 +22,15 @@ func (c *JobExecuteController) GetBy(id int64) (jobExecute *datamodels.JobExecut
 	}
 }
 
+// 根据ID获取JobExecute的日志
+func (c *JobExecuteController) GetByLog(id int64) (jobExecuteLog *datamodels.JobExecuteLog, success bool) {
+	if jobExecuteLog, err := c.Service.GetExecuteLogByID(id); err != nil {
+		return nil, false
+	} else {
+		return jobExecuteLog, true
+	}
+}
+
 // 获取列表
 func (c *JobExecuteController) GetList(ctx iris.Context) (jobExecutes []*datamodels.JobExecute, success bool) {
 	return c.GetListBy(1, ctx)

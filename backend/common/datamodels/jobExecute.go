@@ -32,6 +32,7 @@ type JobExecuteInfo struct {
 
 // Job执行结果
 type JobExecuteResult struct {
+	ExecuteID   int             // 任务执行的ID
 	ExecuteInfo *JobExecuteInfo // 执行信息: 消费结果的时候，会根据这个来判断是否执行了
 	IsExecute   bool            // 是否有执行
 	Output      []byte          // Job执行输出结果
@@ -63,4 +64,5 @@ type JobExecuteLog struct {
 	JobExecuteID int    `json:"job_execute_id" bson:"job_execute_id"` // 任务执行ID
 	Output       string `json:"output" bson:"output"`                 // 执行任务输出结果
 	Err          string `json:"err" bson:"err"`                       // 任务错误信息
+	Success      bool   `json:"success" bson:"success"`               // 执行是否成功：当有错误日志的时候，就是未成功
 }

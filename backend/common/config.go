@@ -35,9 +35,10 @@ type EtcdConfig struct {
 
 // master mongodb config
 type MongoConfig struct {
-	Hosts    []string `json:"hosts", yaml:"hosts"`
-	User     string   `json:"user", yaml:"user"`
-	Password string   `json:"password", yaml:"password"`
+	Hosts    []string `json:"hosts" yaml:"hosts"`       // 主机列表
+	User     string   `json:"user" yaml:"user"`         // 用户名
+	Password string   `json:"password" yaml:"password"` // MongoDB的用户密码
+	Database string   `json:"database" yaml:"database"` // 数据库的名字
 }
 
 // master相关的配置
