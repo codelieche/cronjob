@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common/datasources"
+
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 
 	"github.com/codelieche/cronjob/backend/common"
@@ -19,9 +21,7 @@ import (
 
 // 注册节点信息到master
 type Register struct {
-	client *clientv3.Client
-	kv     clientv3.KV
-	lease  clientv3.Lease
+	etcd *datasources.Etcd
 
 	Info *datamodels.Worker // Worker节点的信息
 	//Name     string `json:"name"`     // 节点的名称：Ip:Port（这样就算唯一的了）
@@ -51,7 +51,7 @@ func (register *Register) keepOnlive() {
 		workerKey = common.ETCD_WORKER_DIR + register.Info.Name
 
 		// 创建租约
-		if leaseGrantResponse, err = register.lease.Grant(context.TODO(), 10); err != nil {
+		if leaseGrantResponse, err = register.etcd.Lease.Grant(context.TODO(), 10); err != nil {
 			// 如果出错，可以等下重试
 			log.Println(err.Error())
 			goto RETRY
@@ -59,7 +59,7 @@ func (register *Register) keepOnlive() {
 
 		//	自动续租
 		leaseID = leaseGrantResponse.ID
-		if keepAliveChan, err = register.lease.KeepAlive(context.TODO(), leaseID); err != nil {
+		if keepAliveChan, err = register.etcd.Lease.KeepAlive(context.TODO(), leaseID); err != nil {
 			log.Println(err.Error())
 			goto RETRY
 		}
@@ -69,7 +69,7 @@ func (register *Register) keepOnlive() {
 			log.Println(err)
 			goto RETRY
 		}
-		if putResponse, err = register.kv.Put(
+		if putResponse, err = register.etcd.KV.Put(
 			context.TODO(), workerKey, string(workerInfoValue),
 			clientv3.WithLease(leaseID),
 		); err != nil {
@@ -99,10 +99,7 @@ func (register *Register) keepOnlive() {
 func newRegister() (register *Register, err error) {
 	// 先连接etcd相关
 	var (
-		//config clientv3.Config
-		client *clientv3.Client
-		kv     clientv3.KV
-		lease  clientv3.Lease
+		etcd *datasources.Etcd
 
 		hostName    string
 		userCurrent *user.User
@@ -112,22 +109,7 @@ func newRegister() (register *Register, err error) {
 	)
 
 	// 初始化配置
-	//config = clientv3.Config{
-	//	Endpoints:   []string{"127.0.0.1:2379"},
-	//	DialTimeout: time.Second * 10,
-	//}
-	//
-	//// 建立连接
-	//if client, err = clientv3.New(config); err != nil {
-	//	return
-	//}
-	//
-	//// 得到KV和Lease的API子集
-	//kv = clientv3.NewKV(client)
-	//lease = clientv3.NewLease(client)
-	if client, kv, lease, _, err = common.NewEtcdClientKvLeaseWatcher(common.Config.Worker.Etcd); err != nil {
-		return nil, err
-	}
+	etcd = datasources.GetEtcd()
 
 	// 获取到主机名
 	if hostName, err = os.Hostname(); err != nil {
@@ -156,10 +138,8 @@ func newRegister() (register *Register, err error) {
 	}
 
 	register = &Register{
-		client: client,
-		kv:     kv,
-		lease:  lease,
-		Info:   workerInfo, // 工作节点的信息
+		etcd: etcd,
+		Info: workerInfo, // 工作节点的信息
 	}
 
 	register.Info.Name = fmt.Sprintf("%s:%d", register.Info.Ip, register.Info.Port)

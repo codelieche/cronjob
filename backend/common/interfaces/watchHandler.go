@@ -1,7 +1,9 @@
-package common
+package interfaces
 
 import (
 	"log"
+
+	"github.com/codelieche/cronjob/backend/common"
 
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 
@@ -21,7 +23,7 @@ func (demo *WatchJobsHandlerDemo) HandlerGetResponse(response *clientv3.GetRespo
 	)
 	// for循环打印一下jobs
 	for _, kvPair = range response.Kvs {
-		if job, err = UnpackByteToJob(kvPair.Value); err != nil {
+		if job, err = common.UnpackByteToJob(kvPair.Value); err != nil {
 			log.Println(err.Error())
 			continue
 		} else {
@@ -50,7 +52,7 @@ func (demo *WatchJobsHandlerDemo) HandlerWatchChan(watchChan clientv3.WatchChan)
 					string(watchEvent.Kv.Key), watchEvent.IsCreate(), watchEvent.IsModify(),
 				)
 				// 反序列化，推送给调度协程
-				if job, err = UnpackByteToJob(watchEvent.Kv.Value); err != nil {
+				if job, err = common.UnpackByteToJob(watchEvent.Kv.Value); err != nil {
 					//log.Println(err.Error())
 					log.Println(string(watchEvent.Kv.Value))
 					continue
@@ -63,7 +65,7 @@ func (demo *WatchJobsHandlerDemo) HandlerWatchChan(watchChan clientv3.WatchChan)
 				log.Println("删除事件，Key：", string(watchEvent.Kv.Key))
 
 				// 反序列化，推送给调度协程
-				if job, err = UnpackByteToJob(watchEvent.PrevKv.Value); err != nil {
+				if job, err = common.UnpackByteToJob(watchEvent.PrevKv.Value); err != nil {
 					//log.Println(err.Error())
 					log.Println(string(watchEvent.Kv.Value))
 					continue

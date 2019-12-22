@@ -1,8 +1,10 @@
-package common
+package interfaces
 
 import (
 	"log"
 	"strings"
+
+	"github.com/codelieche/cronjob/backend/common"
 
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
@@ -54,11 +56,11 @@ func (demo *WatchKillHandlerDemo) HandlerWatchChan(watchChan clientv3.WatchChan)
 // 从etcd jobs key中提取JobName
 // 比如：/crontab/jobs/test 得到的jobName是test
 func ExtractJobName(jobKey string) string {
-	return strings.TrimPrefix(jobKey, ETCD_JOBS_DIR)
+	return strings.TrimPrefix(jobKey, common.ETCD_JOBS_DIR)
 }
 
 // 从etcd kill key中提取jobName
 // 比如：/crontab/kill/test 得到的jobName是test
 func ExtractKillJobName(killKey string) string {
-	return strings.TrimPrefix(killKey, ETCD_JOB_KILL_DIR)
+	return strings.TrimPrefix(killKey, common.ETCD_JOB_KILL_DIR)
 }

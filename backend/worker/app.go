@@ -16,7 +16,7 @@ type Worker struct {
 	TimeStart      time.Time                         // 启动时间
 	CategoryRepo   repositories.CategoryRepository   // 分类相关的操作
 	JobExecuteRepo repositories.JobExecuteRepository // 任务执行相关的操作
-	EtcdManager    *common.EtcdManager               // 计划任务管理器
+	EtcdManager    *repositories.EtcdManager         // 计划任务管理器
 	Scheduler      *Scheduler                        // 调度器
 	Categories     map[string]bool                   // 执行计划任务的类型
 }
@@ -74,7 +74,7 @@ func NewWorkerApp() *Worker {
 	}
 
 	var (
-		etcdManager *common.EtcdManager
+		etcdManager *repositories.EtcdManager
 		scheduler   *Scheduler
 		err         error
 	)
@@ -87,7 +87,7 @@ func NewWorkerApp() *Worker {
 	jobExecuteRepo := repositories.NewJobExecuteRepository(db, mongoDB)
 
 	// 实例化jobManager
-	if etcdManager, err = common.NewEtcdManager(common.Config.Worker.Etcd); err != nil {
+	if etcdManager, err = repositories.NewEtcdManager(common.Config.Worker.Etcd); err != nil {
 		log.Println(err.Error())
 		//panic(err)
 		os.Exit(1)

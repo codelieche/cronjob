@@ -1,21 +1,29 @@
-package common
+package repositories
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/codelieche/cronjob/backend/common/datamodels"
+	"github.com/codelieche/cronjob/backend/common/interfaces"
 
-	"github.com/coreos/etcd/pkg/transport"
+	"github.com/codelieche/cronjob/backend/common"
+	"github.com/codelieche/cronjob/backend/common/datasources"
+
+	"github.com/codelieche/cronjob/backend/common/datamodels"
 
 	"github.com/coreos/etcd/clientv3"
 )
+
+// Job Manager
+// 计划任务的管理器
+type EtcdManager struct {
+	etcd *datasources.Etcd
+}
 
 // 计划任务kill
 // 杀掉计划任务运行的进程
@@ -47,15 +55,15 @@ func (etcdManager *EtcdManager) KillJob(category string, jobID int) (err error) 
 	//}
 
 	// jobKillKey = ETCD_JOB_KILL_DIR + name
-	jobKillKey = fmt.Sprintf("%s%s/%d", ETCD_JOB_KILL_DIR, category, jobID)
+	jobKillKey = fmt.Sprintf("%s%s/%d", common.ETCD_JOB_KILL_DIR, category, jobID)
 	killJob = &datamodels.JobKill{
 		Category: category,
 		JobID:    uint(jobID),
 	}
 	// 2. 通知worker杀死对应的任务
 	// 2-1: 创建个租约
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Millisecond)
-	if leaseGrantResponse, err = etcdManager.lease.Grant(ctx, 5); err != nil {
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(common.Config.Master.Etcd.Timeout)*time.Millisecond)
+	if leaseGrantResponse, err = etcdManager.etcd.Lease.Grant(ctx, 5); err != nil {
 		// 创建租约失败
 		return
 	}
@@ -67,7 +75,7 @@ func (etcdManager *EtcdManager) KillJob(category string, jobID int) (err error) 
 		return nil
 	}
 
-	if putResponse, err = etcdManager.kv.Put(
+	if putResponse, err = etcdManager.etcd.KV.Put(
 		context.TODO(),
 		jobKillKey, string(killJobData),
 		clientv3.WithLease(leaseID),
@@ -85,7 +93,7 @@ func (etcdManager *EtcdManager) KillJob(category string, jobID int) (err error) 
 // Watch keys
 // 监听etcd key的变化: 比如监听jobs的变化，和监听kill的任务
 // 传递的参数：要监听的key的前缀，和处理监听的接口
-func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler WatchHandler) (err error) {
+func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler interfaces.WatchHandler) (err error) {
 	// 1. 定义变量
 	var (
 		getResponse *clientv3.GetResponse
@@ -100,13 +108,14 @@ func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler WatchHandl
 
 	// 2. get：/crontab/jobs/目录下的所有任务，并且获知当前集群的revision
 	//keyDir = "/crontab/jobs/"
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(Config.Master.Etcd.Timeout)*time.Millisecond)
-	if getResponse, err = etcdManager.kv.Get(
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(common.Config.Master.Etcd.Timeout)*time.Millisecond)
+	if getResponse, err = etcdManager.etcd.KV.Get(
 		ctx, keyDir,
 		clientv3.WithPrefix(),
 	); err != nil {
 		log.Println("执行watchKeys出错：", err)
-		return
+		os.Exit(1)
+		//return
 	}
 
 	// 3. HandlerGetResponse(getResponse *clientv3.GetResponse)
@@ -119,7 +128,7 @@ func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler WatchHandl
 		log.Printf("开始watch事件:%s(Revision:%d)", keyDir, getResponse.Header.Revision)
 
 		//	4-2：监听:/crontab/jobs/目录后续的变化
-		watchChan = etcdManager.watcher.Watch(
+		watchChan = etcdManager.etcd.Watcher.Watch(
 			context.TODO(),
 			keyDir,
 			clientv3.WithPrefix(),                // 监听以jobKeyDir为前缀的key
@@ -135,72 +144,25 @@ func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler WatchHandl
 }
 
 // 创建任务执行锁
-func (etcdManager *EtcdManager) CreateJobLock(name string) (jobLock *JobLock) {
+func (etcdManager *EtcdManager) CreateJobLock(name string) (jobLock *common.JobLock) {
 	// 返回一把锁
-	jobLock = NewJobLock(name, etcdManager.kv, etcdManager.lease)
+	jobLock = common.NewJobLock(name, etcdManager.etcd.KV, etcdManager.etcd.Lease)
 	return
 }
 
 // 实例化Job Manager
-func NewEtcdManager(etcdConfig *EtcdConfig) (*EtcdManager, error) {
+func NewEtcdManager(etcdConfig *common.EtcdConfig) (*EtcdManager, error) {
 	var (
-		config      clientv3.Config
-		client      *clientv3.Client
-		kv          clientv3.KV
-		lease       clientv3.Lease
-		watcher     clientv3.Watcher
-		err         error
+		etcd        *datasources.Etcd
 		etcdManager *EtcdManager
-		tlsInfo     transport.TLSInfo
-		tlsConfig   *tls.Config
 	)
 
 	// log.Println(etcdConfig.TLS)
-
-	if etcdConfig.TLS != nil {
-		// 检查其三个字段是否为空
-		if etcdConfig.TLS.CertFile == "" || etcdConfig.TLS.KeyFile == "" || etcdConfig.TLS.CaFile == "" {
-			log.Println(etcdConfig.TLS)
-			err = errors.New("传入的TLS配置不可为空")
-			return nil, err
-		} else {
-			tlsInfo = transport.TLSInfo{
-				CertFile:      etcdConfig.TLS.CertFile,
-				KeyFile:       etcdConfig.TLS.KeyFile,
-				TrustedCAFile: etcdConfig.TLS.CaFile,
-			}
-			if tlsConfig, err = tlsInfo.ClientConfig(); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	//	初始化etcd配置
-	config = clientv3.Config{
-		//Endpoints:   []string{"127.0.0.1:2379"}, // 集群地址
-		Endpoints:   etcdConfig.Endpoints,    // 集群地址
-		DialTimeout: 5000 * time.Microsecond, // 连接超时
-		TLS:         tlsConfig,
-	}
-
-	// 建立连接
-	if client, err = clientv3.New(config); err != nil {
-		return nil, err
-	} else {
-		// 连接成功
-	}
-
-	// 得到KV的Lease的API子集
-	kv = clientv3.NewKV(client)
-	lease = clientv3.NewLease(client)
-	watcher = clientv3.NewWatcher(client)
+	etcd = datasources.GetEtcd()
 
 	//	实例化Job Manager
 	etcdManager = &EtcdManager{
-		client:  client,
-		kv:      kv,
-		lease:   lease,
-		watcher: watcher,
+		etcd: etcd,
 	}
 
 	// 返回
