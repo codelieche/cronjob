@@ -3,6 +3,8 @@ package common
 import (
 	"log"
 
+	"github.com/codelieche/cronjob/backend/common/datamodels"
+
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 )
@@ -13,7 +15,7 @@ type WatchJobsHandlerDemo struct {
 
 func (demo *WatchJobsHandlerDemo) HandlerGetResponse(response *clientv3.GetResponse) {
 	var (
-		job    *Job
+		job    *datamodels.JobEtcd
 		kvPair *mvccpb.KeyValue
 		err    error
 	)
@@ -31,7 +33,7 @@ func (demo *WatchJobsHandlerDemo) HandlerGetResponse(response *clientv3.GetRespo
 
 func (demo *WatchJobsHandlerDemo) HandlerWatchChan(watchChan clientv3.WatchChan) {
 	var (
-		job           *Job
+		job           *datamodels.JobEtcd
 		watchResponse clientv3.WatchResponse
 		watchEvent    *clientv3.Event
 		err           error

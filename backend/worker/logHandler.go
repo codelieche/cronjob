@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common/datamodels"
+
 	"go.mongodb.org/mongo-driver/bson"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -18,10 +20,10 @@ import (
 
 // 日志处理的接口
 type LogHandler interface {
-	ConsumeLogsLoop()                                                         // 消费日志循环函数
-	AddLog(executeLog *common.JobExecuteLog) error                            // 添加日志
-	Stop()                                                                    // 日志处理器停止时的操作
-	List(page int, pageSize int) (logList []*common.JobExecuteLog, err error) //获取日志的列表
+	ConsumeLogsLoop()                                                             // 消费日志循环函数
+	AddLog(executeLog *datamodels.JobExecuteLog) error                            // 添加日志
+	Stop()                                                                        // 日志处理器停止时的操作
+	List(page int, pageSize int) (logList []*datamodels.JobExecuteLog, err error) //获取日志的列表
 }
 
 // 日志处理器--mongo
@@ -29,11 +31,11 @@ type MongoLogHandler struct {
 	client     *mongo.Client
 	database   *mongo.Database
 	collection *mongo.Collection
-	logChan    chan *common.JobExecuteLog // 日志channel
-	logList    []interface{}              // 日志列表
-	Duration   int                        // 刷新日志的间隔(毫秒)
-	isActive   bool                       // 是否启动
-	writeLock  *sync.RWMutex              // 读写锁
+	logChan    chan *datamodels.JobExecuteLog // 日志channel
+	logList    []interface{}                  // 日志列表
+	Duration   int                            // 刷新日志的间隔(毫秒)
+	isActive   bool                           // 是否启动
+	writeLock  *sync.RWMutex                  // 读写锁
 }
 
 // 把日志列表插入到数据库中
@@ -62,7 +64,7 @@ func (logHandler *MongoLogHandler) insertManayLogList() (insertManyResult *mongo
 // 消费日志循环
 func (logHandler *MongoLogHandler) ConsumeLogsLoop() {
 	var (
-		executeLog *common.JobExecuteLog
+		executeLog *datamodels.JobExecuteLog
 		//insertOneResult *mongo.InsertOneResult
 		//logSlice []common.JobExecuteLog
 		insertManyResult *mongo.InsertManyResult
@@ -172,15 +174,15 @@ END:
 }
 
 // 保存日志操作
-func (logHandler *MongoLogHandler) AddLog(executeLog *common.JobExecuteLog) (err error) {
+func (logHandler *MongoLogHandler) AddLog(executeLog *datamodels.JobExecuteLog) (err error) {
 
 	// 把新的日志加入到channel中
-	logHandler.logChan <- executeLog
+	//logHandler.logChan <- executeLog
 	return
 }
 
 // 获取日志的列表
-func (logHandler *MongoLogHandler) List(page int, pageSize int) (logList []*common.JobExecuteLog, err error) {
+func (logHandler *MongoLogHandler) List(page int, pageSize int) (logList []*datamodels.JobExecuteLog, err error) {
 	var (
 		skip  int64
 		limit int64
@@ -189,7 +191,7 @@ func (logHandler *MongoLogHandler) List(page int, pageSize int) (logList []*comm
 		logSort *SortLogByStartTime
 
 		cursor        *mongo.Cursor
-		jobExecuteLog *common.JobExecuteLog
+		jobExecuteLog *datamodels.JobExecuteLog
 	)
 	// 对page进行判断
 	if page < 0 {
@@ -224,7 +226,7 @@ func (logHandler *MongoLogHandler) List(page int, pageSize int) (logList []*comm
 
 	// 开始处理查找结果
 	for cursor.Next(context.TODO()) {
-		jobExecuteLog = &common.JobExecuteLog{}
+		jobExecuteLog = &datamodels.JobExecuteLog{}
 		if err = cursor.Decode(&jobExecuteLog); err != nil {
 			log.Println(err)
 			continue
@@ -275,7 +277,7 @@ func NewMongoLogHandler(mongoConfig *common.MongoConfig) (logHandler *MongoLogHa
 		client:     client,
 		database:   database,
 		collection: collection,
-		logChan:    make(chan *common.JobExecuteLog, 1000),
+		logChan:    make(chan *datamodels.JobExecuteLog, 1000),
 		Duration:   5000, // 5000毫秒写一次日志
 	}
 	return

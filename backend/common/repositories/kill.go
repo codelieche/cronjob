@@ -71,7 +71,7 @@ func (r *jobKillRepository) Save(jobKill *datamodels.JobKill) (*datamodels.JobKi
 		} else {
 			if jobKillIsExist.ID > 0 {
 				// 存在
-				log.Println("存在")
+				// log.Println("存在")
 				err = fmt.Errorf("jobID=%d，已经存在未完成的jobKill(ID:%d)", jobKill.JobID, jobKillIsExist.ID)
 				// 判断是否etcd中有
 				if prevJobKill, err := r.getJobKillFromEtcd(jobKillIsExist.Category, jobKillIsExist.JobID); err != nil {
@@ -90,6 +90,8 @@ func (r *jobKillRepository) Save(jobKill *datamodels.JobKill) (*datamodels.JobKi
 					}
 				} else {
 					log.Println(prevJobKill)
+					// 更新一下，触发kill
+					r.saveJobkillToEtcd(jobKill, false)
 				}
 				return nil, err
 				//return jobKillIsExist, nil

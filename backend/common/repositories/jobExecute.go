@@ -138,13 +138,18 @@ func (r *jobExecuteRepository) UpdateByID(id int64, fields map[string]interface{
 
 func (r *jobExecuteRepository) SaveExecuteLog(jobExecuteResult *datamodels.JobExecuteResult) (jobExecute *datamodels.JobExecute, err error) {
 	// 保存执行日志
-	var errStr string
-	var success bool
+	var (
+		errStr  string
+		success bool
+		status  string
+	)
 	if jobExecuteResult.Err != nil {
 		errStr = jobExecuteResult.Err.Error()
 		success = false
+		status = "error"
 	} else {
 		success = true
+		status = "done"
 	}
 	jobExecuteLog := &datamodels.JobExecuteLog{
 		JobExecuteID: jobExecuteResult.ExecuteID,
@@ -162,7 +167,7 @@ func (r *jobExecuteRepository) SaveExecuteLog(jobExecuteResult *datamodels.JobEx
 
 		updateFields := make(map[string]interface{})
 		updateFields["log_id"] = objectID.Hex()
-		updateFields["status"] = "done"
+		updateFields["status"] = status
 		updateFields["EndTime"] = time.Now()
 		return r.UpdateByID(int64(jobExecuteResult.ExecuteID), updateFields)
 	}

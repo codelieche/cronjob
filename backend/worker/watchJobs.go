@@ -3,6 +3,8 @@ package worker
 import (
 	"log"
 
+	"github.com/codelieche/cronjob/backend/common/datamodels"
+
 	"github.com/codelieche/cronjob/backend/common"
 
 	"github.com/coreos/etcd/clientv3"
@@ -16,10 +18,10 @@ type WatchJobsHandler struct {
 
 func (watch *WatchJobsHandler) HandlerGetResponse(response *clientv3.GetResponse) {
 	var (
-		job      *common.Job
+		job      *datamodels.JobEtcd
 		kvPair   *mvccpb.KeyValue
 		err      error
-		jobEvent *common.JobEvent
+		jobEvent *datamodels.JobEvent
 	)
 	// for循环打印一下jobs
 	for _, kvPair = range response.Kvs {
@@ -31,7 +33,7 @@ func (watch *WatchJobsHandler) HandlerGetResponse(response *clientv3.GetResponse
 			//  log.Println(job)
 
 			// 添加jobEvent
-			jobEvent = &common.JobEvent{
+			jobEvent = &datamodels.JobEvent{
 				Event: common.JOB_EVENT_PUT,
 				Job:   job,
 			}
@@ -45,11 +47,11 @@ func (watch *WatchJobsHandler) HandlerGetResponse(response *clientv3.GetResponse
 
 func (watch *WatchJobsHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 	var (
-		job           *common.Job
+		job           *datamodels.JobEtcd
 		watchResponse clientv3.WatchResponse
 		watchEvent    *clientv3.Event
 		err           error
-		jobEvent      *common.JobEvent
+		jobEvent      *datamodels.JobEvent
 	)
 
 	// 处理监听事件
@@ -71,7 +73,7 @@ func (watch *WatchJobsHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 					//log.Println("监听到新的job：", job)
 
 					// 添加jobEvent
-					jobEvent = &common.JobEvent{
+					jobEvent = &datamodels.JobEvent{
 						Event: common.JOB_EVENT_PUT,
 						Job:   job,
 					}
@@ -93,7 +95,7 @@ func (watch *WatchJobsHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 					log.Println("监听到删除job：", job)
 
 					// 添加jobEvent
-					jobEvent = &common.JobEvent{
+					jobEvent = &datamodels.JobEvent{
 						Event: common.JOB_EVENT_DELETE,
 						Job:   job,
 					}

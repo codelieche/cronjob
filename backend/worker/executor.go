@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common/datamodels"
+
 	"github.com/codelieche/cronjob/backend/common"
 )
 
@@ -15,22 +17,23 @@ type Executor struct {
 }
 
 // 执行一个任务
-func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *common.JobExecuteResult) (err error) {
+func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *datamodels.JobExecuteResult) (err error) {
 	// log.Println("执行计划任务：", info.Job.Name, info.Job.Time)
 	// 启动一个协程来执行command
 	go func() {
 		// 执行shell命令
 		var (
-			jobLockName string                   // job锁的名字
-			cmd         *exec.Cmd                // shell执行命令
-			output      []byte                   // job执行的输出结果
-			result      *common.JobExecuteResult // Job执行的结果
-			timeStart   time.Time                // 开始执行时间
-			jobLock     *common.JobLock          // 计划任务的锁
+			jobExecute  *datamodels.JobExecute       // 任务执行
+			jobLockName string                       // job锁的名字
+			cmd         *exec.Cmd                    // shell执行命令
+			output      []byte                       // job执行的输出结果
+			result      *datamodels.JobExecuteResult // Job执行的结果
+			timeStart   time.Time                    // 开始执行时间
+			jobLock     *common.JobLock              // 计划任务的锁
 		)
 
-		// 初始化分布式锁
-		jobLockName = fmt.Sprintf("jobs/%s/%s", info.Job.Category, info.Job.Name)
+		// 初始化分布式锁: 分类/job_id
+		jobLockName = fmt.Sprintf("jobs/%s/%d", info.Job.Category, info.Job.ID)
 		jobLock = app.EtcdManager.CreateJobLock(jobLockName)
 		// log.Println(info.Job)
 		if !info.Job.IsActive {
@@ -43,7 +46,7 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 			// 上锁失败，无需执行
 			// log.Println("上锁失败：", jobLock, err.Error())
 			// 执行结果
-			result = &common.JobExecuteResult{
+			result = &datamodels.JobExecuteResult{
 				ExecuteInfo: info,
 				IsExecute:   false,
 				Output:      nil,
@@ -59,6 +62,26 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 			defer jobLock.Unlock()
 			// log.Println("获取到锁：", jobLock)
 		}
+
+		jobExecute = &datamodels.JobExecute{
+			Worker:       register.Info.Name,
+			Category:     info.Job.Category,
+			Name:         info.Job.Name,
+			JobID:        int(info.Job.ID),
+			Command:      info.Job.Command,
+			Status:       "start",
+			PlanTime:     info.PlanTime,
+			ScheduleTime: info.ExecuteTime,
+			StartTime:    time.Now(),
+			LogID:        "",
+		}
+		// 保存任务执行信息
+		if jobExecute, err = app.JobExecuteRepo.Create(jobExecute); err != nil {
+			log.Println("保存执行信息出错：", err)
+		} else {
+			info.JobExecuteID = jobExecute.ID
+		}
+
 		// log.Println("我是否上锁成功：", jobLock.IsLocked)
 		// 判断是否要执行取消函数
 		go func() {
@@ -89,7 +112,7 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 
 			err = cmd.Run()
 			if err != nil {
-				log.Println(info.Job.Key, "执行出错：", err)
+				log.Println(info.Job.Name, "执行出错：", err)
 			}
 			output = []byte("Don't save output")
 		}
@@ -97,8 +120,8 @@ func (executor *Executor) ExecuteJob(info *common.JobExecuteInfo, c chan<- *comm
 		// 无论是否需要saveOutput，都记录执行信息
 		// 任务执行完成后，把执行的结果返回给Scheduler
 		// Scheduler会从executingTable中删除执行记录
-		result = &common.JobExecuteResult{
-
+		result = &datamodels.JobExecuteResult{
+			ExecuteID:   info.JobExecuteID, // 把JobExecuteID传递给Result
 			ExecuteInfo: info,
 			IsExecute:   true, // 有执行到
 			Output:      output,

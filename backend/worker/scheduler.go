@@ -1,26 +1,27 @@
 package worker
 
 import (
-	"fmt"
 	"log"
 	"time"
+
+	"github.com/codelieche/cronjob/backend/common/datamodels"
 
 	"github.com/codelieche/cronjob/backend/common"
 )
 
 // 任务调度器
 type Scheduler struct {
-	jobEventChan      chan *common.JobEvent              // etcd任务时间队列
-	jobPlanTable      map[string]*common.JobSchedulePlan // 任务调度计划表
-	jobExecutingTable map[string]*common.JobExecuteInfo  // 任务执行信息表
-	jobResultChan     chan *common.JobExecuteResult      // 任务执行结果队列
-	logHandler        LogHandler                         // 执行日志处理器
+	jobEventChan      chan *datamodels.JobEvent              // etcd任务时间队列
+	jobPlanTable      map[string]*datamodels.JobSchedulePlan // 任务调度计划表
+	jobExecutingTable map[string]*datamodels.JobExecuteInfo  // 任务执行信息表
+	jobResultChan     chan *datamodels.JobExecuteResult      // 任务执行结果队列
+	//logHandler        LogHandler                             // 执行日志处理器
 }
 
 // 计算任务调度状态
 func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 	var (
-		jobPlan  *common.JobSchedulePlan
+		jobPlan  *datamodels.JobSchedulePlan
 		now      time.Time
 		nearTime *time.Time
 		err      error
@@ -65,7 +66,7 @@ func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 func (scheduler *Scheduler) ScheduleLoop() {
 	// 1. 定义变量
 	var (
-		jobEvent      *common.JobEvent
+		jobEvent      *datamodels.JobEvent
 		scheduleAfter time.Duration
 		scheduleTimer *time.Timer
 	)
@@ -80,7 +81,7 @@ func (scheduler *Scheduler) ScheduleLoop() {
 	go scheduler.comsumeJobExecuteResultsLoop()
 
 	// 启动消费执行日志的协程
-	go scheduler.logHandler.ConsumeLogsLoop()
+	//go scheduler.logHandler.ConsumeLogsLoop()
 
 	// 2. 定时任务
 	for {
@@ -101,19 +102,19 @@ func (scheduler *Scheduler) ScheduleLoop() {
 }
 
 // 推送任务变化事件
-func (scheduler *Scheduler) PushJobEvent(jobEvent *common.JobEvent) {
+func (scheduler *Scheduler) PushJobEvent(jobEvent *datamodels.JobEvent) {
 	// 往jobEventChan中投递jobEvent
 	scheduler.jobEventChan <- jobEvent
 }
 
 // 处理任务事件
-func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
+func (scheduler *Scheduler) handleJobEvent(jobEvent *datamodels.JobEvent) {
 	var (
-		jobSchedulePlan *common.JobSchedulePlan
+		jobSchedulePlan *datamodels.JobSchedulePlan
 		jobExecutingKey string // 任务类型 + "-" + 任务名称
 		err             error
 		isExist         bool
-		jobExecuteInfo  *common.JobExecuteInfo
+		jobExecuteInfo  *datamodels.JobExecuteInfo
 	)
 	switch jobEvent.Event {
 	case common.JOB_EVENT_PUT: // 保存job事件
@@ -161,9 +162,9 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *common.JobEvent) {
 }
 
 // 执行计划任务
-func (scheduler *Scheduler) TryRunJob(jobPlan *common.JobSchedulePlan) (err error) {
+func (scheduler *Scheduler) TryRunJob(jobPlan *datamodels.JobSchedulePlan) (err error) {
 	var (
-		jobExecuteInfo  *common.JobExecuteInfo
+		jobExecuteInfo  *datamodels.JobExecuteInfo
 		jobExecutingKey string
 		isExecuting     bool
 	)
@@ -190,14 +191,14 @@ func (scheduler *Scheduler) TryRunJob(jobPlan *common.JobSchedulePlan) (err erro
 }
 
 // 回传任务执行结果
-func (scheduler *Scheduler) PushJobExecuteResult(result *common.JobExecuteResult) {
+func (scheduler *Scheduler) PushJobExecuteResult(result *datamodels.JobExecuteResult) {
 	scheduler.jobResultChan <- result
 }
 
 // 消费计划任务执行结果的循环
 func (scheduler *Scheduler) comsumeJobExecuteResultsLoop() {
 	var (
-		result *common.JobExecuteResult
+		result *datamodels.JobExecuteResult
 	)
 	for {
 		select {
@@ -208,24 +209,34 @@ func (scheduler *Scheduler) comsumeJobExecuteResultsLoop() {
 }
 
 // 处理计划任务的结果
-func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteResult) {
+func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecuteResult) {
 	var (
-		jobExecuteLog *common.JobExecuteLog
+		jobExecuteLog *datamodels.JobExecuteLog
 	)
 	// 删掉执行状态
 	delete(scheduler.jobExecutingTable, result.ExecuteInfo.Job.Name)
+
 	if result.IsExecute {
+		// 插入到Mongodb中，并更新执行的log_id
+		if jobExecute, err := app.JobExecuteRepo.SaveExecuteLog(result); err != nil {
+			log.Println("保存执行日志结果出错", err)
+		} else {
+			//log.Println(jobExecute)
+			jobExecute = jobExecute
+		}
+
 		// 记录日志
-		jobExecuteLog = &common.JobExecuteLog{
-			Worker:       register.Info.Name, // 填入woker的Name：ip地址:port
-			Category:     result.ExecuteInfo.Job.Category,
-			Name:         result.ExecuteInfo.Job.Name,
-			Command:      result.ExecuteInfo.Job.Command,
-			Output:       string(result.Output),
-			PlanTime:     result.ExecuteInfo.PlanTime,
-			ScheduleTime: result.ExecuteInfo.ExecuteTime,
-			StartTime:    result.StartTime,
-			EndTime:      result.EndTime,
+		jobExecuteLog = &datamodels.JobExecuteLog{
+			JobExecuteID: result.ExecuteID,
+			//Worker:       register.Info.Name, // 填入woker的Name：ip地址:port
+			//Category:     result.ExecuteInfo.Job.Category,
+			//Name:         result.ExecuteInfo.Job.Name,
+			//Command:      result.ExecuteInfo.Job.Command,
+			Output: string(result.Output),
+			//PlanTime:     result.ExecuteInfo.PlanTime,
+			//ScheduleTime: result.ExecuteInfo.ExecuteTime,
+			//StartTime:    result.StartTime,
+			//EndTime:      result.EndTime,
 		}
 
 		// 判断是否有错误信息
@@ -234,12 +245,12 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 		}
 
 		// 交给写日志的程序处理。
-		scheduler.logHandler.AddLog(jobExecuteLog)
+		//scheduler.logHandler.AddLog(jobExecuteLog)
 
 		log.Println("Job执行完成：", result.ExecuteInfo.Job.Category, result.ExecuteInfo.Job.Name)
 		// fmt.Println(string(result.Output))
 		if result.Err != nil {
-			fmt.Println("执行出现了错误：", result.Err.Error())
+			log.Println("执行出现了错误：", result.Err.Error())
 		}
 
 	} else {
@@ -252,22 +263,22 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *common.JobExecuteRes
 // 初始化调度器
 func NewScheduler() *Scheduler {
 	var (
-		logHandler *MongoLogHandler
-		err        error
+	//logHandler *MongoLogHandler
+	//err error
 	)
 	// 实例化消息处理
-	if logHandler, err = NewMongoLogHandler(common.Config.Worker.Mongo); err != nil {
-		log.Panic(err)
-		return nil
-	} else {
-
-	}
+	//if logHandler, err = NewMongoLogHandler(common.Config.Worker.Mongo); err != nil {
+	//	log.Panic(err)
+	//	return nil
+	//} else {
+	//
+	//}
 	scheduler := &Scheduler{
-		jobEventChan:      make(chan *common.JobEvent, 1000),
-		jobPlanTable:      make(map[string]*common.JobSchedulePlan),
-		jobExecutingTable: make(map[string]*common.JobExecuteInfo),
-		jobResultChan:     make(chan *common.JobExecuteResult, 500),
-		logHandler:        logHandler,
+		jobEventChan:      make(chan *datamodels.JobEvent, 1000),
+		jobPlanTable:      make(map[string]*datamodels.JobSchedulePlan),
+		jobExecutingTable: make(map[string]*datamodels.JobExecuteInfo),
+		jobResultChan:     make(chan *datamodels.JobExecuteResult, 500),
+		//logHandler:        logHandler,
 	}
 
 	return scheduler

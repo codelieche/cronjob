@@ -3,6 +3,9 @@ package worker
 import (
 	"encoding/json"
 	"log"
+	"strconv"
+
+	"github.com/codelieche/cronjob/backend/common/datamodels"
 
 	"github.com/codelieche/cronjob/backend/common"
 
@@ -31,9 +34,9 @@ func (watch *WatchKillHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 		watchResponse clientv3.WatchResponse
 		watchEvent    *clientv3.Event
 		jobName       string
-		killJob       *common.KillJob
-		job           *common.Job
-		jobEvent      *common.JobEvent
+		killJob       *datamodels.JobKill
+		job           *datamodels.JobEtcd
+		jobEvent      *datamodels.JobEvent
 		err           error
 	)
 
@@ -44,7 +47,7 @@ func (watch *WatchKillHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 			switch watchEvent.Type {
 			case mvccpb.PUT:
 				// 杀死Job任务事件
-				killJob = &common.KillJob{}
+				killJob = &datamodels.JobKill{}
 				if err = json.Unmarshal(watchEvent.Kv.Value, killJob); err != nil {
 					log.Println(string(watchEvent.Kv.Value))
 					log.Println(err)
@@ -54,13 +57,14 @@ func (watch *WatchKillHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 				// 从key中提取出jobName
 				//待删 jobName = common.ExtractKillJobName(string(watchEvent.Kv.Key))
 				//log.Println(jobName, "===>", string(watchEvent.Kv.Key))
-				jobName = killJob.Name
-				job = &common.Job{
+				jobName = strconv.Itoa(int(killJob.JobID))
+				job = &datamodels.JobEtcd{
+					ID:       killJob.JobID, // Job的ID
 					Category: killJob.Category,
-					Name:     jobName,
+					Name:     jobName, // Name可以去掉
 				}
 				// 构造JobEvnet
-				jobEvent = &common.JobEvent{
+				jobEvent = &datamodels.JobEvent{
 					Event: common.JOB_EVENT_KILL,
 					Job:   job,
 				}

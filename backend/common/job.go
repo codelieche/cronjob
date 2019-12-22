@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common/datamodels"
+
 	"github.com/gorhill/cronexpr"
 )
 
 // 反序列化Job
-func UnpackByteToJob(value []byte) (job *Job, err error) {
+func UnpackByteToJob(value []byte) (job *datamodels.JobEtcd, err error) {
 
 	// 直接用json反序列化
 	if err = json.Unmarshal(value, &job); err != nil {
@@ -20,7 +22,7 @@ func UnpackByteToJob(value []byte) (job *Job, err error) {
 }
 
 // 构建job执行计划
-func BuildJobSchedulePlan(job *Job) (jobSchedulePlan *JobSchedulePlan, err error) {
+func BuildJobSchedulePlan(job *datamodels.JobEtcd) (jobSchedulePlan *datamodels.JobSchedulePlan, err error) {
 	var (
 		expression *cronexpr.Expression
 		now        time.Time
@@ -32,7 +34,7 @@ func BuildJobSchedulePlan(job *Job) (jobSchedulePlan *JobSchedulePlan, err error
 
 	// 生成job调度计划对象
 	now = time.Now()
-	jobSchedulePlan = &JobSchedulePlan{
+	jobSchedulePlan = &datamodels.JobSchedulePlan{
 		Job:        job,
 		Expression: expression,
 		NextTime:   expression.Next(now),
@@ -41,8 +43,8 @@ func BuildJobSchedulePlan(job *Job) (jobSchedulePlan *JobSchedulePlan, err error
 }
 
 // 构造执行状态信息
-func BuildJobExecuteInfo(jobPlan *JobSchedulePlan) (jobExecuteInfo *JobExecuteInfo) {
-	jobExecuteInfo = &JobExecuteInfo{
+func BuildJobExecuteInfo(jobPlan *datamodels.JobSchedulePlan) (jobExecuteInfo *datamodels.JobExecuteInfo) {
+	jobExecuteInfo = &datamodels.JobExecuteInfo{
 		Job:         jobPlan.Job,
 		PlanTime:    jobPlan.NextTime,
 		ExecuteTime: time.Now(),

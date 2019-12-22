@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common/datamodels"
+
 	"github.com/codelieche/cronjob/backend/common"
 
 	"github.com/coreos/etcd/clientv3"
@@ -21,7 +23,7 @@ type Register struct {
 	kv     clientv3.KV
 	lease  clientv3.Lease
 
-	Info *common.WorkerInfo // Worker节点的信息
+	Info *datamodels.Worker // Worker节点的信息
 	//Name     string `json:"name"`     // 节点的名称：Ip:Port（这样就算唯一的了）
 	//HostName string `json:"hostname"` // 主机名
 	//Ip       string `json:"ip"`       // IP地址
@@ -106,7 +108,7 @@ func newRegister() (register *Register, err error) {
 		userCurrent *user.User
 		userName    string
 		ipAddress   string
-		workerInfo  *common.WorkerInfo
+		workerInfo  *datamodels.Worker
 	)
 
 	// 初始化配置
@@ -145,7 +147,7 @@ func newRegister() (register *Register, err error) {
 		ipAddress = strings.Split(ipAddress, "/")[0]
 	}
 
-	workerInfo = &common.WorkerInfo{
+	workerInfo = &datamodels.Worker{
 		Host: hostName,
 		User: userName,
 		Ip:   ipAddress,

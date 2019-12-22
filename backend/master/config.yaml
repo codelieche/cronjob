@@ -71,4 +71,4 @@ worker:
     default: true
 
 # 是否是测试
-debug: true
+debug: false

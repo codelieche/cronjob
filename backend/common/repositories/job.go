@@ -42,7 +42,7 @@ func NewJobRepository(db *gorm.DB, etcd *datasources.Etcd) JobRepository {
 		executeFields: []string{
 			"id", "created_at", "updated_at", "deleted_at",
 			"worker", "category", "name", "command", "job_id",
-			"plan_time", "schedule_time", "status", "log_id",
+			"plan_time", "schedule_time", "start_time", "end_time", "status", "log_id",
 		},
 	}
 }

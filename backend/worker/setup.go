@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/codelieche/cronjob/backend/common"
+	"github.com/codelieche/cronjob/backend/common/datamodels"
 )
 
 // worker工作节点setup执行环境
@@ -108,14 +108,14 @@ func (w *Worker) removeExecuteCategory(name string) (success bool, err error) {
 func (w *Worker) checkOrSetUpJobExecuteEnvironment(name string) (success bool, err error) {
 	// 定义变量
 	var (
-		category *common.Category
+		category *datamodels.Category
 	)
 
 	// 第1步：先获取分类信息
-	if category, err = w.EtcdManager.GetCategory(name); err != nil {
+	if category, err = w.CategoryRepo.GetByName(name); err != nil {
 		// 1-1: 如果获取当前分类没有，就返回
 		if name == "default" {
-			category = &common.Category{
+			category = &datamodels.Category{
 				IsActive:    true,
 				Name:        "default",
 				Description: "默认的任务类型",
@@ -124,7 +124,7 @@ func (w *Worker) checkOrSetUpJobExecuteEnvironment(name string) (success bool, e
 				TearDownCmd: "echo `date`; sleep 1; echo `date`",
 			}
 			// 保存到etcd中
-			if _, err = w.EtcdManager.SaveCategory(category, true); err != nil {
+			if _, err = w.CategoryRepo.Save(category); err != nil {
 				// 插入出错，返回
 				return
 			} else {

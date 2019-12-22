@@ -5,14 +5,20 @@ import (
 	"os"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common/datasources"
+
+	"github.com/codelieche/cronjob/backend/common/repositories"
+
 	"github.com/codelieche/cronjob/backend/common"
 )
 
 type Worker struct {
-	TimeStart   time.Time           // 启动时间
-	EtcdManager *common.EtcdManager // 计划任务管理器
-	Scheduler   *Scheduler          // 调度器
-	Categories  map[string]bool     // 执行计划任务的类型
+	TimeStart      time.Time                         // 启动时间
+	CategoryRepo   repositories.CategoryRepository   // 分类相关的操作
+	JobExecuteRepo repositories.JobExecuteRepository // 任务执行相关的操作
+	EtcdManager    *common.EtcdManager               // 计划任务管理器
+	Scheduler      *Scheduler                        // 调度器
+	Categories     map[string]bool                   // 执行计划任务的类型
 }
 
 func (w *Worker) Run() {
@@ -73,6 +79,13 @@ func NewWorkerApp() *Worker {
 		err         error
 	)
 
+	// new category repository
+	db := datasources.GetDb()
+	etcd := datasources.GetEtcd()
+	mongoDB := datasources.GetMongoDB()
+	categoryRepo := repositories.NewCategoryRepository(db, etcd)
+	jobExecuteRepo := repositories.NewJobExecuteRepository(db, mongoDB)
+
 	// 实例化jobManager
 	if etcdManager, err = common.NewEtcdManager(common.Config.Worker.Etcd); err != nil {
 		log.Println(err.Error())
@@ -85,9 +98,11 @@ func NewWorkerApp() *Worker {
 
 	// 实例化Worker
 	return &Worker{
-		TimeStart:   time.Now(),
-		EtcdManager: etcdManager,
-		Scheduler:   scheduler,
-		Categories:  make(map[string]bool),
+		CategoryRepo:   categoryRepo,
+		JobExecuteRepo: jobExecuteRepo,
+		TimeStart:      time.Now(),
+		EtcdManager:    etcdManager,
+		Scheduler:      scheduler,
+		Categories:     make(map[string]bool),
 	}
 }
