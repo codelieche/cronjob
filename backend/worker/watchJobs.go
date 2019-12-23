@@ -11,6 +11,7 @@ import (
 	"github.com/coreos/etcd/mvcc/mvccpb"
 )
 
+// 监听etcd中jobs的变化
 type WatchJobsHandler struct {
 	KeyDir    string     // 监听的key目录
 	Scheduler *Scheduler // 调度器
@@ -45,6 +46,7 @@ func (watch *WatchJobsHandler) HandlerGetResponse(response *clientv3.GetResponse
 	}
 }
 
+// 处理watch
 func (watch *WatchJobsHandler) HandlerWatchChan(watchChan clientv3.WatchChan) {
 	var (
 		job           *datamodels.JobEtcd

@@ -1,6 +1,12 @@
 package datamodels
 
-import "time"
+import (
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/gorhill/cronexpr"
+)
 
 // 定时任务
 // 比如：每三十分钟执行一次的任务
@@ -44,4 +50,28 @@ func (job *Job) ToEtcdStruct() *JobEtcd {
 		IsActive:    job.IsActive,
 		SaveOutput:  job.SaveOutput,
 	}
+}
+
+// JobEtcd转换成JobExecutePlan
+// 每次etcd监听到job的put操作的时候，就需要把Job信息转换成jobSchedulePlan
+func (job *JobEtcd) ToJobExecutePlan() (jobSchedulePlan *JobSchedulePlan, err error) {
+	var (
+		expression *cronexpr.Expression
+		now        time.Time
+	)
+	// 解析job的cron表达式
+	if expression, err = cronexpr.Parse(job.Time); err != nil {
+		msg := fmt.Sprintf("当前Job(ID:%d)解析时间表达式(%s)出错：%s", job.ID, job.Time, err.Error())
+		log.Println(msg)
+		return nil, err
+	}
+
+	// 生成job调度计划对象
+	now = time.Now()
+	jobSchedulePlan = &JobSchedulePlan{
+		Job:        job,
+		Expression: expression,
+		NextTime:   expression.Next(now),
+	}
+	return jobSchedulePlan, nil
 }

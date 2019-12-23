@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common/datasources"
+
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -20,22 +22,20 @@ import (
 
 // 日志处理的接口
 type LogHandler interface {
-	ConsumeLogsLoop()                                                             // 消费日志循环函数
-	AddLog(executeLog *datamodels.JobExecuteLog) error                            // 添加日志
-	Stop()                                                                        // 日志处理器停止时的操作
-	List(page int, pageSize int) (logList []*datamodels.JobExecuteLog, err error) //获取日志的列表
+	ConsumeLogsLoop()                                  // 消费日志循环函数
+	AddLog(executeLog *datamodels.JobExecuteLog) error // 添加日志
+	Stop()                                             // 日志处理器停止时的操作
+	//List(page int, pageSize int) (logList []*datamodels.JobExecuteLog, err error) //获取日志的列表
 }
 
 // 日志处理器--mongo
 type MongoLogHandler struct {
-	client     *mongo.Client
-	database   *mongo.Database
-	collection *mongo.Collection
-	logChan    chan *datamodels.JobExecuteLog // 日志channel
-	logList    []interface{}                  // 日志列表
-	Duration   int                            // 刷新日志的间隔(毫秒)
-	isActive   bool                           // 是否启动
-	writeLock  *sync.RWMutex                  // 读写锁
+	mongo     *datasources.MongoDB
+	logChan   chan *datamodels.JobExecuteLog // 日志channel
+	logList   []interface{}                  // 日志列表
+	Duration  int                            // 刷新日志的间隔(毫秒)
+	isActive  bool                           // 是否启动
+	writeLock *sync.RWMutex                  // 读写锁
 }
 
 // 把日志列表插入到数据库中
@@ -48,7 +48,7 @@ func (logHandler *MongoLogHandler) insertManayLogList() (insertManyResult *mongo
 	defer logHandler.writeLock.Unlock()
 
 	if len(logHandler.logList) > 0 {
-		if insertManyResult, err = logHandler.collection.InsertMany(context.TODO(), logHandler.logList); err != nil {
+		if insertManyResult, err = logHandler.mongo.Collection.InsertMany(context.TODO(), logHandler.logList); err != nil {
 			return nil, err
 		} else {
 			// 设置新的logList为空
@@ -102,16 +102,16 @@ func (logHandler *MongoLogHandler) ConsumeLogsLoop() {
 			}
 
 			// log.Println("现在日志长度：", len(logHandler.logList))
+			// 加个锁：因为写入和置空可能有冲突
+			logHandler.writeLock.Lock()
+			logHandler.logList = append(logHandler.logList, *executeLog)
+			logHandler.writeLock.Unlock() // 注意这里就别用defer
+
+			// 如果日志列表的长度大于50了，那需要执行一下插入
 			if len(logHandler.logList) >= 50 {
 				// 需要写入一次数据了
 				goto INSERT
 			} else {
-
-				// 加个锁：因为写入和置空可能有冲突
-				logHandler.writeLock.Lock()
-				logHandler.logList = append(logHandler.logList, *executeLog)
-				logHandler.writeLock.Unlock() // 注意这里就别用defer
-
 				// log.Println("现在日志长度：", len(logHandler.logList))
 				// 这里需要填写后continue，要不会继续执行后面的INSERT语句
 				continue
@@ -177,7 +177,7 @@ END:
 func (logHandler *MongoLogHandler) AddLog(executeLog *datamodels.JobExecuteLog) (err error) {
 
 	// 把新的日志加入到channel中
-	//logHandler.logChan <- executeLog
+	logHandler.logChan <- executeLog
 	return
 }
 
@@ -214,7 +214,7 @@ func (logHandler *MongoLogHandler) List(page int, pageSize int) (logList []*data
 
 	// log.Println(skip, limit)
 
-	if cursor, err = logHandler.collection.Find(
+	if cursor, err = logHandler.mongo.Collection.Find(
 		context.TODO(), bson.D{},
 		&options.FindOptions{Skip: &skip, Limit: &limit, Sort: &logSort},
 	); err != nil {
@@ -240,45 +240,14 @@ func (logHandler *MongoLogHandler) List(page int, pageSize int) (logList []*data
 }
 
 func NewMongoLogHandler(mongoConfig *common.MongoConfig) (logHandler *MongoLogHandler, err error) {
-	var (
-		option         *options.ClientOptions
-		database       *mongo.Database
-		collection     *mongo.Collection
-		client         *mongo.Client
-		connectTimeout time.Duration
-	)
 
-	//	配置文件
-	connectTimeout = 10 * time.Second
-	option = &options.ClientOptions{
-		Hosts: mongoConfig.Hosts,
-		Auth: &options.Credential{
-			Username: mongoConfig.User,
-			Password: mongoConfig.Password,
-		},
-		ConnectTimeout: &connectTimeout,
-	}
-
-	if client, err = mongo.Connect(context.TODO(), option); err != nil {
-		return
-	}
-
-	// 选择数据库
-	database = client.Database("cronjob")
-
-	//log.Println(client)
-	//log.Println(database.Name())
-
-	//	插入单条记录
-	//  选择表
-	collection = database.Collection("logs")
+	//	获取mongodb的连接
+	mongoDB := datasources.GetMongoDB()
 
 	logHandler = &MongoLogHandler{
-		client:     client,
-		database:   database,
-		collection: collection,
-		logChan:    make(chan *datamodels.JobExecuteLog, 1000),
-		Duration:   5000, // 5000毫秒写一次日志
+		mongo:    mongoDB,
+		logChan:  make(chan *datamodels.JobExecuteLog, 1000),
+		Duration: 5000, // 5000毫秒写一次日志
 	}
 	return
 }

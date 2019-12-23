@@ -48,7 +48,7 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 			// 执行结果
 			result = &datamodels.JobExecuteResult{
 				ExecuteInfo: info,
-				IsExecute:   false,
+				IsExecuted:  false,
 				Output:      nil,
 				Err:         err,
 				StartTime:   time.Now(),
@@ -123,7 +123,7 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 		result = &datamodels.JobExecuteResult{
 			ExecuteID:   info.JobExecuteID, // 把JobExecuteID传递给Result
 			ExecuteInfo: info,
-			IsExecute:   true, // 有执行到
+			IsExecuted:  true, // 有执行到
 			Output:      output,
 			Err:         err,
 			StartTime:   timeStart,
@@ -131,6 +131,8 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 		}
 
 		// 推送结果
+		// 如果结果集处理的慢，达到了jobResultChan的长度限制，这里就会一直堵住的
+		// lock不释放，那么当前job就一直没法执行
 		c <- result
 
 	}()

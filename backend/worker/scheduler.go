@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -19,12 +20,14 @@ type Scheduler struct {
 }
 
 // 计算任务调度状态
+// 会尝试执行需要执行的计划任务，并计算jobPlan的下次执行时间
+// 计算now与所有jobPlan中最近的下次执行的时间的间隔
 func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 	var (
-		jobPlan  *datamodels.JobSchedulePlan
-		now      time.Time
-		nearTime *time.Time
-		err      error
+		jobPlan  *datamodels.JobSchedulePlan // 计划任务执行Plan信息
+		now      time.Time                   // 当前时间
+		nearTime *time.Time                  // 最近一次要执行的计划任务时间
+		err      error                       // error
 	)
 	// 1. 遍历所有的job
 
@@ -52,12 +55,15 @@ func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 		}
 
 		// 3. 统计最近要过期的任务还需多久
+		// 当nearTime是空的时候，就赋值当前计划任务的下次执行时间
+		// 当当前jobPlan的下次执行时间，早于nearTime就更新一下nearTime
 		if nearTime == nil || jobPlan.NextTime.Before(*nearTime) {
 			nearTime = &jobPlan.NextTime
 		}
 	}
 
 	// 4. 返回下次执行TrySchedule的时间
+	// 当前时间与最近一次要执行的任务的时间间隔
 	scheduleAfter = (*nearTime).Sub(now)
 	return
 }
@@ -71,13 +77,13 @@ func (scheduler *Scheduler) ScheduleLoop() {
 		scheduleTimer *time.Timer
 	)
 
-	// 首次执行一下：
+	// 首次执行一下：得到要下次调度的时间间隔
 	scheduleAfter = scheduler.TrySchedule()
 
 	// 调度的延时定时器
 	scheduleTimer = time.NewTimer(scheduleAfter)
 
-	// 启动消费执行结果协程
+	// 启动消费执行结果协程：里面会用到logHandler
 	go scheduler.comsumeJobExecuteResultsLoop()
 
 	// 启动消费执行日志的协程
@@ -93,7 +99,7 @@ func (scheduler *Scheduler) ScheduleLoop() {
 		case <-scheduleTimer.C: // Timer到期：最近的任务到期了
 
 		}
-		// 再次调度一次任务
+		// 再次调度一次任务: 执行计划任务是在这里面的
 		scheduleAfter = scheduler.TrySchedule()
 		// 重置一下定时器:
 		// 来了新的事件了，或者Timer过期了，都需要重置下Timer
@@ -108,6 +114,9 @@ func (scheduler *Scheduler) PushJobEvent(jobEvent *datamodels.JobEvent) {
 }
 
 // 处理任务事件
+// 在watchHandler中添加jobEvent
+// 在ScheduleLoop中消耗jobEvent
+// 新增了Job、删除了Job、Job需要Kill的事件
 func (scheduler *Scheduler) handleJobEvent(jobEvent *datamodels.JobEvent) {
 	var (
 		jobSchedulePlan *datamodels.JobSchedulePlan
@@ -118,20 +127,24 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *datamodels.JobEvent) {
 	)
 	switch jobEvent.Event {
 	case common.JOB_EVENT_PUT: // 保存job事件
-		if jobSchedulePlan, err = common.BuildJobSchedulePlan(jobEvent.Job); err != nil {
+		if jobSchedulePlan, err = jobEvent.Job.ToJobExecutePlan(); err != nil {
+			log.Println(err)
 			return
 		} else {
 			// 先生成key：根据：分类-名字
-			jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+			// jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+			jobExecutingKey = fmt.Sprintf("%s-%d", jobEvent.Job.Category, jobEvent.Job.ID)
 
 			// 判断job是否是激活状态的
 			if jobSchedulePlan.Job.IsActive {
+				// 加入/修改：jobPlanTable
 				scheduler.jobPlanTable[jobExecutingKey] = jobSchedulePlan
 			} else {
 				// 如果Job存在那么需要删除
-				log.Println("当前Job状态是flase，无需执行：", jobSchedulePlan.Job)
+				log.Println("当前Job状态是flase，无需添加到执行Table中：", jobSchedulePlan.Job)
 				if jobSchedulePlan, isExist = scheduler.jobPlanTable[jobExecutingKey]; isExist {
 					// 存在就删除，不存在就无需操作：
+					log.Printf("需要把%s从jobPlanTable中删除", jobExecutingKey)
 					delete(scheduler.jobPlanTable, jobExecutingKey)
 				}
 			}
@@ -139,23 +152,27 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *datamodels.JobEvent) {
 
 	case common.JOB_EVENT_DELETE: // 删除job事件
 		// 判断job是否存在
-		jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+		//jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+		jobExecutingKey = fmt.Sprintf("%s-%d", jobEvent.Job.Category, jobEvent.Job.ID)
 		if jobSchedulePlan, isExist = scheduler.jobPlanTable[jobExecutingKey]; isExist {
 			// 存在就删除，不存在就无需操作
+			log.Printf("需要把%s从jobPlanTable中删除", jobExecutingKey)
 			delete(scheduler.jobPlanTable, jobExecutingKey)
 		}
 
 	case common.JOB_EVENT_KILL: // 杀掉job事件
 		// 取消Command执行
 		// log.Println(scheduler.jobExecutingTable)
-		jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+		//jobExecutingKey = jobEvent.Job.Category + "-" + jobEvent.Job.Name
+		jobExecutingKey = fmt.Sprintf("%s-%d", jobEvent.Job.Category, jobEvent.Job.ID)
 		if jobExecuteInfo, isExist = scheduler.jobExecutingTable[jobExecutingKey]; isExist {
 			// 是的在本work中执行中，那么可以杀掉它
-			log.Println("需要杀死job")
+			log.Println("需要kill job:", jobExecutingKey)
+			// 执行计划任务执行信息中的取消函数
 			jobExecuteInfo.ExceteCancelFun()
 		} else {
 			// log.Println(scheduler.jobExecutingTable)
-			log.Println("Job未在执行中，无需kill")
+			log.Println("Job未在执行中，无需kill:", jobExecutingKey)
 		}
 
 	}
@@ -177,7 +194,8 @@ func (scheduler *Scheduler) TryRunJob(jobPlan *datamodels.JobSchedulePlan) (err 
 		jobExecuteInfo = common.BuildJobExecuteInfo(jobPlan)
 
 		// 保存执行信息
-		jobExecutingKey = jobPlan.Job.Category + "-" + jobPlan.Job.Name
+		//jobExecutingKey = jobPlan.Job.Category + "-" + jobPlan.Job.Name
+		jobExecutingKey = fmt.Sprintf("%s-%d", jobPlan.Job.Category, jobPlan.Job.ID)
 		scheduler.jobExecutingTable[jobExecutingKey] = jobExecuteInfo
 
 		// 执行计划任务
@@ -186,7 +204,6 @@ func (scheduler *Scheduler) TryRunJob(jobPlan *datamodels.JobSchedulePlan) (err 
 
 	// 执行完毕后，从执行信息表中删除这条数据,这个在HandlerJobExecuteResult中处理
 	// 即使未获取到锁，也需要从scheduler.jobExecutingTable 删除这条jobExecuteInfo
-
 	return
 }
 
@@ -196,6 +213,8 @@ func (scheduler *Scheduler) PushJobExecuteResult(result *datamodels.JobExecuteRe
 }
 
 // 消费计划任务执行结果的循环
+// 循环从jobExecuteResult中读取执行的结果
+// 读取到结果后，交给HandlerJobExecuteResult处理
 func (scheduler *Scheduler) comsumeJobExecuteResultsLoop() {
 	var (
 		result *datamodels.JobExecuteResult
@@ -211,12 +230,17 @@ func (scheduler *Scheduler) comsumeJobExecuteResultsLoop() {
 // 处理计划任务的结果
 func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecuteResult) {
 	var (
-		jobExecuteLog *datamodels.JobExecuteLog
+		jobExecutingKey string
+		jobExecuteLog   *datamodels.JobExecuteLog
 	)
 	// 删掉执行状态
-	delete(scheduler.jobExecutingTable, result.ExecuteInfo.Job.Name)
+	jobExecutingKey = fmt.Sprintf("%s-%d", result.ExecuteInfo.Job.Category, result.ExecuteInfo.Job.ID)
+	//delete(scheduler.jobExecutingTable, result.ExecuteInfo.Job.Name)
+	delete(scheduler.jobExecutingTable, jobExecutingKey)
 
-	if result.IsExecute {
+	// 当前调度的任务，是否执行了
+	// 没抢到执行锁，就不会执行，无需处理结果
+	if result.IsExecuted {
 		// 插入到Mongodb中，并更新执行的log_id
 		if jobExecute, err := app.JobExecuteRepo.SaveExecuteLog(result); err != nil {
 			log.Println("保存执行日志结果出错", err)
@@ -244,10 +268,10 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecut
 			jobExecuteLog.Err = result.Err.Error()
 		}
 
-		// 交给写日志的程序处理。
+		// 交给写日志的程序处理【异步去处理】
 		//scheduler.logHandler.AddLog(jobExecuteLog)
 
-		log.Println("Job执行完成：", result.ExecuteInfo.Job.Category, result.ExecuteInfo.Job.Name)
+		log.Printf("Job: %s执行完成：%s", jobExecutingKey, result.ExecuteInfo.Job.Command)
 		// fmt.Println(string(result.Output))
 		if result.Err != nil {
 			log.Println("执行出现了错误：", result.Err.Error())

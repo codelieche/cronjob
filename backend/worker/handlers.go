@@ -14,9 +14,19 @@ func workerInfoHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	var (
 		workerInfoData []byte
 		err            error
+		info           map[string]interface{}
 	)
 
-	if workerInfoData, err = json.Marshal(app); err != nil {
+	//log.Println("所有jobs：", app.Scheduler.jobPlanTable)
+	//log.Println("执行中的任务", app.Scheduler.jobExecutingTable)
+
+	info = make(map[string]interface{})
+	info["app"] = app
+	info["jobPlanTable"] = app.Scheduler.jobPlanTable
+	info["jobExecutingTable"] = app.Scheduler.jobExecutingTable
+	info["jobResultChan"] = len(app.Scheduler.jobResultChan)
+
+	if workerInfoData, err = json.Marshal(info); err != nil {
 		goto ERR
 	} else {
 		w.Header().Set("Content-Type", "application/json")

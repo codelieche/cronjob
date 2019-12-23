@@ -22,19 +22,19 @@ type JobSchedulePlan struct {
 
 // Job执行信息
 type JobExecuteInfo struct {
-	Job             *JobEtcd           // 任务信息
-	JobExecuteID    uint               // 任务执行ID
-	PlanTime        time.Time          // 计划调度的时间
-	ExecuteTime     time.Time          // 实际执行的时间
-	ExecuteCtx      context.Context    // 执行job的上下文
-	ExceteCancelFun context.CancelFunc // 执行执行job的取消函数
+	Job             *JobEtcd           `json:"job"`            // 任务信息
+	JobExecuteID    uint               `json:"job_execute_id"` // 任务执行ID
+	PlanTime        time.Time          `json:"plan_time"`      // 计划调度的时间
+	ExecuteTime     time.Time          `json:"execute_time"`   // 实际执行的时间
+	ExecuteCtx      context.Context    `json:"-"`              // 执行job的上下文
+	ExceteCancelFun context.CancelFunc `json:"-"`              // 执行执行job的取消函数
 }
 
 // Job执行结果
 type JobExecuteResult struct {
 	ExecuteID   uint            // 任务执行的ID
 	ExecuteInfo *JobExecuteInfo // 执行信息: 消费结果的时候，会根据这个来判断是否执行了
-	IsExecute   bool            // 是否有执行
+	IsExecuted  bool            // 是否有执行
 	Output      []byte          // Job执行输出结果
 	Err         error           // 脚本错误原因
 	StartTime   time.Time       // 启动时间

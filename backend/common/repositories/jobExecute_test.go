@@ -124,12 +124,12 @@ func TestJobExecuteRepository_SaveExecuteLog(t *testing.T) {
 		output = []byte(fmt.Sprintf("这个是测试内容:%d", i))
 
 		jobExecuteResult := &datamodels.JobExecuteResult{
-			ExecuteID: i,
-			IsExecute: true,
-			Output:    output,
-			Err:       nil,
-			StartTime: now,
-			EndTime:   now.Add(time.Minute),
+			ExecuteID:  i,
+			IsExecuted: true,
+			Output:     output,
+			Err:        nil,
+			StartTime:  now,
+			EndTime:    now.Add(time.Minute),
 		}
 
 		if jobExecute, err := r.SaveExecuteLog(jobExecuteResult); err != nil {
