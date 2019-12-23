@@ -17,6 +17,7 @@ type Scheduler struct {
 	jobExecutingTable map[string]*datamodels.JobExecuteInfo  // 任务执行信息表
 	jobResultChan     chan *datamodels.JobExecuteResult      // 任务执行结果队列
 	//logHandler        LogHandler                             // 执行日志处理器
+	isStoped bool // 是否停止调度
 }
 
 // 计算任务调度状态
@@ -104,7 +105,28 @@ func (scheduler *Scheduler) ScheduleLoop() {
 		// 重置一下定时器:
 		// 来了新的事件了，或者Timer过期了，都需要重置下Timer
 		scheduleTimer.Reset(scheduleAfter)
+
+		// 判断是否需要跳出调度
+		if scheduler.isStoped {
+			log.Println("调度器已经是停止了，不再调度任务")
+			break
+		}
 	}
+
+	// 遍历所有执行table设置为kill
+	// 手动杀掉所有正在执行的任务
+	for _, info := range scheduler.jobExecutingTable {
+		info.Status = "kill"
+		info.ExceteCancelFun()
+	}
+
+	i := 10
+	for i > 0 {
+		log.Printf("%d秒后程序退出！\n", i)
+		time.Sleep(time.Second)
+		i--
+	}
+	log.Println("Done")
 }
 
 // 推送任务变化事件
@@ -169,6 +191,8 @@ func (scheduler *Scheduler) handleJobEvent(jobEvent *datamodels.JobEvent) {
 			// 是的在本work中执行中，那么可以杀掉它
 			log.Println("需要kill job:", jobExecutingKey)
 			// 执行计划任务执行信息中的取消函数
+			// 修改执行信息的状态为kill
+			jobExecuteInfo.Status = "kill"
 			jobExecuteInfo.ExceteCancelFun()
 		} else {
 			// log.Println(scheduler.jobExecutingTable)
@@ -186,18 +210,16 @@ func (scheduler *Scheduler) TryRunJob(jobPlan *datamodels.JobSchedulePlan) (err 
 		isExecuting     bool
 	)
 	// 如果任务正在执行，跳过本次调度
-	if jobExecuteInfo, isExecuting = scheduler.jobExecutingTable[jobPlan.Job.Name]; isExecuting {
-		log.Println("尚未退出，还在执行，跳过！", jobPlan.Job.Name)
+	jobExecutingKey = fmt.Sprintf("%s-%d", jobPlan.Job.Category, jobPlan.Job.ID)
+	if jobExecuteInfo, isExecuting = scheduler.jobExecutingTable[jobExecutingKey]; isExecuting {
+		//log.Println("尚未退出，还在执行，跳过！", jobExecutingKey)
 		return
 	} else {
 		// 构建执行状态信息
 		jobExecuteInfo = common.BuildJobExecuteInfo(jobPlan)
-
 		// 保存执行信息
 		//jobExecutingKey = jobPlan.Job.Category + "-" + jobPlan.Job.Name
-		jobExecutingKey = fmt.Sprintf("%s-%d", jobPlan.Job.Category, jobPlan.Job.ID)
 		scheduler.jobExecutingTable[jobExecutingKey] = jobExecuteInfo
-
 		// 执行计划任务
 		executor.ExecuteJob(jobExecuteInfo, scheduler.jobResultChan)
 	}
@@ -252,15 +274,7 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecut
 		// 记录日志
 		jobExecuteLog = &datamodels.JobExecuteLog{
 			JobExecuteID: result.ExecuteID,
-			//Worker:       register.Info.Name, // 填入woker的Name：ip地址:port
-			//Category:     result.ExecuteInfo.Job.Category,
-			//Name:         result.ExecuteInfo.Job.Name,
-			//Command:      result.ExecuteInfo.Job.Command,
-			Output: string(result.Output),
-			//PlanTime:     result.ExecuteInfo.PlanTime,
-			//ScheduleTime: result.ExecuteInfo.ExecuteTime,
-			//StartTime:    result.StartTime,
-			//EndTime:      result.EndTime,
+			Output:       string(result.Output),
 		}
 
 		// 判断是否有错误信息
@@ -268,13 +282,13 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecut
 			jobExecuteLog.Err = result.Err.Error()
 		}
 
-		// 交给写日志的程序处理【异步去处理】
+		// 交给写日志的程序处理【异步去处理】[交给logHandler处理]
 		//scheduler.logHandler.AddLog(jobExecuteLog)
 
 		log.Printf("Job: %s执行完成：%s", jobExecutingKey, result.ExecuteInfo.Job.Command)
 		// fmt.Println(string(result.Output))
 		if result.Err != nil {
-			log.Println("执行出现了错误：", result.Err.Error())
+			log.Printf("%s执行出现了错误：%s\n", jobExecutingKey, result.Err.Error())
 		}
 
 	} else {
@@ -302,6 +316,7 @@ func NewScheduler() *Scheduler {
 		jobPlanTable:      make(map[string]*datamodels.JobSchedulePlan),
 		jobExecutingTable: make(map[string]*datamodels.JobExecuteInfo),
 		jobResultChan:     make(chan *datamodels.JobExecuteResult, 500),
+		isStoped:          false,
 		//logHandler:        logHandler,
 	}
 

@@ -22,6 +22,7 @@ type Job struct {
 	Description string    `gorm:"size:512" json:"description,omitempty"` // Job描述
 	IsActive    bool      `gorm:"type:boolean" json:"is_active"`         // 是否激活，激活才执行
 	SaveOutput  bool      `gorm:"type:boolean" json:"save_output"`       // 是否记录输出
+	Timeout     int       `json:"timeout"`                               // 超时时间，默认是0不超时，单位为秒
 }
 
 // 保存去Eetcd中的
@@ -35,6 +36,7 @@ type JobEtcd struct {
 	Description string    `json:"description"`
 	IsActive    bool      `json:"is_active"`
 	SaveOutput  bool      `json:"save_output"`
+	Timeout     int       `json:"timeout"`
 }
 
 // Job To JobEtcd
@@ -49,6 +51,7 @@ func (job *Job) ToEtcdStruct() *JobEtcd {
 		Description: job.Description,
 		IsActive:    job.IsActive,
 		SaveOutput:  job.SaveOutput,
+		Timeout:     job.Timeout,
 	}
 }
 

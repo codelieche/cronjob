@@ -37,7 +37,7 @@ func NewJobRepository(db *gorm.DB, etcd *datasources.Etcd) JobRepository {
 		etcd: etcd,
 		infoFields: []string{
 			"id", "created_at", "updated_at", "deleted_at", "etcd_key",
-			"name", "category_id", "time", "command", "description", "is_active", "save_output",
+			"name", "category_id", "time", "command", "description", "is_active", "save_output", "timeout",
 		},
 		executeFields: []string{
 			"id", "created_at", "updated_at", "deleted_at",
@@ -130,7 +130,9 @@ func (r *jobRepository) List(offset int, limit int) (jobs []*datamodels.Job, err
 
 func (r *jobRepository) Get(id int64) (job *datamodels.Job, err error) {
 	job = &datamodels.Job{}
-	r.db.Select(r.infoFields).First(job, "id = ?", id)
+	r.db.Preload("Category", func(d *gorm.DB) *gorm.DB {
+		return d.Select("id, name, is_active")
+	}).Select(r.infoFields).First(job, "id = ?", id)
 	if job.ID > 0 {
 		return job, nil
 	} else {

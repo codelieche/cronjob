@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,11 +37,12 @@ func (c *JobController) PostCreate(ctx iris.Context) (job *datamodels.Job, err e
 
 	// 定义变量
 	var (
-		name                                    string // Job的名字
-		jobCategory                             *datamodels.Category
-		category, timeStr, command, description string
-		isActive, saveOutput                    string
-		isActiveValue, saveOutputValue          bool
+		name                                                string // Job的名字
+		jobCategory                                         *datamodels.Category
+		category, timeStr, command, description, timeoutStr string
+		timeout                                             int
+		isActive, saveOutput                                string
+		isActiveValue, saveOutputValue                      bool
 	)
 
 	// 解析POST表单
@@ -51,6 +53,12 @@ func (c *JobController) PostCreate(ctx iris.Context) (job *datamodels.Job, err e
 	description = ctx.FormValue("description")
 	isActive = strings.ToLower(strings.TrimSpace(ctx.FormValue("is_active")))
 	saveOutput = strings.ToLower(strings.TrimSpace(ctx.FormValue("save_output")))
+	timeoutStr = ctx.FormValueDefault("timeout", "0")
+
+	if timeout, err = strconv.Atoi(timeoutStr); err != nil {
+		// 传入的超时有误
+		return nil, err
+	}
 
 	// 先判断分类是否存在
 	if category == "" {
@@ -87,6 +95,7 @@ func (c *JobController) PostCreate(ctx iris.Context) (job *datamodels.Job, err e
 		Description: description,
 		IsActive:    isActiveValue,
 		SaveOutput:  saveOutputValue,
+		Timeout:     timeout,
 	}
 
 	return c.Service.Create(job)
@@ -99,14 +108,14 @@ func (c *JobController) PutBy(id int64, ctx iris.Context) (job *datamodels.Job, 
 
 	// 定义变量
 	var (
-		name                           string // Job的名字
-		jobCategory                    *datamodels.Category
-		time, command, description     string
-		isActive, saveOutput           string
-		isActiveValue, saveOutputValue bool
-		updateFields                   map[string]interface{}
+		name                                   string // Job的名字
+		jobCategory                            *datamodels.Category
+		time, command, description, timeoutStr string
+		timeout                                int
+		isActive, saveOutput                   string
+		isActiveValue, saveOutputValue         bool
+		updateFields                           map[string]interface{}
 	)
-
 	// 判断job是否存在
 	if job, err = c.Service.GetByID(id); err != nil {
 		if err == common.NotFountError {
@@ -127,6 +136,7 @@ func (c *JobController) PutBy(id int64, ctx iris.Context) (job *datamodels.Job, 
 	description = ctx.FormValue("description")
 	isActive = strings.ToLower(strings.TrimSpace(ctx.FormValue("is_active")))
 	saveOutput = strings.ToLower(strings.TrimSpace(ctx.FormValue("save_output")))
+	timeoutStr = ctx.FormValue("timeout")
 
 	// 先判断分类是否存在
 	// 分类不做修改
@@ -149,29 +159,39 @@ func (c *JobController) PutBy(id int64, ctx iris.Context) (job *datamodels.Job, 
 
 	// 待优化
 	updateFields = make(map[string]interface{})
-	if job.IsActive != isActiveValue {
+	if job.IsActive != isActiveValue && isActive != "" {
 		updateFields["IsActive"] = isActiveValue
 	}
-	if job.SaveOutput != saveOutputValue {
+	if job.SaveOutput != saveOutputValue && saveOutput != "" {
 		updateFields["SaveOutput"] = saveOutputValue
 	}
-	if job.Name != name {
+	if job.Name != name && name != "" {
 		updateFields["Name"] = name
 	}
-	if job.Category != jobCategory {
+	if job.Category != jobCategory && jobCategory != nil && jobCategory.Name != "" {
 		updateFields["Category"] = jobCategory
 	}
-	if job.Time != time {
+	if job.Time != time && time != "" {
 		updateFields["Time"] = time
 	}
-	if job.Command != command {
+	if job.Command != command && command != "" {
 		updateFields["Command"] = command
 	}
-	if job.Description != description {
+	if job.Description != description && description != "" {
 		updateFields["Description"] = description
 	}
 
+	if timeoutStr != "" {
+		if timeout, err = strconv.Atoi(timeoutStr); err != nil {
+			// 传入的超时有误
+			return nil, err
+		} else {
+			updateFields["Timeout"] = timeout
+		}
+	}
+
 	// 对job赋予新的值
+	//log.Println(updateFields)
 	return c.Service.Update(job, updateFields)
 }
 

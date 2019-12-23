@@ -2,6 +2,7 @@ package worker
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
@@ -31,6 +32,36 @@ func workerInfoHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(workerInfoData)
+		return
+	}
+ERR:
+	http.Error(w, err.Error(), 500)
+	return
+}
+
+func workerStopHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	var (
+		responseData []byte
+		err          error
+		info         map[string]interface{}
+	)
+
+	//log.Println("所有jobs：", app.Scheduler.jobPlanTable)
+	//log.Println("执行中的任务", app.Scheduler.jobExecutingTable)
+	log.Println("stop....")
+
+	info = make(map[string]interface{})
+	info["app"] = app
+	app.Scheduler.isStoped = true
+	info["scheduler.isStoped"] = app.Scheduler.isStoped
+	info["jobExecutingTable"] = app.Scheduler.jobExecutingTable
+	info["jobResultChan"] = len(app.Scheduler.jobResultChan)
+
+	if responseData, err = json.Marshal(info); err != nil {
+		goto ERR
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(responseData)
 		return
 	}
 ERR:

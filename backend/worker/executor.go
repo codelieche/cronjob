@@ -23,13 +23,14 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 	go func() {
 		// 执行shell命令
 		var (
-			jobExecute  *datamodels.JobExecute       // 任务执行
-			jobLockName string                       // job锁的名字
-			cmd         *exec.Cmd                    // shell执行命令
-			output      []byte                       // job执行的输出结果
-			result      *datamodels.JobExecuteResult // Job执行的结果
-			timeStart   time.Time                    // 开始执行时间
-			jobLock     *common.JobLock              // 计划任务的锁
+			jobExecute             *datamodels.JobExecute       // 任务执行
+			jobLockName            string                       // job锁的名字
+			cmd                    *exec.Cmd                    // shell执行命令
+			output                 []byte                       // job执行的输出结果
+			result                 *datamodels.JobExecuteResult // Job执行的结果
+			timeStart              time.Time                    // 开始执行时间
+			jobLock                *common.JobLock              // 计划任务的锁
+			jobExecuteFinishedChan chan int                     // 任务执行完毕channel
 		)
 
 		// 初始化分布式锁: 分类/job_id
@@ -83,12 +84,17 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 		}
 
 		// log.Println("我是否上锁成功：", jobLock.IsLocked)
+
 		// 判断是否要执行取消函数
+		// 其实当收到jobKill的时候，在scheduler.handleJobEvent中就执行了取消函数了
 		go func() {
 			// 检查执行程序
 			needKillJob := <-jobLock.NeedKillChan
 			if needKillJob {
 				//log.Println("需要执行取消函数")
+				// 把当前执行信息的状态设置为kill
+				//log.Println("修改状态为kill", info.Job.ID)
+				info.Status = "kill"
 				info.ExceteCancelFun()
 			} else {
 				// 正常退出的程序无需执行
@@ -98,6 +104,28 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 
 		// 开始执行时间: 得到锁才会去执行的
 		timeStart = time.Now()
+
+		// 判断是否传递的超时时间
+		jobExecuteFinishedChan = make(chan int, 1)
+		if info.Job.Timeout > 0 {
+			duration := time.Duration(info.Job.Timeout) * time.Second
+			timer := time.NewTimer(duration)
+			go func() {
+				select {
+				case <-jobExecuteFinishedChan:
+					// 正常执行完毕
+					break
+				case <-timer.C:
+					log.Printf("任务超时了，需要执行取消函数：%s-%d,执行ID：%d\n",
+						info.Job.Category, info.Job.ID, info.JobExecuteID)
+					// 把当前执行信息的状态设置为timeout
+					info.Status = "timeout"
+					info.ExceteCancelFun()
+					break
+				}
+			}()
+		}
+
 		// 传入执行command的上下文
 		cmd = exec.CommandContext(info.ExecuteCtx, "/bin/bash", "-c", info.Job.Command)
 
@@ -128,12 +156,17 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 			Err:         err,
 			StartTime:   timeStart,
 			EndTime:     time.Now(),
+			Status:      info.Status, // 把状态的结果传递给Result，如果是正常finished的，不对状态做调整
 		}
+		//log.Println(info.Job.ID, "xxx", result.Status, result.ExecuteID)
 
 		// 推送结果
 		// 如果结果集处理的慢，达到了jobResultChan的长度限制，这里就会一直堵住的
 		// lock不释放，那么当前job就一直没法执行
 		c <- result
+
+		// 程序执行完毕了，发送个finished的信号
+		jobExecuteFinishedChan <- 1
 
 	}()
 	return

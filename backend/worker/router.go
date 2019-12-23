@@ -7,6 +7,7 @@ func newWebMonitorRouter() *httprouter.Router {
 	router := httprouter.New()
 
 	router.GET("/info", workerInfoHandler)
+	router.GET("/stop", workerStopHandler)
 	router.GET("/categories", categoriesListHandler)
 	router.GET("/category/list", categoriesListHandler)
 	router.POST("/category/add", categoryAddHandler)

@@ -143,13 +143,19 @@ func (r *jobExecuteRepository) SaveExecuteLog(jobExecuteResult *datamodels.JobEx
 		success bool
 		status  string
 	)
+	// 状态可能是：kill、timeout
+	status = jobExecuteResult.Status
 	if jobExecuteResult.Err != nil {
 		errStr = jobExecuteResult.Err.Error()
 		success = false
-		status = "error"
+		if status == "" {
+			status = "error"
+		}
 	} else {
 		success = true
-		status = "done"
+		if status == "" {
+			status = "done"
+		}
 	}
 	jobExecuteLog := &datamodels.JobExecuteLog{
 		JobExecuteID: jobExecuteResult.ExecuteID,

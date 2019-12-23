@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 
@@ -42,6 +43,10 @@ func initDb() {
 	log.Println(mysqlUri)
 	// 2-2: 连接数据库
 	db, err = gorm.Open("mysql", mysqlUri)
+	//db2, err := sql.Open("mysql", mysqlUri)
+	//db2.Ping()
+
+	//sql.Open()
 
 	if err != nil {
 		log.Println(err.Error())
@@ -58,6 +63,15 @@ func initDb() {
 
 	//
 	db.LogMode(config.Debug)
+
+	//  packets.go:36: unexpected EOF
+	// db.DB()是 *sql.DB
+	// SHOW GLOBAL VARIABLES LIKE '%timeout%';
+	// SET GLOBAL wait_timeout=300;
+	db.DB().SetConnMaxLifetime(120 * time.Second) // 给db设置一个超时时间，小于数据库的超时时间
+	db.DB().SetMaxOpenConns(100)                  // 设置最大打开的连接数，默认是0，表示不限制
+	db.DB().SetMaxIdleConns(20)                   // 设置最大空闲连接数
+	//log.Println(db.DB().Ping())
 
 }
 

@@ -28,6 +28,7 @@ type JobExecuteInfo struct {
 	ExecuteTime     time.Time          `json:"execute_time"`   // 实际执行的时间
 	ExecuteCtx      context.Context    `json:"-"`              // 执行job的上下文
 	ExceteCancelFun context.CancelFunc `json:"-"`              // 执行执行job的取消函数
+	Status          string             `json:"status"`         // 执行信息的状态：start、timeout、kill、success、error、done
 }
 
 // Job执行结果
@@ -39,6 +40,7 @@ type JobExecuteResult struct {
 	Err         error           // 脚本错误原因
 	StartTime   time.Time       // 启动时间
 	EndTime     time.Time       // 结束时间
+	Status      string          // 执行状态：start、finish、cancel、success、error、timeout
 }
 
 // 任务调度前创建JobExecute
