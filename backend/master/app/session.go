@@ -18,13 +18,13 @@ var redisDB *redis.Database
 
 func initSession() {
 	// 1. 连接Redis
-	config := common.Config
+	config := common.GetConfig()
 	cfg := redis.Config{
 		Network:   "tcp",
-		Addr:      config.Master.Redis.Host,
-		Clusters:  config.Master.Redis.Clusters,
+		Addr:      config.Redis.Host,
+		Clusters:  config.Redis.Clusters,
 		Password:  "",
-		Database:  strconv.Itoa(config.Master.Redis.DB),
+		Database:  strconv.Itoa(config.Redis.DB),
 		MaxActive: 10,
 		Timeout:   time.Second * 20,
 		Prefix:    "",

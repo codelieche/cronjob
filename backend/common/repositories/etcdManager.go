@@ -62,7 +62,7 @@ func (etcdManager *EtcdManager) KillJob(category string, jobID int) (err error) 
 	}
 	// 2. 通知worker杀死对应的任务
 	// 2-1: 创建个租约
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(common.Config.Master.Etcd.Timeout)*time.Millisecond)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(common.GetConfig().Etcd.Timeout)*time.Millisecond)
 	if leaseGrantResponse, err = etcdManager.etcd.Lease.Grant(ctx, 5); err != nil {
 		// 创建租约失败
 		return
@@ -108,7 +108,7 @@ func (etcdManager *EtcdManager) WatchKeys(keyDir string, watchHandler interfaces
 
 	// 2. get：/crontab/jobs/目录下的所有任务，并且获知当前集群的revision
 	//keyDir = "/crontab/jobs/"
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(common.Config.Master.Etcd.Timeout)*time.Millisecond)
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(common.GetConfig().Etcd.Timeout)*time.Millisecond)
 	if getResponse, err = etcdManager.etcd.KV.Get(
 		ctx, keyDir,
 		clientv3.WithPrefix(),

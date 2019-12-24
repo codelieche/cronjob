@@ -6,69 +6,50 @@ master:
     host: "0.0.0.0"
     port: 9000
 
-  # MySQL相关配置
-  mysql:
-    host: "${MYSQL_HOST:127.0.0.1}"
-    port: ${MYSQL_PORT:3306}
-    user: "${MYSQL_USER:root111}"
-    password: "${MYSQL_PASSWORD}"
-    database: "${MYSQL_DB_NAME:cronjob}"
-
-  # redis相关配置
-  redis:
-    host: "127.0.0.1:6379"
-    clusters:
-      - "127.0.0.1:6379"
-    password: ""
-    db: 9
-
-  # etcd相关配置
-  etcd:
-    endpoints:
-      - "127.0.0.1:2379"
-    # 超时时间【毫秒】
-    timeout: 5000
-#    tls:
-#      certfile: "./etcd.pem"
-#      keyfile: "./etcd-key.pem"
-#      cafile: "./ca.pem"
-
-  # mongodb相关配置
-  mongo:
-    hosts:
-      - "127.0.0.1:27017"
-    user: root
-    password: "${MONGO_PASSWORD:password}"
-    database: cronjob_develop
-
 # worker相关配置
 worker:
   # monitor web相关配置
   http:
     host: "0.0.0.0"
     port: ${WORKER_PORT:8080}
+  # 当前worker可执行什么类型的任务
+  categories:
+    default: true
 
-  # etcd相关配置
-  etcd:
-    endpoints:
-      - "127.0.0.1:2379"
-    timeout: 5000
+# MySQL相关配置
+mysql:
+  host: "${MYSQL_HOST:127.0.0.1}"
+  port: ${MYSQL_PORT:3306}
+  user: "${MYSQL_USER:root111}"
+  password: "${MYSQL_PASSWORD}"
+  database: "${MYSQL_DB_NAME:cronjob}"
+
+# redis相关配置
+redis:
+  host: "127.0.0.1:6379"
+  clusters:
+    - "127.0.0.1:6379"
+  password: ""
+  db: 9
+
+# etcd相关配置
+etcd:
+  endpoints:
+    - "127.0.0.1:2379"
+  # 超时时间【毫秒】
+  timeout: 5000
 #    tls:
 #      certfile: "./etcd.pem"
 #      keyfile: "./etcd-key.pem"
 #      cafile: "./ca.pem"
 
-  # mongodb相关配置
-  mongo:
-    # address: "127.0.0.1"
-    hosts:
-      - "127.0.0.1:27017"
-    user: root
-    password: "${MONGO_PASSWORD:password}"
-    database: cronjob_develop
-  # 当前worker可执行什么类型的任务
-  categories:
-    default: true
+# mongodb相关配置
+mongo:
+  hosts:
+    - "127.0.0.1:27017"
+  user: root
+  password: "${MONGO_PASSWORD:password}"
+  database: cronjob_develop
 
 # 是否是测试
 debug: false

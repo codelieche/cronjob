@@ -15,7 +15,7 @@ import (
 
 var db *gorm.DB
 
-var config *common.MasterWorkerConfig
+var config *common.Config
 
 func initDb() {
 	log.SetFlags(log.Lshortfile)
@@ -30,16 +30,16 @@ func initDb() {
 			log.Println(err.Error())
 			os.Exit(1)
 		} else {
-			config = common.Config
+			config = common.GetConfig()
 		}
 	}
 
 	// 2. 连接数据库
 	// 2-1: 获取mysqlUri
-	log.Println(*config.Master.MySQL)
+	log.Println(*config.MySQL)
 	mysqlUri = fmt.Sprintf("%s:%s@(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		config.Master.MySQL.User, config.Master.MySQL.Password,
-		config.Master.MySQL.Host, config.Master.MySQL.Port, config.Master.MySQL.Database)
+		config.MySQL.User, config.MySQL.Password,
+		config.MySQL.Host, config.MySQL.Port, config.MySQL.Database)
 	log.Println(mysqlUri)
 	// 2-2: 连接数据库
 	db, err = gorm.Open("mysql", mysqlUri)

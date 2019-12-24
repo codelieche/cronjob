@@ -16,7 +16,7 @@ func runMonitorWeb() {
 	router := newWebMonitorRouter()
 
 	//address := fmt.Sprintf(":%d", webMonitorPort)
-	address := fmt.Sprintf("%s:%d", common.Config.Worker.Http.Host, common.Config.Worker.Http.Port)
+	address := fmt.Sprintf("%s:%d", common.GetConfig().Worker.Http.Host, common.GetConfig().Worker.Http.Port)
 	log.Println("monitor web address:", address)
 	if err := http.ListenAndServe(address, router); err != nil {
 		log.Println("启动web失败：", err.Error())

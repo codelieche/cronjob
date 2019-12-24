@@ -223,8 +223,8 @@ func (r *jobRepository) listJobsFromEtcd(page int, pageSize int) (jobs []*datamo
 	//endKey := "/crontab/jobs/test2"
 	//jobsDirKey = endKey
 
-	config := common.Config
-	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(config.Master.Etcd.Timeout)*time.Millisecond)
+	config := common.GetConfig()
+	ctx, _ = context.WithTimeout(context.TODO(), time.Duration(config.Etcd.Timeout)*time.Millisecond)
 
 	if page > 1 {
 		// 这种传page的方式也许不优，比如当数据量大了之后，查询prevLastKeyCreateRevision要点时间

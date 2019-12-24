@@ -6,7 +6,7 @@ TAG=v1
 
 # 第2步：打包程序
 # 2-1: 进入程序入口目录
-cd ../../cmd/worker
+cd ../../entry/worker
 # 2-2：执行构建命令
 GOOS=linux GOARCH=amd64 go build -o worker ./worker.go && echo "$(date +"%F %T"): 构建成功" \
 || (echo "$(date %"%F %T"): 构建失败！！！" && exit 1)

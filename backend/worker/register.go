@@ -133,8 +133,8 @@ func newRegister() (register *Register, err error) {
 		Host: hostName,
 		User: userName,
 		Ip:   ipAddress,
-		Port: common.Config.Worker.Http.Port, // web监听的端口号
-		Pid:  os.Getppid(),                   // 进程号
+		Port: common.GetConfig().Worker.Http.Port, // web监听的端口号
+		Pid:  os.Getppid(),                        // 进程号
 	}
 
 	register = &Register{

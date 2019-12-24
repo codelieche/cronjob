@@ -59,7 +59,7 @@ func newApp() *iris.Application {
 
 func Run() {
 	app := newApp()
-	config := common.Config
+	config := common.GetConfig()
 	addr := fmt.Sprintf("%s:%d", config.Master.Http.Host, config.Master.Http.Port)
 
 	// 运行程序

@@ -69,8 +69,8 @@ func GetMongoDB() *MongoDB {
 		return mongoDB
 	} else {
 		// 1. 获取配置
-		config := common.Config
-		connectMongoDB(config.Master.Mongo)
+		config := common.GetConfig()
+		connectMongoDB(config.Mongo)
 		return mongoDB
 	}
 }

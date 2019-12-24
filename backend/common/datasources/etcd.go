@@ -146,8 +146,8 @@ func GetEtcd() *Etcd {
 		return etcd
 	} else {
 		// 2. 获取配置
-		config := common.Config
-		etcdConfig := config.Master.Etcd
+		config := common.GetConfig()
+		etcdConfig := config.Etcd
 		connectEtcd(etcdConfig)
 	}
 	return etcd

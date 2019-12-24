@@ -11,7 +11,7 @@ import (
 	//"gopkg.in/yaml.v2"
 )
 
-var Config *MasterWorkerConfig
+var config *Config
 
 // http Web相关的配置
 type HttpConfig struct {
@@ -43,26 +43,25 @@ type MongoConfig struct {
 
 // master相关的配置
 type MasterConfig struct {
-	Http  *HttpConfig    `json:"http" yaml:"http"`
-	MySQL *MySQLDatabase `json:"mysql" yaml:"mysql"`
-	Redis *RedisDatabase `json:"redis" yaml:"redis"`
-	Etcd  *EtcdConfig    `json:"etcd" yaml:"etcd"`
-	Mongo *MongoConfig   `json:"mongo" yaml:"mongo"`
+	Http *HttpConfig `json:"http" yaml:"http"`
+	//MySQL *MySQLDatabase `json:"mysql" yaml:"mysql"`
 }
 
 // worker相关的配置
 type WorkerConfig struct {
 	Http       *HttpConfig     `json:"http" yaml:"http"`
-	Etcd       *EtcdConfig     `json:"etcd" yaml:"etcd"`
-	Mongo      *MongoConfig    `json:"mongo" yaml:"mongo"`
 	Categories map[string]bool `json:"categories" yaml: "categories"`
 }
 
 // Master Worker相关的配置
-type MasterWorkerConfig struct {
-	Master *MasterConfig `json:"master" yaml:"master"`
-	Worker *WorkerConfig `json:"worker" yaml:"worker"`
-	Debug  bool          `json:"debug" yaml:"debug"`
+type Config struct {
+	Master *MasterConfig  `json:"master" yaml:"master"`
+	Worker *WorkerConfig  `json:"worker" yaml:"worker"`
+	MySQL  *MySQLDatabase `json:"mysql" yaml:"mysql"`
+	Redis  *RedisDatabase `json:"redis" yaml:"redis"`
+	Etcd   *EtcdConfig    `json:"etcd" yaml:"etcd"`
+	Mongo  *MongoConfig   `json:"mongo" yaml:"mongo"`
+	Debug  bool           `json:"debug" yaml:"debug"`
 }
 
 // MySQL数据库相关配置
@@ -91,8 +90,8 @@ func ParseConfig() (err error) {
 		contentStr   string
 	)
 
-	if Config != nil {
-		log.Println(*Config)
+	if config != nil {
+		log.Println(*config)
 		return
 	}
 
@@ -161,6 +160,19 @@ func ParseConfig() (err error) {
 			Port:    9000,
 			Timeout: 5000,
 		},
+	}
+
+	workerConfig = &WorkerConfig{
+		Http: &HttpConfig{
+			Host:    "0.0.0.0",
+			Port:    9000,
+			Timeout: 5000,
+		},
+	}
+
+	config = &Config{
+		Master: masterConfig,
+		Worker: workerConfig,
 		MySQL: &MySQLDatabase{
 			Host:     "127.0.0.1",
 			Port:     0,
@@ -178,30 +190,8 @@ func ParseConfig() (err error) {
 			Password: "password",
 		},
 	}
-
-	workerConfig = &WorkerConfig{
-		Http: &HttpConfig{
-			Host:    "0.0.0.0",
-			Port:    9000,
-			Timeout: 5000,
-		},
-		Etcd: &EtcdConfig{
-			Endpoints: []string{"127.0.0.1:2379"},
-			Timeout:   5000,
-		},
-		Mongo: &MongoConfig{
-			Hosts:    []string{"127.0.0.1:27017"},
-			User:     "admin",
-			Password: "password",
-		},
-	}
-
-	Config = &MasterWorkerConfig{
-		Master: masterConfig,
-		Worker: workerConfig,
-	}
 	//log.Println(string(content))
-	if err = yaml.Unmarshal(content, Config); err != nil {
+	if err = yaml.Unmarshal(content, config); err != nil {
 		return err
 	} else {
 		// 解析配置成功
@@ -212,13 +202,24 @@ func ParseConfig() (err error) {
 		//	log.Println(string(data))
 		//}
 		//log.Println(Config.Worker.Etcd)
-		if Config.Master.Etcd.Timeout < 1000 {
-			Config.Master.Etcd.Timeout = 1000
-		}
-		if Config.Worker.Etcd.Timeout < 1000 {
-			Config.Worker.Etcd.Timeout = 1000
+		if config.Etcd.Timeout < 1000 {
+			config.Etcd.Timeout = 1000
 		}
 	}
 
 	return
+}
+
+func GetConfig() *Config {
+	if config != nil {
+		return config
+	} else {
+		if err := ParseConfig(); err != nil {
+			log.Println("解析配置文件出错", err)
+			os.Exit(1)
+			return nil
+		} else {
+			return config
+		}
+	}
 }

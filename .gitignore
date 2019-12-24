@@ -2,4 +2,6 @@
 
 .idea
 .vscode
+tmp/
+/pkg
 sqlite3.db

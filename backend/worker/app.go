@@ -26,7 +26,7 @@ func (w *Worker) Run() {
 	log.Println("worker run ...")
 
 	// worker初始化：设置工作环境
-	config = common.Config.Worker
+	config = common.GetConfig().Worker
 	// log.Println(config)
 	w.setupExecuteEnvrionment()
 
@@ -84,10 +84,10 @@ func NewWorkerApp() *Worker {
 	etcd := datasources.GetEtcd()
 	mongoDB := datasources.GetMongoDB()
 	categoryRepo := repositories.NewCategoryRepository(db, etcd)
-	jobExecuteRepo := repositories.NewJobExecuteRepository(db, mongoDB)
+	jobExecuteRepo := repositories.NewJobExecuteRepository(db, etcd, mongoDB)
 
 	// 实例化jobManager
-	if etcdManager, err = repositories.NewEtcdManager(common.Config.Worker.Etcd); err != nil {
+	if etcdManager, err = repositories.NewEtcdManager(common.GetConfig().Etcd); err != nil {
 		log.Println(err.Error())
 		//panic(err)
 		os.Exit(1)
