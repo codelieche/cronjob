@@ -1,10 +1,12 @@
 package datasources
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/codelieche/cronjob/backend/common"
@@ -21,6 +23,55 @@ type Etcd struct {
 }
 
 var etcd *Etcd
+
+// 创建Key
+func (etcd *Etcd) PutKeyValue(etcdKey string, etcdValue string, opts ...clientv3.OpOption) (putResponse *clientv3.PutResponse, err error) {
+	// 1. 定义变量
+	var (
+	//putResponse *clientv3.PutResponse
+	)
+	// 2. 对变量进行判断
+	etcdKey = strings.TrimSpace(etcdKey)
+	etcdValue = strings.TrimSpace(etcdValue)
+	if etcdKey == "" {
+		err = errors.New("etcdKey不可为空")
+		return nil, err
+	}
+	if etcdValue == "" {
+		err = errors.New("传入的etcdValue不可为空")
+		return nil, err
+	}
+
+	// 3. 保存数据到etcd中
+	if putResponse, err = etcd.KV.Put(context.Background(), etcdKey, etcdValue, opts...); err != nil {
+		return nil, err
+	} else {
+		//log.Println(putResponse.PrevKv)
+		return putResponse, nil
+	}
+}
+
+// 从etcd中获取数据
+func (etcd *Etcd) GetByKey(etcdKey string, opts ...clientv3.OpOption) (getResponse *clientv3.GetResponse, err error) {
+	// 1. 定义变量
+	var (
+	//getResponse *clientv3.GetResponse
+	)
+
+	// 2. 检查变量
+	etcdKey = strings.TrimSpace(etcdKey)
+	if etcdKey == "" {
+		err = errors.New("etcdKey不可为空")
+		return nil, err
+	}
+
+	// 3. 从etcd中获取数据
+	if getResponse, err = etcd.KV.Get(context.Background(), etcdKey, opts...); err != nil {
+		return nil, err
+	} else {
+		return getResponse, nil
+	}
+}
 
 func connectEtcd(etcdConfig *common.EtcdConfig) {
 	// 1. 定义变量

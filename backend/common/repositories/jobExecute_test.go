@@ -13,10 +13,11 @@ import (
 func TestJobExecuteRepository_Create(t *testing.T) {
 	// 1. get db
 	db := datasources.GetDb()
+	etcd := datasources.GetEtcd()
 	mongoDB := datasources.GetMongoDB()
 
 	// 2. init repository
-	r := NewJobExecuteRepository(db, mongoDB)
+	r := NewJobExecuteRepository(db, etcd, mongoDB)
 
 	// 3. 创建JobExecute
 	i := 0
@@ -82,10 +83,11 @@ func TestJobExecuteRepository_List(t *testing.T) {
 func TestJobExecuteRepository_UpdateByID(t *testing.T) {
 	// 1. get db
 	db := datasources.GetDb()
+	etcd := datasources.GetEtcd()
 	mongoDB := datasources.GetMongoDB()
 
 	// 2. init repository
-	r := NewJobExecuteRepository(db, mongoDB)
+	r := NewJobExecuteRepository(db, etcd, mongoDB)
 
 	// 3. 更新JobExecute
 
@@ -107,10 +109,11 @@ func TestJobExecuteRepository_UpdateByID(t *testing.T) {
 func TestJobExecuteRepository_SaveExecuteLog(t *testing.T) {
 	// 1. get db
 	db := datasources.GetDb()
+	etcd := datasources.GetEtcd()
 	mongoDB := datasources.GetMongoDB()
 
 	// 2. init repository
-	r := NewJobExecuteRepository(db, mongoDB)
+	r := NewJobExecuteRepository(db, etcd, mongoDB)
 
 	// 3. 保存执行日志
 	now := time.Now()
@@ -144,10 +147,11 @@ func TestJobExecuteRepository_SaveExecuteLog(t *testing.T) {
 func TestJobExecuteRepository_GetExecuteLog(t *testing.T) {
 	// 1. get db
 	db := datasources.GetDb()
+	etcd := datasources.GetEtcd()
 	mongoDB := datasources.GetMongoDB()
 
 	// 2. init repository
-	r := NewJobExecuteRepository(db, mongoDB)
+	r := NewJobExecuteRepository(db, etcd, mongoDB)
 
 	// 3. get log
 	var i int64 = 1

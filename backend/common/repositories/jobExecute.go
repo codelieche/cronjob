@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -36,12 +38,15 @@ type JobExecuteRepository interface {
 	// 获取JobExecute的Log
 	GetExecuteLog(jobExecute *datamodels.JobExecute) (jobExecuteLog *datamodels.JobExecuteLog, err error)
 	GetExecuteLogByID(id int64) (jobExecuteLog *datamodels.JobExecuteLog, err error)
+	// Kill Job Execute
+	KillByID(id int64) (success bool, err error)
 }
 
-func NewJobExecuteRepository(db *gorm.DB, mongoDB *datasources.MongoDB) JobExecuteRepository {
+func NewJobExecuteRepository(db *gorm.DB, etcd *datasources.Etcd, mongoDB *datasources.MongoDB) JobExecuteRepository {
 
 	return &jobExecuteRepository{
 		db:      db,
+		etcd:    etcd,
 		mongoDB: mongoDB,
 		infoFields: []string{
 			"id", "created_at", "updated_at",
@@ -54,6 +59,7 @@ func NewJobExecuteRepository(db *gorm.DB, mongoDB *datasources.MongoDB) JobExecu
 type jobExecuteRepository struct {
 	db         *gorm.DB
 	mongoDB    *datasources.MongoDB
+	etcd       *datasources.Etcd
 	infoFields []string
 }
 
@@ -211,5 +217,51 @@ func (r *jobExecuteRepository) GetExecuteLogByID(id int64) (jobExecuteLog *datam
 		return nil, err
 	} else {
 		return r.GetExecuteLog(jobExecute)
+	}
+}
+
+// Kill Job Execute
+func (r *jobExecuteRepository) KillByID(id int64) (success bool, err error) {
+	// 1. 定义变量
+	var (
+		jobExecute    *datamodels.JobExecute
+		jobKill       *datamodels.JobKill
+		etcdKey       string
+		etcdValueData []byte
+		etcdValue     string
+	)
+
+	// 2. 获取jobExecute
+	// 2-1：获取
+	if jobExecute, err = r.Get(id); err != nil {
+		return false, err
+	} else {
+	}
+
+	// 2-2：判断执行的状态
+	if jobExecute.Status != "start" && jobExecute.Status != "todo" && jobExecute.Status != "doding" {
+		err = fmt.Errorf("当前执行的状态是%s，不可kill了", jobExecute.Status)
+		return false, err
+	}
+
+	// 3. 创建jobKill到etcd中
+	// 3-1: 创建jobKill
+	jobKill = &datamodels.JobKill{
+		Category: jobExecute.Category,
+		JobID:    uint(jobExecute.JobID),
+		Killed:   false,
+	}
+	// 3-2: json序列化
+	if etcdValueData, err = json.Marshal(jobKill); err != nil {
+		return false, err
+	}
+
+	etcdValue = string(etcdValueData)
+	// 3-3: 插入到etcd中
+	etcdKey = fmt.Sprintf("%s%s/%d", common.ETCD_JOB_KILL_DIR, jobKill.Category, jobKill.JobID)
+	if _, err = r.etcd.PutKeyValue(etcdKey, etcdValue); err != nil {
+		return false, err
+	} else {
+		return true, nil
 	}
 }

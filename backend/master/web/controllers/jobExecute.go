@@ -4,6 +4,7 @@ import (
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 	"github.com/codelieche/cronjob/backend/master/web/services"
 	"github.com/kataras/iris/v12"
+	"github.com/kataras/iris/v12/mvc"
 	"github.com/kataras/iris/v12/sessions"
 )
 
@@ -57,5 +58,27 @@ func (c *JobExecuteController) GetListBy(page int, ctx iris.Context) (jobExecute
 		return nil, false
 	} else {
 		return jobExecutes, true
+	}
+}
+
+// 杀掉执行
+func (c *JobExecuteController) DeleteByKill(id int64) mvc.Result {
+	// 执行kill
+	if success, err := c.Service.KillByID(id); err != nil {
+		return mvc.Response{
+			Code: 400,
+			Err:  err,
+		}
+	} else {
+		if success {
+			return mvc.Response{
+				Code: 204,
+			}
+		} else {
+			return mvc.Response{
+				Code: 400,
+				Text: "kill失败",
+			}
+		}
 	}
 }

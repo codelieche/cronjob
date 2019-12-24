@@ -72,7 +72,8 @@ func setAppRoute(app *iris.Application) {
 	mvc.Configure(apiV1.Party("/job/execute"), func(app *mvc.Application) {
 		// 实例化JobExecute的repository
 		mongoDB := datasources.GetMongoDB()
-		repo := repositories.NewJobExecuteRepository(db, mongoDB)
+		//etcd := datasources.GetEtcd()
+		repo := repositories.NewJobExecuteRepository(db, etcd, mongoDB)
 		// 实例化JobExecute的Service
 		service := services.NewJobExecuteService(repo)
 		// 注册Service

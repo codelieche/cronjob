@@ -24,6 +24,8 @@ type JobExecuteService interface {
 	// 获取JobExecute的Log
 	GetExecuteLog(jobExecute *datamodels.JobExecute) (jobExecuteLog *datamodels.JobExecuteLog, err error)
 	GetExecuteLogByID(id int64) (jobExecuteLog *datamodels.JobExecuteLog, err error)
+	// Kill Job Execute
+	KillByID(id int64) (success bool, err error)
 }
 
 func NewJobExecuteService(repo repositories.JobExecuteRepository) JobExecuteService {
@@ -64,4 +66,9 @@ func (s *jobExecuteService) GetExecuteLog(jobExecute *datamodels.JobExecute) (jo
 
 func (s *jobExecuteService) GetExecuteLogByID(id int64) (jobExecuteLog *datamodels.JobExecuteLog, err error) {
 	return s.repo.GetExecuteLogByID(id)
+}
+
+// Kill Job Execute
+func (s *jobExecuteService) KillByID(id int64) (success bool, err error) {
+	return s.repo.KillByID(id)
 }
