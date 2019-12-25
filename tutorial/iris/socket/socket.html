@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket页面</title>
+    <style>
+        *{
+            padding: 0;
+            margin: 0;
+        }
+        .header {
+            padding: 10px 20px;
+            background-color: #eee;
+        }
+        .header .title{
+            line-height: 30px;
+            font-size: 24px;
+            flood-color: #555;
+            font-weight: 500;
+        }
+
+    /*    消息内容区域*/
+        .main{
+            border: 1px solid #dfdfdf;
+            min-height: 450px;
+            margin: 10px;
+            border-radius: 5px;
+            padding: 20px;
+        }
+        .main select{
+            margin-bottom: 5px;
+        }
+        .main input{
+            width: 150px;
+            font-size: 16px;
+            line-height: 20px;
+            padding: 2px 3px;
+        }
+        .main button{
+            padding: 2px 3px;
+            width: 60px;
+            height: 24px;
+            background-color: #eee;
+        }
+        .main hr {
+            margin: 10px 0;
+            color: #dfdfdf;
+        }
+        .main .content{
+            padding-left: 20px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+<p class="title">websocket client page</p>
+</div>
+<div class="main">
+    <label for="eventType">消息类型</label>
+    <select id="eventType">
+        <option value="message">Message</option>
+        <option value="createJob">createJob</option>
+    </select>
+
+    <br>
+
+    <label for="input">消息内容</label>
+    <input type="text" id="input">
+    <button type="button" onclick="sendMessage()">提交</button>
+    <hr>
+    <ul class="content" id="content">
+        <li>Hello</li>
+    </ul>
+</div>
+</body>
+<script src="https://cdn.jsdelivr.net/npm/neffos.js@latest/dist/neffos.min.js"></script>
+<script>
+    // 先判断协议
+    var nsConnGlobal;
+    var schema = document.location.protocol === "https" ? "wss" : "ws";
+    // 是否有端口号
+    var port = document.location.port ? `:${document.location.port}` : "";
+    // websocket的连接地址
+    var websocketUrl = `${schema}://${document.location.hostname}${port}/ws`;
+    console.log(websocketUrl);
+
+    var content = document.getElementById("content");
+
+    // 连接
+    // var socket = new WebSocket(websocketUrl);
+
+    async function runDemo() {
+        var conn = await neffos.dial(websocketUrl, {
+            default: {
+                _OnNamespaceConnected: function(nsConn, msg){
+                    // console.log(nsConn, msg);
+                    // nsConn.emit("This Is Test");
+                    // nsConn.emit("createJob", "消息内容啦啦啦啦啦");
+                    var liElement = document.createElement("li");
+                    liElement.innerHTML = "连接到服务器:  " + new Date();
+                    content.appendChild(liElement);
+                    nsConnGlobal = nsConn
+                },
+                _OnNamespaceDisconnect: function(nsConn, msg){
+                    console.log(nsConn, msg);
+                    console.log("断开连接", nsConn);
+                    var liElement = document.createElement("li");
+                    liElement.innerHTML = "断开连接:  " + new Date();
+                    content.appendChild(liElement);
+                },
+                createJob: function(nsConn, msg){
+                    // 收到消息
+                    // console.log("收到crateJob的消息")
+                    // console.log(nsConn, msg);
+                    // reciveMessage(msg.Event, msg.Body)
+                    handlerMessage(nsConn, msg);
+                },
+                message: handlerMessage,
+            }
+        });
+        conn.connect("default");
+    }
+
+    function handlerMessage(nsConn, msg){
+        // 收到消息
+        var text = `<-：${msg.Event}:${msg.Body}`;
+        var liElement = document.createElement("li");
+        liElement.innerHTML = text;
+        content.appendChild(liElement);
+    }
+
+
+    // socket.onopen= function(event){
+    //     console.log("连接",event)
+    //     var liElement = document.createElement("li")
+    //     liElement.innerHTML = "连接成功:" + new Date();
+    //     content.appendChild(liElement)
+    // };
+    //
+    // socket.onclose = function(event){
+    //     console.log("断开连接", event)
+    //     var liElement = document.createElement("li")
+    //     liElement.innerHTML = "断开连接:  " + new Date();
+    //     content.appendChild(liElement)
+    // };
+    //
+    // socket.onmessage = function(event){
+    //     console.log(event);
+    //     console.log("收到消息", event.type, event.data);
+    //     var liElement = document.createElement("li")
+    //     liElement.innerHTML = "收到消息:  " + event.data;
+    //     content.appendChild(liElement)
+    // }
+    //
+    // socket.onerror = function (event) {
+    //     console.log(event)
+    // }
+
+    function sendMessage(){
+        var input = document.getElementById("input");
+        var eventInput = document.getElementById("eventType");
+        if (eventInput.value === ""){
+            eventInput.value = "message";
+        }
+
+        var text = input.value;
+        if(text === ""){
+            return
+        }
+        // 发送消息
+        // socket.send(input.value);
+        // console.log(nsConnGlobal);
+        // console.log(eventInput.value, text);
+        nsConnGlobal.emit(eventInput.value, text);
+
+        var liElement = document.createElement("li");
+        liElement.innerHTML = "send:  " + input.value;
+        content.appendChild(liElement);
+        input.value = "";
+    }
+
+    runDemo();
+</script>
+</html>

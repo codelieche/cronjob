@@ -57,3 +57,4 @@
 
 #### iris示例
 - [示例1：基本使用](iris/base/main.go)
+- [示例2：websocket基本使用](iris/socket/main.go)

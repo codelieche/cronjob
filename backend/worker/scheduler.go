@@ -23,6 +23,7 @@ type Scheduler struct {
 // 计算任务调度状态
 // 会尝试执行需要执行的计划任务，并计算jobPlan的下次执行时间
 // 计算now与所有jobPlan中最近的下次执行的时间的间隔
+// 当间隔大于1分钟的时候，设置其为一分钟
 func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 	var (
 		jobPlan  *datamodels.JobSchedulePlan // 计划任务执行Plan信息
@@ -66,6 +67,10 @@ func (scheduler *Scheduler) TrySchedule() (scheduleAfter time.Duration) {
 	// 4. 返回下次执行TrySchedule的时间
 	// 当前时间与最近一次要执行的任务的时间间隔
 	scheduleAfter = (*nearTime).Sub(now)
+	// 下次检查计划任务时间，最多等待1一分钟
+	if scheduleAfter > time.Minute {
+		scheduleAfter = time.Minute
+	}
 	return
 }
 
