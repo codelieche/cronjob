@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common/datamodels"
+
 	"github.com/codelieche/cronjob/backend/common"
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/pkg/transport"
@@ -138,6 +140,11 @@ func connectEtcd(etcdConfig *common.EtcdConfig) {
 		Watcher: watcher,
 	}
 
+}
+
+// 实例化一个etcdLock
+func (etcd *Etcd) NewEtcdLock(name string) (etcdLock *datamodels.EtcdLock, err error) {
+	return datamodels.NewEtcdLock(name, etcd.KV, etcd.Lease)
 }
 
 func GetEtcd() *Etcd {

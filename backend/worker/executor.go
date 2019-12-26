@@ -86,7 +86,8 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 		// log.Println("我是否上锁成功：", jobLock.IsLocked)
 
 		// 判断是否要执行取消函数
-		// 其实当收到jobKill的时候，在scheduler.handleJobEvent中就执行了取消函数了
+		// 当收到jobKill的时候，在scheduler.handleJobEvent中就执行了取消函数了
+		// 这里的kill是当获取锁失败的时候(比如：与etcd的网络断开了)，需要kill
 		go func() {
 			// 检查执行程序
 			needKillJob := <-jobLock.NeedKillChan
