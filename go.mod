@@ -17,10 +17,12 @@ require (
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/gorhill/cronexpr v0.0.0-20180427100037-88b0669f7d75
+	github.com/gorilla/websocket v1.4.1
 	github.com/jinzhu/gorm v1.9.11
 	github.com/juju/errors v0.0.0-20190930114154-d42613fe1ab9
 	github.com/julienschmidt/httprouter v1.2.0
 	github.com/kataras/iris/v12 v12.1.1
+	github.com/kataras/neffos v0.0.12
 	github.com/levigross/grequests v0.0.0-20190908174114-253788527a1a
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect

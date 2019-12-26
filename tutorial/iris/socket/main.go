@@ -9,6 +9,7 @@ import (
 	"github.com/kataras/iris/v12/websocket"
 )
 
+// 缺点：当client发送消息太快的时候，服务端会丢失数据
 func main() {
 	app := iris.New()
 

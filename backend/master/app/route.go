@@ -3,11 +3,12 @@ package app
 import (
 	"time"
 
+	"github.com/codelieche/cronjob/backend/master/sockets"
+
 	"github.com/codelieche/cronjob/backend/common/datasources"
 	"github.com/codelieche/cronjob/backend/common/repositories"
-	"github.com/codelieche/cronjob/backend/master/web/services"
-
 	"github.com/codelieche/cronjob/backend/master/web/controllers"
+	"github.com/codelieche/cronjob/backend/master/web/services"
 
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/mvc"
@@ -93,5 +94,13 @@ func setAppRoute(app *iris.Application) {
 		app.Register(service, sess.Start)
 		// 添加Controller
 		app.Handle(new(controllers.WorkerController))
+	})
+
+	// 处理websocket
+	mvc.Configure(app.Party("/websocket"), func(app *mvc.Application) {
+		// 注册
+		app.Register(sess.Start)
+		// 添加Controller
+		app.Handle(new(sockets.WebsocketController))
 	})
 }

@@ -84,6 +84,7 @@
     var port = document.location.port ? `:${document.location.port}` : "";
     // websocket的连接地址
     var websocketUrl = `${schema}://${document.location.hostname}${port}/ws`;
+    // websocketUrl = "ws://0.0.0.0:9000/websocket";
     console.log(websocketUrl);
 
     var content = document.getElementById("content");
