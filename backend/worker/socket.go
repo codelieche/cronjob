@@ -6,18 +6,16 @@ import (
 	"os"
 	"sync"
 
-	"github.com/codelieche/cronjob/backend/common/datamodels"
-
 	"github.com/codelieche/cronjob/backend/common"
 	"github.com/gorilla/websocket"
 )
 
 type Socket struct {
-	lock            *sync.RWMutex                         // 读写锁
-	RequestID       int                                   // 请求序号
-	lockRequestChan map[int]chan *datamodels.LockResponse // 发起锁请求，等待结果的Channel
-	conn            *websocket.Conn                       // Socket的连接
-	IsActive        bool                                  // 是否有效，断开的时候设置为false
+	lock       *sync.RWMutex    // 读写锁
+	RequestID  int              // 请求序号
+	jobLockMap map[int]*JobLock // JobLock
+	conn       *websocket.Conn  // Socket的连接
+	IsActive   bool             // 是否有效，断开的时候设置为false
 }
 
 var socket *Socket
@@ -40,6 +38,7 @@ func connectMasterSocket() {
 	}
 
 	// 3. 连接socket
+	log.Println(masterSocketUrl)
 	if conn, response, err = websocket.DefaultDialer.Dial(masterSocketUrl, nil); err != nil {
 		log.Println("连接socket出错：", err)
 		os.Exit(1)
@@ -50,9 +49,13 @@ func connectMasterSocket() {
 
 	// 4. 实例化socket
 	socket = &Socket{
-		conn:     conn,
-		IsActive: true,
+		conn:       conn,
+		RequestID:  0,
+		lock:       &sync.RWMutex{},
+		IsActive:   true,
+		jobLockMap: make(map[int]*JobLock),
 	}
+	go readLoop(socket)
 	app.socket = socket
 
 }

@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/codelieche/cronjob/backend/common/datamodels"
-
-	"github.com/codelieche/cronjob/backend/common"
 )
 
 // 任务执行器
@@ -23,19 +21,22 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 	go func() {
 		// 执行shell命令
 		var (
-			jobExecute             *datamodels.JobExecute       // 任务执行
-			jobLockName            string                       // job锁的名字
-			cmd                    *exec.Cmd                    // shell执行命令
-			output                 []byte                       // job执行的输出结果
-			result                 *datamodels.JobExecuteResult // Job执行的结果
-			timeStart              time.Time                    // 开始执行时间
-			jobLock                *common.JobLock              // 计划任务的锁
-			jobExecuteFinishedChan chan int                     // 任务执行完毕channel
+			jobExecute  *datamodels.JobExecute       // 任务执行
+			jobLockName string                       // job锁的名字
+			cmd         *exec.Cmd                    // shell执行命令
+			output      []byte                       // job执行的输出结果
+			result      *datamodels.JobExecuteResult // Job执行的结果
+			timeStart   time.Time                    // 开始执行时间
+			//jobLock                *common.JobLock              // 版本1：计划任务的锁
+			jobLock                *JobLock // 计划任务的锁
+			jobExecuteFinishedChan chan int // 任务执行完毕channel
 		)
 
 		// 初始化分布式锁: 分类/job_id
 		jobLockName = fmt.Sprintf("jobs/%s/%d", info.Job.Category, info.Job.ID)
-		jobLock = app.EtcdManager.CreateJobLock(jobLockName)
+		// 版本1：jobLock = app.EtcdManager.CreateJobLock(jobLockName)
+		jobLock = NewJobLock(jobLockName)
+
 		// log.Println(info.Job)
 		if !info.Job.IsActive {
 			log.Println("当前Job状态是false，无需执行：", info.Job)
@@ -43,6 +44,7 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 		}
 
 		// 尝试上锁
+		// 版本1：if err = jobLock.TryLock(); err != nil {
 		if err = jobLock.TryLock(); err != nil {
 			// 上锁失败，无需执行
 			// log.Println("上锁失败：", jobLock, err.Error())
@@ -59,6 +61,9 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 			c <- result
 			return
 		} else {
+			// 版本2：需要执行自动续租的协程
+			go jobLock.LeaseLoop()
+
 			// 上锁成功才执行shell命令: 进入后续的命令
 			defer jobLock.Unlock()
 			// log.Println("获取到锁：", jobLock)
@@ -90,7 +95,9 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 		// 这里的kill是当获取锁失败的时候(比如：与etcd的网络断开了)，需要kill
 		go func() {
 			// 检查执行程序
-			needKillJob := <-jobLock.NeedKillChan
+			//版本1： needKillJob := <-jobLock.NeedKillChan
+			needKillJob := <-jobLock.killChan
+
 			if needKillJob {
 				//log.Println("需要执行取消函数")
 				// 把当前执行信息的状态设置为kill
@@ -115,6 +122,7 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 				select {
 				case <-jobExecuteFinishedChan:
 					// 正常执行完毕
+					//log.Println("执行任务退出")
 					break
 				case <-timer.C:
 					log.Printf("任务超时了，需要执行取消函数：%s-%d,执行ID：%d\n",

@@ -88,9 +88,10 @@ func (etcdLock *EtcdLock) TryLock() (err error) {
 			case keepResponse = <-keepResponseChan:
 				if keepResponse == nil {
 					// 特别注意这里要退出for循环，用goto END，别用break
+					//log.Println("keepResponse的结果是空了")
 					goto END
 				} else {
-					//log.Println(keepResponse)
+					// log.Println(keepResponse)
 				}
 			case needKill = <-etcdLock.NeedKillChan:
 				if needKill {
@@ -203,6 +204,15 @@ func (etcdLock *EtcdLock) ResetTimer(duration time.Duration, secret string) (err
 			return err
 		}
 	}
+
+	// 判断是否结束了
+	// log.Println(etcdLock)
+	if !etcdLock.IsLocked {
+		// 会有个监听lock的时间，当有lock删除，就会操作这个lock
+		err = fmt.Errorf("%s:的状态是false了", etcdLock.Name)
+		return
+	}
+
 	// log.Println("对lock设置续租:", etcdLock.Name, duration)
 	// 时间最多一分钟，最少一秒钟
 	if duration > time.Minute {

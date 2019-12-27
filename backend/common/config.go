@@ -236,7 +236,6 @@ func (workerConfig *WorkerConfig) GetSocketUrl() (socketUrl string, err error) {
 		masterUrl *url.URL
 		path      string
 		schema    string
-		port      string
 	)
 	workerConfig.MasterUrl = strings.TrimSpace(workerConfig.MasterUrl)
 	if workerConfig.MasterUrl == "" {
@@ -259,12 +258,7 @@ func (workerConfig *WorkerConfig) GetSocketUrl() (socketUrl string, err error) {
 			path = fmt.Sprintf("%s/%s", masterUrl.Path, "websocket")
 		}
 
-		port = masterUrl.Port()
-		if masterUrl.Port() != "" {
-			socketUrl = fmt.Sprintf("%s://%s:%s%s", schema, masterUrl.Host, port, path)
-		} else {
-			socketUrl = fmt.Sprintf("%s://%s%s", schema, masterUrl.Host, path)
-		}
+		socketUrl = fmt.Sprintf("%s://%s%s", schema, masterUrl.Host, path)
 		return socketUrl, nil
 	}
 

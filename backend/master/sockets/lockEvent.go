@@ -183,23 +183,50 @@ func leaseLockEventHandler(event *MessageEvent, client *Client) {
 	// 3. 对锁进行续租
 	// 上锁
 	app.opEtcdLockMux.RLock()
+
+	// 释放读锁
+	defer app.opEtcdLockMux.RUnlock()
 	if etcdLock, isExist = app.etcdLocksMap[lockName]; isExist {
 		if err = etcdLock.ResetTimer(time.Second*10, secret); err != nil {
 			log.Printf("%s续租出错：%s", lockName, err)
+			goto FAIL
 		} else {
-			// log.Printf("%s续租成功", lockName)
+			log.Printf("%s续租成功", lockName)
+			return
 		}
 	}
-	// 释放读锁
-	app.opEtcdLockMux.RUnlock()
 
+FAIL:
+	// 失败了就需要发送信息
+	messageEvent := MessageEvent{
+		Category: "leaseLock",
+		Data:     "",
+	}
+	result := datamodels.LockResponse{
+		ID:      lockRequest.ID,
+		Success: false,
+		Name:    lockName,
+	}
+	if data, err := json.Marshal(result); err != nil {
+
+	} else {
+		messageEvent.Data = string(data)
+	}
+
+	// 发送失败消息
+	client.conn.WriteJSON(messageEvent)
 }
 
 // 释放锁
 // 客户端上锁，用完后，记得释放锁
 func releaseLockEventHandler(lockName string, client *Client) {
 	// 捕获异常
-	defer recoverSocketClientError(client)
+	//defer recoverSocketClientError(client)
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println(err)
+		}
+	}()
 
 	// 1. 定义变量
 	// log.Println("释放锁")
@@ -216,16 +243,17 @@ func releaseLockEventHandler(lockName string, client *Client) {
 	lockName = strings.TrimSpace(lockName)
 
 	// 3. 获取锁
+	app.opEtcdLockMux.Lock()
 	if etcdLock, isExist = app.etcdLocksMap[lockName]; isExist {
-		app.opEtcdLockMux.Lock()
 		delete(app.etcdLocksMap, lockName)
 		app.opEtcdLockMux.Unlock()
 		etcdLock.UnLock()
 	} else {
+		app.opEtcdLockMux.Unlock()
+
 		// 锁不存在
 		log.Println("锁不存在")
 	}
 
 	// 4. 发送释放完毕的消息
-
 }
