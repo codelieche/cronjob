@@ -1,8 +1,10 @@
 package common
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -50,6 +52,7 @@ type MasterConfig struct {
 // worker相关的配置
 type WorkerConfig struct {
 	Http       *HttpConfig     `json:"http" yaml:"http"`
+	MasterUrl  string          `json:"master_url" yaml:"master_url"`
 	Categories map[string]bool `json:"categories" yaml: "categories"`
 }
 
@@ -168,6 +171,7 @@ func ParseConfig() (err error) {
 			Port:    9000,
 			Timeout: 5000,
 		},
+		MasterUrl: "http://127.0.0.1:9000",
 	}
 
 	config = &Config{
@@ -210,6 +214,7 @@ func ParseConfig() (err error) {
 	return
 }
 
+// 获取配置
 func GetConfig() *Config {
 	if config != nil {
 		return config
@@ -222,4 +227,45 @@ func GetConfig() *Config {
 			return config
 		}
 	}
+}
+
+// 获取socket的连接地址
+func (workerConfig *WorkerConfig) GetSocketUrl() (socketUrl string, err error) {
+	// 1. 定义变量
+	var (
+		masterUrl *url.URL
+		path      string
+		schema    string
+		port      string
+	)
+	workerConfig.MasterUrl = strings.TrimSpace(workerConfig.MasterUrl)
+	if workerConfig.MasterUrl == "" {
+		workerConfig.MasterUrl = "http://127.0.0.1/"
+	}
+
+	if masterUrl, err = url.Parse(workerConfig.MasterUrl); err != nil {
+		return "", err
+	} else {
+		// 获取socket的地址
+		if masterUrl.Scheme == "http" {
+			schema = "ws"
+		} else {
+			schema = "wss"
+		}
+
+		if strings.HasSuffix(masterUrl.Path, "/") {
+			path = fmt.Sprintf("%s%s", masterUrl.Path, "websocket")
+		} else {
+			path = fmt.Sprintf("%s/%s", masterUrl.Path, "websocket")
+		}
+
+		port = masterUrl.Port()
+		if masterUrl.Port() != "" {
+			socketUrl = fmt.Sprintf("%s://%s:%s%s", schema, masterUrl.Host, port, path)
+		} else {
+			socketUrl = fmt.Sprintf("%s://%s%s", schema, masterUrl.Host, path)
+		}
+		return socketUrl, nil
+	}
+
 }

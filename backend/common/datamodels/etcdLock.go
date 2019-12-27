@@ -29,6 +29,7 @@ type EtcdLock struct {
 	NeedKillChan chan bool          `json:"-"`           // 是否需要杀掉当前上锁的程序
 	Description  string             `json:"description"` // 备注信息
 	ResetTimes   int                `json:"reset_times"` // 重置定时器的次数
+	Secret       string             `json:"secret"`      // 设置个秘钥，续租的时候需要提供
 	timer        *time.Timer        // 定时器
 }
 
@@ -38,6 +39,14 @@ func (etcdLock *EtcdLock) GetLeaseID() string {
 
 // 尝试上锁
 func (etcdLock *EtcdLock) TryLock() (err error) {
+	// 捕获异常
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println(err)
+			return
+		}
+	}()
+
 	// 1. 定义变量
 	var (
 		leaseGrantResponse *clientv3.LeaseGrantResponse
@@ -116,7 +125,8 @@ func (etcdLock *EtcdLock) TryLock() (err error) {
 	// 如果etcdKey的Revision是0：表示这个key不存在
 	txn.If(clientv3.Compare(clientv3.CreateRevision(etcdKey), "=", 0)).
 		// key不存在，就设置这个key的值为1，注意携带租约，如果不携带租约，节点宕机了，这个key就一直存在了
-		Then(clientv3.OpPut(etcdKey, "1", clientv3.WithLease(leaseID))).
+		// 把秘钥写入到etcd中，当分布式节点续租的时候需要根据秘钥判断
+		Then(clientv3.OpPut(etcdKey, etcdLock.Secret, clientv3.WithLease(leaseID))).
 		// 如果这个key存在的话，表示锁被别人抢走了，我们获取一下
 		Else(clientv3.OpGet(etcdKey))
 
@@ -186,8 +196,14 @@ END:
 // 重置timer
 // 比如：timer：5,4,3,2,1,0
 // 假如倒数到2了，你执行一下ResetTimer(10 * time.Second), 立刻变成：10，9，8，7...了
-func (etcdLock *EtcdLock) ResetTimer(duration time.Duration) {
-	log.Println("对lock设置续租:", etcdLock.Name, duration)
+func (etcdLock *EtcdLock) ResetTimer(duration time.Duration, secret string) (err error) {
+	if etcdLock.Secret != "" {
+		if etcdLock.Secret != secret {
+			err = fmt.Errorf("%s的秘钥不匹配", etcdLock.Name)
+			return err
+		}
+	}
+	// log.Println("对lock设置续租:", etcdLock.Name, duration)
 	// 时间最多一分钟，最少一秒钟
 	if duration > time.Minute {
 		duration = time.Minute
@@ -197,6 +213,7 @@ func (etcdLock *EtcdLock) ResetTimer(duration time.Duration) {
 	}
 	etcdLock.ResetTimes++
 	etcdLock.timer.Reset(duration)
+	return nil
 }
 
 // 实例化一个etcdLock

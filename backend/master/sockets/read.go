@@ -60,13 +60,13 @@ func readLoop(client *Client) {
 
 		} else {
 			// 判断消息类型，然后调用不通的处理器
-			log.Println(event)
+			//log.Println(event)
 			switch event.Category {
 			case "tryLock":
-				// 尝试获取锁: {"category": "tryLock", "data":"jobs/default/abc"}
+				// 尝试获取锁: {"category": "tryLock", "data":"{\"id\": 123, \"name\": \"jobs/default/abc\",\"secret\": \"123456\"}"}
 				go tryLockEventHandler(event, client)
 			case "leaseLock":
-				// 释放获取到的锁: {"category": "leaseLock", "data":"jobs/default/abc"}
+				// 释放获取到的锁: {"category": "leaseLock", "data":"{\"secret\": \"123456\", \"name\": \"jobs/default/abc\"}"}
 				go leaseLockEventHandler(event, client)
 			case "releaseLock":
 				// 释放获取到的锁: {"category": "releaseLock", "data":"jobs/default/abc"}

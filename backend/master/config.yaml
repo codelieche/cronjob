@@ -12,6 +12,7 @@ worker:
   http:
     host: "0.0.0.0"
     port: ${WORKER_PORT:8080}
+  master_url: "http://127.0.0.1:9000"
   # 当前worker可执行什么类型的任务
   categories:
     default: true

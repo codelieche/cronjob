@@ -19,6 +19,7 @@ type Worker struct {
 	EtcdManager    *repositories.EtcdManager         // 计划任务管理器
 	Scheduler      *Scheduler                        // 调度器
 	Categories     map[string]bool                   // 执行计划任务的类型
+	socket         *Socket                           // 工作节点连接的Master socket
 }
 
 func (w *Worker) Run() {
@@ -32,6 +33,9 @@ func (w *Worker) Run() {
 
 	// 启动worker的监控web协程
 	go runMonitorWeb()
+
+	// 连接master的socket: 回写各种数据，都是通过socket
+	connectMasterSocket()
 
 	//var jobsKeyDir = "/crontab/jobs/"
 	var jobsKeyDir = common.ETCD_JOBS_DIR

@@ -1,12 +1,22 @@
 package sockets
 
 import (
+	"encoding/json"
 	"log"
+	"math/rand"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 )
+
+func randonIntString() string {
+	rand.Seed(time.Now().UnixNano())
+	randInt := rand.Intn(100000000)
+	secret := strconv.Itoa(randInt)
+	return secret
+}
 
 // 客户端尝试获取锁
 // 尝试上锁，data，传递的是：锁的lock
@@ -19,17 +29,26 @@ func tryLockEventHandler(event *MessageEvent, client *Client) {
 	}
 	// 1. 定义变量
 	var (
-		remoteAddr string
-		lockName   string // 锁的名字：比如：jobs/:category/:id
-		etcdLock   *datamodels.EtcdLock
-		isExist    bool // 锁释放存在
-		err        error
+		lockRequest *datamodels.LockRequest
+		remoteAddr  string
+		lockName    string // 锁的名字：比如：jobs/:category/:id
+		etcdLock    *datamodels.EtcdLock
+		isExist     bool // 锁释放存在
+		err         error
+		secret      string
+		result      datamodels.LockResponse // 响应结果
 	)
 
 	// 2. 获取变量
 	remoteAddr = client.RemoteAddr
-	lockName = event.Data
-	lockName = strings.TrimSpace(lockName)
+	lockRequest = &datamodels.LockRequest{}
+	if json.Unmarshal([]byte(event.Data), &lockRequest); err != nil {
+		log.Println("解析LockRequest信息出错：", err)
+		return
+	} else {
+		lockName = lockRequest.Name
+		lockName = strings.TrimSpace(lockName)
+	}
 
 	// 如果锁，存在，那么就直接返回
 	if etcdLock, isExist = app.etcdLocksMap[lockName]; isExist {
@@ -57,11 +76,35 @@ func tryLockEventHandler(event *MessageEvent, client *Client) {
 			Category: "tryLock",
 			Data:     etcdLock.GetLeaseID(),
 		}
+
+		// 记得设置秘钥
+		if lockRequest.Secret != "" {
+			secret = lockRequest.Secret
+		} else {
+			secret = randonIntString()
+		}
+
 		//log.Println("lock")
 		app.opEtcdLockMux.Lock()
+		etcdLock.Secret = secret
 		app.etcdLocksMap[lockName] = etcdLock
 		//log.Println("unlock")
 		app.opEtcdLockMux.Unlock()
+
+		// 回写结果给客户端
+		result = datamodels.LockResponse{
+			ID:      lockRequest.ID,
+			Success: true,
+			Name:    lockName,
+			Secret:  secret,
+			Message: "上锁成功",
+		}
+
+		if data, err := json.Marshal(result); err != nil {
+			log.Println(err)
+		} else {
+			event.Data = string(data)
+		}
 
 		if err = client.conn.WriteJSON(event); err != nil {
 			// 写入数据出错
@@ -70,7 +113,7 @@ func tryLockEventHandler(event *MessageEvent, client *Client) {
 			releaseLockEventHandler(lockName, client)
 		} else {
 			// 设置自动过期
-			etcdLock.SetAutoKillTicker(func() {
+			go etcdLock.SetAutoKillTicker(func() {
 				// 需要发送kill信息
 				//log.Println("到期后，后期处理函数")
 				//log.Println(conn)
@@ -88,6 +131,22 @@ ERR:
 		Category: "tryLock",
 		Data:     "false",
 	}
+	// 回写错误结果
+	result = datamodels.LockResponse{
+		ID:      lockRequest.ID,
+		Success: false,
+		Name:    lockName,
+		Secret:  secret,
+		Message: "上锁失败",
+	}
+
+	if data, err := json.Marshal(result); err != nil {
+		log.Println(err)
+
+	} else {
+		event.Data = string(data)
+	}
+
 	// conn可能关闭了，就会引发panic
 	if client.IsActive {
 		client.conn.WriteJSON(event)
@@ -102,20 +161,34 @@ func leaseLockEventHandler(event *MessageEvent, client *Client) {
 
 	// 1. 定义变量
 	var (
-		etcdLock *datamodels.EtcdLock
-		lockName string
-		isExist  bool
+		lockRequest *datamodels.LockRequest
+		etcdLock    *datamodels.EtcdLock
+		lockName    string
+		secret      string
+		isExist     bool
+		err         error
 	)
 
 	// 2. 获取变量
-	lockName = event.Data
-	lockName = strings.TrimSpace(lockName)
+	lockRequest = &datamodels.LockRequest{}
+	if err = json.Unmarshal([]byte(event.Data), lockRequest); err != nil {
+		log.Println("续租请求信息解析出错：", err)
+		return
+	} else {
+		lockName = lockRequest.Name
+		lockName = strings.TrimSpace(lockName)
+		secret = lockRequest.Secret
+	}
 
 	// 3. 对锁进行续租
 	// 上锁
 	app.opEtcdLockMux.RLock()
 	if etcdLock, isExist = app.etcdLocksMap[lockName]; isExist {
-		etcdLock.ResetTimer(time.Second * 10)
+		if err = etcdLock.ResetTimer(time.Second*10, secret); err != nil {
+			log.Printf("%s续租出错：%s", lockName, err)
+		} else {
+			// log.Printf("%s续租成功", lockName)
+		}
 	}
 	// 释放读锁
 	app.opEtcdLockMux.RUnlock()
