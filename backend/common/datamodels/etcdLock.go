@@ -19,22 +19,48 @@ var EtcdJobsLockDir = "/cronjob/lock/"
 // client --> server:
 // TryLocker: 申请锁，判断是否成功
 type EtcdLock struct {
-	CreatedAt    time.Time          `json:"created_at"` // 创建时间
-	Name         string             `json:"name"`       // 锁的名字，eg：jobs/:category/:name
-	kv           clientv3.KV        // KV
-	lease        clientv3.Lease     // 租约
-	cancelFunc   context.CancelFunc // 取消函数：用于取消自动续租
+	CreatedAt    time.Time          `json:"created_at"`  // 创建时间
+	Name         string             `json:"name"`        // 锁的名字，eg：jobs/:category/:name
+	kv           clientv3.KV        `json:"-"`           // KV
+	lease        clientv3.Lease     `json:"-"`           // 租约
+	cancelFunc   context.CancelFunc `json:"-"`           // 取消函数：用于取消自动续租
 	LeaseID      clientv3.LeaseID   `json:"lease_id"`    // 租约ID
 	IsLocked     bool               `json:"is_locked"`   // 释放上锁成功，也可根据leaseID释放不为0判断
 	NeedKillChan chan bool          `json:"-"`           // 是否需要杀掉当前上锁的程序
 	Description  string             `json:"description"` // 备注信息
 	ResetTimes   int                `json:"reset_times"` // 重置定时器的次数
 	Secret       string             `json:"secret"`      // 设置个秘钥，续租的时候需要提供
-	timer        *time.Timer        // 定时器
+	timer        *time.Timer        `json:"-"`           // 定时器
 }
 
 func (etcdLock *EtcdLock) GetLeaseID() string {
 	return strconv.Itoa(int(etcdLock.LeaseID))
+}
+
+// 发起一次续租
+// 注意：假如租约关联的key如果被删除了，租约还存在【还在有效期内】
+// 那么我们发起续租租约会成功，但是key却已经删除了
+func (etcdLock *EtcdLock) KeepAliveOnce(secret string) (success bool, err error) {
+	// 1. 定义变量
+	var (
+		keepAliveResponse *clientv3.LeaseKeepAliveResponse
+	)
+
+	// 2. 对秘钥进行判断
+	if etcdLock.Secret != "" && etcdLock.Secret != secret {
+		err = fmt.Errorf("%s的秘钥传入不正确", etcdLock.Name)
+		return false, err
+	}
+
+	// 3. 发起续租
+	if keepAliveResponse, err = etcdLock.lease.KeepAliveOnce(context.Background(), etcdLock.LeaseID); err != nil {
+		// 发起续租失败
+		return false, err
+	}
+
+	// 4. 对续租结果进行判断
+	log.Println(keepAliveResponse)
+	return true, nil
 }
 
 // 尝试上锁
@@ -50,18 +76,19 @@ func (etcdLock *EtcdLock) TryLock() (err error) {
 	// 1. 定义变量
 	var (
 		leaseGrantResponse *clientv3.LeaseGrantResponse
-		cancelCtx          context.Context                         // 取消上下文
-		cancelFunc         context.CancelFunc                      // 取消函数
-		leaseID            clientv3.LeaseID                        // 租约ID
-		keepResponseChan   <-chan *clientv3.LeaseKeepAliveResponse // 保持续租的响应channel
-		txn                clientv3.Txn                            // etcd的事务
-		etcdKey            string                                  // etcd锁的key
-		txnResponse        *clientv3.TxnResponse                   // 事务响应
+		//cancelCtx          context.Context                         // 取消上下文
+		cancelFunc context.CancelFunc // 取消函数
+		leaseID    clientv3.LeaseID   // 租约ID
+		//keepResponseChan   <-chan *clientv3.LeaseKeepAliveResponse // 保持续租的响应channel
+		txn         clientv3.Txn          // etcd的事务
+		etcdKey     string                // etcd锁的key
+		txnResponse *clientv3.TxnResponse // 事务响应
 	)
 
 	// 2. 创建租约
 	// 2-2: 创建租约-得到租约ID
-	if leaseGrantResponse, err = etcdLock.lease.Grant(context.Background(), 5); err != nil {
+	// 租约是10秒
+	if leaseGrantResponse, err = etcdLock.lease.Grant(context.Background(), 10); err != nil {
 		// 创建租约出错
 		return err
 	} else {
@@ -71,28 +98,29 @@ func (etcdLock *EtcdLock) TryLock() (err error) {
 
 	// 2-2: 自动续租
 	// 取消自动续租相关的上下文和取消函数
-	cancelCtx, cancelFunc = context.WithCancel(context.Background())
-	if keepResponseChan, err = etcdLock.lease.KeepAlive(cancelCtx, leaseID); err != nil {
-		goto FAIL
-	}
+	// cancelCtx, cancelFunc = context.WithCancel(context.Background())
+	// keepAlive会持续的发起续租请求，也可以使用keepAliveOnce只发送一次续租请求，后续手工自动续租
+	//if keepResponseChan, err = etcdLock.lease.KeepAlive(cancelCtx, leaseID); err != nil {
+	//	goto FAIL
+	//}
 
 	// 3. 处理自动续租的响应，启动个协程不断的消耗channel中的内容
 	go func() {
 		var (
-			keepResponse *clientv3.LeaseKeepAliveResponse
-			needKill     bool
+			//keepResponse *clientv3.LeaseKeepAliveResponse
+			needKill bool
 		)
 
 		for {
 			select {
-			case keepResponse = <-keepResponseChan:
-				if keepResponse == nil {
-					// 特别注意这里要退出for循环，用goto END，别用break
-					//log.Println("keepResponse的结果是空了")
-					goto END
-				} else {
-					// log.Println(keepResponse)
-				}
+			//case keepResponse = <-keepResponseChan:
+			//	if keepResponse == nil {
+			//		// 特别注意这里要退出for循环，用goto END，别用break
+			//		//log.Println("keepResponse的结果是空了")
+			//		goto END
+			//	} else {
+			//		// log.Println(keepResponse)
+			//	}
 			case needKill = <-etcdLock.NeedKillChan:
 				if needKill {
 					//log.Println("需要释放锁")
@@ -146,7 +174,7 @@ func (etcdLock *EtcdLock) TryLock() (err error) {
 
 	// 4-5：抢锁成功
 	etcdLock.LeaseID = leaseID
-	etcdLock.cancelFunc = cancelFunc
+	// etcdLock.cancelFunc = cancelFunc
 	etcdLock.IsLocked = true
 	return nil
 FAIL:

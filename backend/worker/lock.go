@@ -7,6 +7,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/codelieche/cronjob/backend/common"
+
 	"github.com/codelieche/cronjob/backend/master/sockets"
 
 	"github.com/codelieche/cronjob/backend/common/datamodels"
@@ -86,31 +88,44 @@ END:
 // 尝试上锁
 func (jobLock *JobLock) TryLock() (err error) {
 
+	// 捕获异常
 	defer func() {
 		if err := recover(); err != nil {
 			log.Println(err)
 		}
 	}()
 
+	// 定义变量
+	var (
+		lockRequest  datamodels.LockRequest // 上锁请求信息
+		messageEvent sockets.MessageEvent   // 给socket发送的event事件
+		data         []byte
+	)
+
 	// 1. 发送上锁消息
-	lockRequest := datamodels.LockRequest{
+	lockRequest = datamodels.LockRequest{
 		ID:     jobLock.ID,
 		Name:   jobLock.Name,
 		Secret: "",
 	}
 
-	messageEvent := sockets.MessageEvent{
+	messageEvent = sockets.MessageEvent{
 		Category: "tryLock",
 		Data:     "",
 	}
 
-	if data, err := json.Marshal(lockRequest); err != nil {
+	if data, err = json.Marshal(lockRequest); err != nil {
 		return err
 	} else {
 		messageEvent.Data = string(data)
 	}
 
-	if err := socket.conn.WriteJSON(messageEvent); err != nil {
+	if data, err = json.Marshal(messageEvent); err != nil {
+		return err
+	}
+
+	log.Printf("%s\n", common.Packet(data))
+	if err = socket.conn.WriteJSON(data); err != nil {
 		// 发送消息失败
 		log.Println(err)
 		return err

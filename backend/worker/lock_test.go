@@ -9,6 +9,23 @@ func TestJobLock_TryLock(t *testing.T) {
 
 	jobLock := NewJobLock("jobs/default/123456")
 
+	if err := jobLock.TryLock(); err != nil {
+		t.Errorf(err.Error())
+	} else {
+		go func() {
+			time.Sleep(time.Minute)
+			//jobLock.ctxCancelFunc() // 取消续租
+			jobLock.Unlock() // 释放锁
+		}()
+		jobLock.LeaseLoop()
+	}
+
+}
+
+func TestJobLock_TryLock02(t *testing.T) {
+
+	jobLock := NewJobLock("jobs/default/123456")
+
 	jobLock.TryLock()
 
 	i := 0
