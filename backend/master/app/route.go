@@ -96,6 +96,19 @@ func setAppRoute(app *iris.Application) {
 		app.Handle(new(controllers.WorkerController))
 	})
 
+	// Lock相关的api
+	mvc.Configure(apiV1.Party("/lock"), func(app *mvc.Application) {
+		// 实例化Worker的repository
+		etcd := datasources.GetEtcd()
+		repo := repositories.NewLockRepository(etcd)
+		// 实例化Lock的Service
+		service := services.NewLockService(repo)
+		// 注册Service
+		app.Register(service, sess.Start)
+		// 添加Controller
+		app.Handle(new(controllers.LockController))
+	})
+
 	// 处理websocket
 	mvc.Configure(app.Party("/websocket"), func(app *mvc.Application) {
 		// 注册

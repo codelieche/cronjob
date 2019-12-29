@@ -112,7 +112,7 @@ func (c *WebsocketController) PostLockSync(ctx iris.Context) mvc.Result {
 		}
 	}
 
-	if etcdLock, err = app.etcd.NewEtcdLock(lockName); err != nil {
+	if etcdLock, err = app.etcd.NewEtcdLock(lockName, 10); err != nil {
 		log.Println("获取锁失败：", err)
 		goto ERR
 	} else {

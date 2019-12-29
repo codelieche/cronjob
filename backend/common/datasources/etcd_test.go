@@ -16,7 +16,7 @@ func TestEtcd_NewEtcdLock(t *testing.T) {
 	etcd := GetEtcd()
 
 	// 2. new etcd lock
-	if etcdLock, err := etcd.NewEtcdLock("jobs/default/abc"); err != nil {
+	if etcdLock, err := etcd.NewEtcdLock("jobs/default/abc", 10); err != nil {
 		t.Error(err)
 	} else {
 		// 3. 尝试上锁
@@ -30,16 +30,12 @@ func TestEtcd_NewEtcdLock(t *testing.T) {
 				i++
 				duration := time.Duration(i*5) * time.Second
 				time.Sleep(duration)
-				if success, err := etcdLock.KeepAliveOnce(etcdLock.Secret); err != nil {
+				if err := etcdLock.KeepAliveOnce(etcdLock.Secret); err != nil {
 					log.Println("续租失败：", err)
 					t.Error(err)
 					return
 				} else {
-					if success {
-						log.Println("续租成功:", i)
-					} else {
-						log.Println("续租失败")
-					}
+					log.Println("续租成功:", i)
 				}
 
 				time.Sleep(time.Second * 5)

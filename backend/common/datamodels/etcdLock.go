@@ -18,9 +18,11 @@ var EtcdJobsLockDir = "/cronjob/lock/"
 // 计划任务执行的时候需要锁：/crontab/lock/jobs/:category/:name
 // client --> server:
 // TryLocker: 申请锁，判断是否成功
+// KeepAliveOnce: 续租一次，要想让key持续ok，那么需要让不断的发起续租请求
 type EtcdLock struct {
 	CreatedAt    time.Time          `json:"created_at"`  // 创建时间
 	Name         string             `json:"name"`        // 锁的名字，eg：jobs/:category/:name
+	Duration     int64              `json:"duration"`    // 关联的租约秒
 	kv           clientv3.KV        `json:"-"`           // KV
 	lease        clientv3.Lease     `json:"-"`           // 租约
 	cancelFunc   context.CancelFunc `json:"-"`           // 取消函数：用于取消自动续租
@@ -33,6 +35,7 @@ type EtcdLock struct {
 	timer        *time.Timer        `json:"-"`           // 定时器
 }
 
+// 获取租约ID
 func (etcdLock *EtcdLock) GetLeaseID() string {
 	return strconv.Itoa(int(etcdLock.LeaseID))
 }
@@ -40,7 +43,7 @@ func (etcdLock *EtcdLock) GetLeaseID() string {
 // 发起一次续租
 // 注意：假如租约关联的key如果被删除了，租约还存在【还在有效期内】
 // 那么我们发起续租租约会成功，但是key却已经删除了
-func (etcdLock *EtcdLock) KeepAliveOnce(secret string) (success bool, err error) {
+func (etcdLock *EtcdLock) KeepAliveOnce(secret string) (err error) {
 	// 1. 定义变量
 	var (
 		keepAliveResponse *clientv3.LeaseKeepAliveResponse
@@ -49,18 +52,18 @@ func (etcdLock *EtcdLock) KeepAliveOnce(secret string) (success bool, err error)
 	// 2. 对秘钥进行判断
 	if etcdLock.Secret != "" && etcdLock.Secret != secret {
 		err = fmt.Errorf("%s的秘钥传入不正确", etcdLock.Name)
-		return false, err
+		return err
 	}
 
 	// 3. 发起续租
 	if keepAliveResponse, err = etcdLock.lease.KeepAliveOnce(context.Background(), etcdLock.LeaseID); err != nil {
 		// 发起续租失败
-		return false, err
+		return err
 	}
 
 	// 4. 对续租结果进行判断
 	log.Println(keepAliveResponse)
-	return true, nil
+	return nil
 }
 
 // 尝试上锁
@@ -88,7 +91,7 @@ func (etcdLock *EtcdLock) TryLock() (err error) {
 	// 2. 创建租约
 	// 2-2: 创建租约-得到租约ID
 	// 租约是10秒
-	if leaseGrantResponse, err = etcdLock.lease.Grant(context.Background(), 10); err != nil {
+	if leaseGrantResponse, err = etcdLock.lease.Grant(context.Background(), etcdLock.Duration); err != nil {
 		// 创建租约出错
 		return err
 	} else {
@@ -211,6 +214,8 @@ func (etcdLock *EtcdLock) SetAutoKillTicker(callback func()) {
 		case <-etcdLock.timer.C:
 			// 发送一个需要杀掉的消息
 			// log.Println("定时器到了")
+			// 删掉租约
+			etcdLock.lease.Revoke(context.Background(), etcdLock.LeaseID)
 			etcdLock.NeedKillChan <- true
 
 			// 调用callback函数
@@ -241,6 +246,11 @@ func (etcdLock *EtcdLock) ResetTimer(duration time.Duration, secret string) (err
 		return
 	}
 
+	// 发起一起自动续租
+	if err = etcdLock.KeepAliveOnce(secret); err != nil {
+		return nil
+	}
+
 	// log.Println("对lock设置续租:", etcdLock.Name, duration)
 	// 时间最多一分钟，最少一秒钟
 	if duration > time.Minute {
@@ -255,20 +265,31 @@ func (etcdLock *EtcdLock) ResetTimer(duration time.Duration, secret string) (err
 }
 
 // 实例化一个etcdLock
-func NewEtcdLock(name string, kv clientv3.KV, lease clientv3.Lease) (etcdLock *EtcdLock, err error) {
+// duration是关联的租约的时间秒数
+func NewEtcdLock(name string, duration int64, kv clientv3.KV, lease clientv3.Lease) (etcdLock *EtcdLock, err error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		err = errors.New("锁的名字不可为空")
 		return nil, err
 	}
 
+	// 对事件进行判断
+	if duration < 1 {
+		duration = 1
+	} else {
+		if duration > 60 {
+			duration = 60
+		}
+	}
+
 	// 如果启动了自动kill的通道
 	// 那么需要自动设置续租，etcdLock.ResetTimer()
-	timer := time.NewTimer(time.Second * 10)
+	timer := time.NewTimer(time.Duration(etcdLock.Duration) * time.Second)
 
 	etcdLock = &EtcdLock{
 		CreatedAt:    time.Now(),
 		Name:         name,
+		Duration:     duration,
 		kv:           kv,
 		lease:        lease,
 		LeaseID:      0,

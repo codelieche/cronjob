@@ -143,8 +143,8 @@ func connectEtcd(etcdConfig *common.EtcdConfig) {
 }
 
 // 实例化一个etcdLock
-func (etcd *Etcd) NewEtcdLock(name string) (etcdLock *datamodels.EtcdLock, err error) {
-	return datamodels.NewEtcdLock(name, etcd.KV, etcd.Lease)
+func (etcd *Etcd) NewEtcdLock(name string, duration int64) (etcdLock *datamodels.EtcdLock, err error) {
+	return datamodels.NewEtcdLock(name, duration, etcd.KV, etcd.Lease)
 }
 
 func GetEtcd() *Etcd {

@@ -15,3 +15,9 @@ type LockResponse struct {
 	Secret  string `json:"secret"`  // 锁的秘钥
 	Message string `json:"message"` // 消息内容
 }
+
+// 通用的响应消息
+type BaseResponse struct {
+	Status  string `json:"status"`  // 状态
+	Message string `json:"message"` // 消息内容
+}
