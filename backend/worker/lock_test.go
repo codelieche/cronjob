@@ -56,7 +56,7 @@ func TestJobLock_LeaseLoop(t *testing.T) {
 
 	go func() {
 		time.Sleep(time.Second * 30)
-		jobLock.ctxCancelFunc()
+		jobLock.closeChan <- true
 	}()
 
 	jobLock.LeaseLoop()

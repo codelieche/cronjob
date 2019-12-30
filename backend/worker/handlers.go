@@ -52,7 +52,9 @@ func workerStopHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 
 	info = make(map[string]interface{})
 	info["app"] = app
-	app.Scheduler.isStoped = true
+	// 执行app的stop操作
+	go app.Stop()
+
 	info["scheduler.isStoped"] = app.Scheduler.isStoped
 	info["jobExecutingTable"] = app.Scheduler.jobExecutingTable
 	info["jobResultChan"] = len(app.Scheduler.jobResultChan)

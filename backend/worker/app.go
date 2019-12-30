@@ -3,6 +3,8 @@ package worker
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/codelieche/cronjob/backend/common/datasources"
@@ -25,6 +27,16 @@ type Worker struct {
 func (w *Worker) Run() {
 	// 启动worker程序
 	log.Println("worker run ...")
+
+	// 捕获退出事件
+	catchKillChan := make(chan os.Signal)
+	signal.Notify(catchKillChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-catchKillChan
+		log.Println("捕获到退出事件")
+		// 执行stop相关操作
+		w.Stop()
+	}()
 
 	// worker初始化：设置工作环境
 	config = common.GetConfig().Worker
@@ -62,9 +74,30 @@ func (w *Worker) Run() {
 	go w.EtcdManager.WatchKeys(common.ETCD_JOB_KILL_DIR, watchKillHandler)
 
 	// 注册worker信息到etcd
-	go register.keepOnlive()
+	//go register.keepOnlive()
+	if err := register.postWorkerInfoToMaster(); err != nil {
+		log.Println("发送worker信息去master出错", err)
+		os.Exit(1)
+	}
 
 	w.Scheduler.ScheduleLoop()
+}
+
+func (w *Worker) Stop() {
+	// 设置调度为停止
+	app.Scheduler.isStoped = true
+
+	// 删除掉worker信息
+	register.deleteWorkerInfo()
+
+	// 杀掉正在运行的任务
+	for k, v := range w.Scheduler.jobExecutingTable {
+		log.Println("开始停止：", k)
+		// 执行取消函数
+		v.ExceteCancelFun()
+	}
+	// 休眠60秒，等待各任务完全退出。
+	time.Sleep(time.Minute)
 }
 
 // 实例化Worker

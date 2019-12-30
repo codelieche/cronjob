@@ -22,6 +22,18 @@ func (c *WorkerController) GetBy(name string) (worker *datamodels.Worker, succes
 	}
 }
 
+func (c *WorkerController) PostCreate(ctx iris.Context) (worker *datamodels.Worker, err error) {
+
+	// 1. 从结果中获取worker信息
+	worker = &datamodels.Worker{}
+	if err = ctx.ReadJSON(worker); err != nil {
+		return nil, err
+	}
+
+	// 2. 把worker信息插入到数据库中
+	return c.Service.Create(worker)
+}
+
 func (c *WorkerController) DeleteBy(name string) mvc.Result {
 	if success, err := c.Service.DeleteByName(name); err != nil {
 		return mvc.Response{

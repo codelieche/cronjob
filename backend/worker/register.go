@@ -1,28 +1,19 @@
 package worker
 
 import (
-	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"os"
-	"os/user"
-	"strings"
-	"time"
 
-	"github.com/codelieche/cronjob/backend/common/datasources"
+	"github.com/levigross/grequests"
 
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 
 	"github.com/codelieche/cronjob/backend/common"
-
-	"github.com/coreos/etcd/clientv3"
 )
 
 // 注册节点信息到master
 type Register struct {
-	etcd *datasources.Etcd
-
 	Info *datamodels.Worker // Worker节点的信息
 	//Name     string `json:"name"`     // 节点的名称：Ip:Port（这样就算唯一的了）
 	//HostName string `json:"hostname"` // 主机名
@@ -31,118 +22,107 @@ type Register struct {
 	//Pid      int    `json:"pid"`      // Worker的端口号
 }
 
-// 注册到：/crontab/workers/目录中
-func (register *Register) keepOnlive() {
+// 获取worker信息，然后回写数据到master
+// Master API：
+// URL: /api/v1/worker/create
+// Method: Post
+// Data： json
+func (register *Register) postWorkerInfoToMaster() (err error) {
+
+	// 1. 定义变量
 	var (
-		workerKey          string
-		workerInfoValue    []byte
-		leaseGrantResponse *clientv3.LeaseGrantResponse
-		err                error
-		leaseID            clientv3.LeaseID
-
-		keepAliveChan     <-chan *clientv3.LeaseKeepAliveResponse
-		keepAliveResponse *clientv3.LeaseKeepAliveResponse
-
-		putResponse *clientv3.PutResponse
+		url      string
+		ro       *grequests.RequestOptions
+		response *grequests.Response
+		worker   datamodels.Worker
 	)
 
-	for {
-		// 注册路径
-		workerKey = common.ETCD_WORKER_DIR + register.Info.Name
+	if register.Info.Pid < 1 {
+		register.Info.GetInfo()
+		register.Info.Port = common.GetConfig().Worker.Http.Port
+	}
 
-		// 创建租约
-		if leaseGrantResponse, err = register.etcd.Lease.Grant(context.TODO(), 10); err != nil {
-			// 如果出错，可以等下重试
-			log.Println(err.Error())
-			goto RETRY
-		}
+	// 2. 获取变量值
+	url = fmt.Sprintf("%s/api/v1/worker/create", common.GetConfig().Worker.MasterUrl)
+	ro = &grequests.RequestOptions{
+		QueryStruct:    nil,
+		JSON:           register.Info,
+		Headers:        nil,
+		UserAgent:      "",
+		RequestTimeout: 0,
+		RequestBody:    nil,
+	}
 
-		//	自动续租
-		leaseID = leaseGrantResponse.ID
-		if keepAliveChan, err = register.etcd.Lease.KeepAlive(context.TODO(), leaseID); err != nil {
-			log.Println(err.Error())
-			goto RETRY
-		}
-
-		// 注册到etcd
-		if workerInfoValue, err = json.Marshal(register.Info); err != nil {
-			log.Println(err)
-			goto RETRY
-		}
-		if putResponse, err = register.etcd.KV.Put(
-			context.TODO(), workerKey, string(workerInfoValue),
-			clientv3.WithLease(leaseID),
-		); err != nil {
-			log.Println(err.Error())
-			goto RETRY
+	// 3. 发起请求
+	if response, err = grequests.Post(url, ro); err != nil {
+		return err
+	} else {
+		// 判断结果
+		worker = datamodels.Worker{}
+		if err = response.JSON(&worker); err != nil {
+			return err
 		} else {
-			putResponse = putResponse
-		}
-
-		//	处理续租应答
-		for {
-			select {
-			case keepAliveResponse = <-keepAliveChan:
-				if keepAliveResponse == nil {
-					// 续租失败
-					goto RETRY
-				}
+			//log.Println(worker)
+			if worker.Pid == register.Info.Pid {
+				return nil
+			} else {
+				err = fmt.Errorf("返回的结果的Pid(%d)和当前的Pid不匹配(%d)", worker.Pid, register.Info.Pid)
+				return err
 			}
 		}
-
-	RETRY:
-		time.Sleep(time.Second * 30)
 	}
+}
+
+// 注册到：/crontab/workers/目录中
+func (register *Register) keepOnlive() {
 
 }
 
-func newRegister() (register *Register, err error) {
-	// 先连接etcd相关
-	var (
-		etcd *datasources.Etcd
+// worker退出的时候，需要删除掉worker信息
+func (register *Register) deleteWorkerInfo() (err error) {
 
-		hostName    string
-		userCurrent *user.User
-		userName    string
-		ipAddress   string
-		workerInfo  *datamodels.Worker
+	// 1. 定义变量
+	var (
+		url      string
+		response *grequests.Response
 	)
 
-	// 初始化配置
-	etcd = datasources.GetEtcd()
+	// 2. 获取变量
+	url = fmt.Sprintf("%s/api/v1/worker/%s", common.GetConfig().Worker.MasterUrl, register.Info.Name)
 
-	// 获取到主机名
-	if hostName, err = os.Hostname(); err != nil {
-		hostName = "unkownhost" // 未知主机
-	}
-	// 获取执行程序的用户名
-	if userCurrent, err = user.Current(); err != nil {
-		userName = "unkownuser"
-	} else {
-		userName = userCurrent.Username
-	}
-
-	// 获取主机的IP
-	if ipAddress, err = common.GetFirstLocalIpAddress(); err != nil {
+	// 3. 发起删除请求
+	if response, err = grequests.Delete(url, nil); err != nil {
 		return
 	} else {
-		ipAddress = strings.Split(ipAddress, "/")[0]
+		if response.StatusCode == 204 {
+			// worker应该停止调度了
+			if !app.Scheduler.isStoped {
+				app.Scheduler.isStoped = true
+			}
+			return nil
+		} else {
+			err = errors.New(string(response.Bytes()))
+			return err
+		}
 	}
+}
+
+func newRegister() (register *Register, err error) {
+	// 定义变量
+	var (
+		workerInfo *datamodels.Worker
+	)
 
 	workerInfo = &datamodels.Worker{
-		Host: hostName,
-		User: userName,
-		Ip:   ipAddress,
 		Port: common.GetConfig().Worker.Http.Port, // web监听的端口号
 		Pid:  os.Getppid(),                        // 进程号
 	}
 
+	workerInfo.GetInfo()
+
 	register = &Register{
-		etcd: etcd,
 		Info: workerInfo, // 工作节点的信息
 	}
-
-	register.Info.Name = fmt.Sprintf("%s:%d", register.Info.Ip, register.Info.Port)
 
 	return register, err
 }
