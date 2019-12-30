@@ -211,6 +211,11 @@ func ParseConfig() (err error) {
 		}
 	}
 
+	// 对master_url的后缀进行处理
+	if strings.HasSuffix(config.Worker.MasterUrl, "/") {
+		config.Worker.MasterUrl = config.Worker.MasterUrl[:len(config.Worker.MasterUrl)-1]
+	}
+
 	return
 }
 

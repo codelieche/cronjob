@@ -18,11 +18,11 @@ func tryLockEventHandler(event *sockets.MessageEvent) {
 	} else {
 		// 判断是否成功
 		//log.Println(lockResponse)
-		if jobLock, isExist := socket.jobLockMap[lockResponse.ID]; isExist {
-			jobLock.lockResultChan <- &lockResponse
-		} else {
-			log.Printf("id为%d的jobLock不存在", lockResponse.ID)
-		}
+		//if jobLock, isExist := socket.jobLockMap[lockResponse.ID]; isExist {
+		//	jobLock.lockResultChan <- &lockResponse
+		//} else {
+		//	log.Printf("id为%d的jobLock不存在", lockResponse.ID)
+		//}
 	}
 
 	// log.Println("jobLock Done")
@@ -39,7 +39,7 @@ func leaseLockEventHandler(event *sockets.MessageEvent) {
 		if jobLock, isExist := socket.jobLockMap[lockResponse.ID]; isExist {
 			if !lockResponse.Success {
 				log.Println("续租失败，需要kill了", jobLock.Name)
-				jobLock.killChan <- true
+				//jobLock.NeedKillChan <- true
 			}
 		} else {
 			log.Printf("id为%d的jobLock不存在", lockResponse.ID)

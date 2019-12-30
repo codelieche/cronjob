@@ -96,12 +96,12 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 		go func() {
 			// 检查执行程序
 			//版本1： needKillJob := <-jobLock.NeedKillChan
-			needKillJob := <-jobLock.killChan
+			needKillJob := <-jobLock.NeedKillChan
 
 			if needKillJob {
 				//log.Println("需要执行取消函数")
 				// 把当前执行信息的状态设置为kill
-				//log.Println("修改状态为kill", info.Job.ID)
+				log.Println("修改状态为kill", info.Job.ID)
 				info.Status = "kill"
 				info.ExceteCancelFun()
 			} else {
@@ -130,6 +130,8 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 					// 把当前执行信息的状态设置为timeout
 					info.Status = "timeout"
 					info.ExceteCancelFun()
+					// 需要让锁释放:
+					//jobLock.closeChan <- true
 					break
 				}
 			}()
@@ -175,6 +177,7 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 		c <- result
 
 		// 程序执行完毕了，发送个finished的信号
+		// 在判断是否超时的协程中，会用到这个，完成了，就无需执行判断超时了
 		jobExecuteFinishedChan <- 1
 
 	}()

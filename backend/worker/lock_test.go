@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"log"
 	"testing"
 	"time"
 )
@@ -31,7 +32,14 @@ func TestJobLock_TryLock02(t *testing.T) {
 	i := 0
 	for i < 10 {
 		i++
-		jobLock.leaseLock()
+		if err := jobLock.leaseRequest(); err != nil {
+			if i > 1 {
+				return
+			} else {
+				log.Println("续租失败")
+				t.Error(err)
+			}
+		}
 
 		if i == 3 {
 			jobLock.ReleaseLock()
