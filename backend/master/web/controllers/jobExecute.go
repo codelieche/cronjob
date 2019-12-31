@@ -23,6 +23,21 @@ func (c *JobExecuteController) GetBy(id int64) (jobExecute *datamodels.JobExecut
 	}
 }
 
+// Post创建JobExecute
+func (c *JobExecuteController) PostCreate(ctx iris.Context) (jobExecute *datamodels.JobExecute, err error) {
+	// 1. 定义变量
+	jobExecute = &datamodels.JobExecute{}
+
+	// 2. 从请求信息中获取jobExecute信息
+	if err = ctx.ReadJSON(jobExecute); err != nil {
+		return nil, err
+	}
+
+	// 3. 创建jobExecute
+	return c.Service.Create(jobExecute)
+
+}
+
 // 根据ID获取JobExecute的日志
 func (c *JobExecuteController) GetByLog(id int64) (jobExecuteLog *datamodels.JobExecuteLog, success bool) {
 	if jobExecuteLog, err := c.Service.GetExecuteLogByID(id); err != nil {
@@ -81,4 +96,19 @@ func (c *JobExecuteController) DeleteByKill(id int64) mvc.Result {
 			}
 		}
 	}
+}
+
+// Post保存JobExecute的执行日志
+func (c *JobExecuteController) PostResultCreate(ctx iris.Context) (jobExecute *datamodels.JobExecute, err error) {
+	// 1. 定义变量
+	result := &datamodels.JobExecuteResult{}
+
+	// 2. 从请求信息中获取jobExecute信息
+	if err = ctx.ReadJSON(result); err != nil {
+		return nil, err
+	}
+
+	// 3. 创建jobExecuteResult
+	return c.Service.SaveExecuteLog(result)
+
 }

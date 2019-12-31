@@ -2,10 +2,14 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
 	"time"
+
+	"github.com/codelieche/cronjob/backend/common"
+	"github.com/levigross/grequests"
 
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 )
@@ -81,9 +85,12 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 			StartTime:    time.Now(),
 			LogID:        "",
 		}
-		// 保存任务执行信息
-		if jobExecute, err = app.JobExecuteRepo.Create(jobExecute); err != nil {
+
+		// 保存任务执行信息：需要先保存执行信息再去执行任务
+		// 如果保存JobExecute信息出错，应该重试一次，依然报错的话，返回
+		if jobExecute, err = executor.PostJobExecuteToMaster(jobExecute); err != nil {
 			log.Println("保存执行信息出错：", err)
+			return
 		} else {
 			info.JobExecuteID = jobExecute.ID
 		}
@@ -182,6 +189,94 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 
 	}()
 	return
+}
+
+// Post发送任务执行信息到Master
+// URL：/api/v1/job/execute/create
+// Method: POST
+// Data: jobExecute
+func (executor *Executor) PostJobExecuteToMaster(jobExecute *datamodels.JobExecute) (*datamodels.JobExecute, error) {
+	// 1. 定义变量
+	var (
+		url      string                    // 创建JobExecute的url
+		ro       *grequests.RequestOptions // 请求信息
+		response *grequests.Response
+		err      error
+	)
+
+	// 2. 获取变量
+	url = fmt.Sprintf("%s/api/v1/job/execute/create", common.GetConfig().Worker.MasterUrl)
+	ro = &grequests.RequestOptions{
+		JSON:           jobExecute,
+		Headers:        nil,
+		UserAgent:      "",
+		Host:           "",
+		RequestTimeout: 5 * time.Second,
+	}
+
+	// 3. 向master发起请求
+	if response, err = grequests.Post(url, ro); err != nil {
+		return nil, err
+	} else {
+		// 4. 对返回的结果进行判断
+		if response.Ok {
+			// 4-1: 对返回的结果序列化
+			if err = response.JSON(jobExecute); err != nil {
+				return nil, err
+			} else {
+				// 到这里，创建成功
+				return jobExecute, nil
+			}
+		} else {
+			err = errors.New(string(response.Bytes()))
+			return nil, err
+		}
+
+	}
+}
+
+// Post发送任务执行信息到Master
+// URL：/api/v1/job/execute/create
+// Method: POST
+// Data: jobExecute
+func (executor *Executor) PostJobExecuteResultToMaster(result *datamodels.JobExecuteResult) (*datamodels.JobExecuteResult, error) {
+	// 1. 定义变量
+	var (
+		url      string                    // 创建JobExecute的url
+		ro       *grequests.RequestOptions // 请求信息
+		response *grequests.Response
+		err      error
+	)
+
+	// 2. 获取变量
+	url = fmt.Sprintf("%s/api/v1/job/execute/result/create", common.GetConfig().Worker.MasterUrl)
+	ro = &grequests.RequestOptions{
+		JSON:           result,
+		Headers:        nil,
+		UserAgent:      "",
+		Host:           "",
+		RequestTimeout: 5 * time.Second,
+	}
+
+	// 3. 向master发起请求
+	if response, err = grequests.Post(url, ro); err != nil {
+		return nil, err
+	} else {
+		// 4. 对返回的结果进行判断
+		if response.Ok {
+			// 4-1: 对返回的结果序列化
+			if err = response.JSON(result); err != nil {
+				return nil, err
+			} else {
+				// 到这里，创建成功
+				return result, nil
+			}
+		} else {
+			err = errors.New(string(response.Bytes()))
+			return nil, err
+		}
+
+	}
 }
 
 // 初始化执行器

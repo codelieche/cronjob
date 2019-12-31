@@ -258,7 +258,7 @@ func (scheduler *Scheduler) comsumeJobExecuteResultsLoop() {
 func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecuteResult) {
 	var (
 		jobExecutingKey string
-		jobExecuteLog   *datamodels.JobExecuteLog
+		//jobExecuteLog   *datamodels.JobExecuteLog
 	)
 	// 删掉执行状态
 	jobExecutingKey = fmt.Sprintf("%s-%d", result.ExecuteInfo.Job.Category, result.ExecuteInfo.Job.ID)
@@ -269,23 +269,22 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecut
 	// 没抢到执行锁，就不会执行，无需处理结果
 	if result.IsExecuted {
 		// 插入到Mongodb中，并更新执行的log_id
-		if jobExecute, err := app.JobExecuteRepo.SaveExecuteLog(result); err != nil {
-			log.Println("保存执行日志结果出错", err)
+		if jobExecute, err := executor.PostJobExecuteResultToMaster(result); err != nil {
+			log.Println("保存执行日志结果出错：", err)
 		} else {
-			//log.Println(jobExecute)
 			jobExecute = jobExecute
 		}
 
 		// 记录日志
-		jobExecuteLog = &datamodels.JobExecuteLog{
-			JobExecuteID: result.ExecuteID,
-			Output:       string(result.Output),
-		}
+		//jobExecuteLog = &datamodels.JobExecuteLog{
+		//	JobExecuteID: result.ExecuteID,
+		//	Output:       string(result.Output),
+		//}
 
 		// 判断是否有错误信息
-		if result.Err != nil {
-			jobExecuteLog.Err = result.Err.Error()
-		}
+		//if result.Err != nil {
+		//	jobExecuteLog.Err = result.Err.Error()
+		//}
 
 		// 交给写日志的程序处理【异步去处理】[交给logHandler处理]
 		//scheduler.logHandler.AddLog(jobExecuteLog)
