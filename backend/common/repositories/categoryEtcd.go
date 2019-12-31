@@ -73,6 +73,9 @@ func (r *categoryRepository) saveCategoryToEtcd(category *datamodels.Category, i
 		return nil, err
 	} else {
 		// 插入成功
+		// 回写etcdkey
+		updateFields := map[string]interface{}{"etcd_key": categoryEtcdKey}
+		r.Update(category, updateFields)
 	}
 
 	// 5. 返回

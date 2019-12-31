@@ -7,20 +7,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/codelieche/cronjob/backend/common/datasources"
-
 	"github.com/codelieche/cronjob/backend/common/repositories"
 
 	"github.com/codelieche/cronjob/backend/common"
 )
 
 type Worker struct {
-	TimeStart    time.Time                       // 启动时间
-	CategoryRepo repositories.CategoryRepository // 分类相关的操作
-	EtcdManager  *repositories.EtcdManager       // 计划任务管理器
-	Scheduler    *Scheduler                      // 调度器
-	Categories   map[string]bool                 // 执行计划任务的类型
-	socket       *Socket                         // 工作节点连接的Master socket
+	TimeStart   time.Time                 // 启动时间
+	EtcdManager *repositories.EtcdManager // 计划任务管理器
+	Scheduler   *Scheduler                // 调度器
+	Categories  map[string]bool           // 执行计划任务的类型
+	socket      *Socket                   // 工作节点连接的Master socket
 }
 
 func (w *Worker) Run() {
@@ -116,9 +113,6 @@ func NewWorkerApp() *Worker {
 	)
 
 	// new category repository
-	db := datasources.GetDb()
-	etcd := datasources.GetEtcd()
-	categoryRepo := repositories.NewCategoryRepository(db, etcd)
 
 	// 实例化jobManager
 	if etcdManager, err = repositories.NewEtcdManager(common.GetConfig().Etcd); err != nil {
@@ -132,10 +126,9 @@ func NewWorkerApp() *Worker {
 
 	// 实例化Worker
 	return &Worker{
-		CategoryRepo: categoryRepo,
-		TimeStart:    time.Now(),
-		EtcdManager:  etcdManager,
-		Scheduler:    scheduler,
-		Categories:   make(map[string]bool),
+		TimeStart:   time.Now(),
+		EtcdManager: etcdManager,
+		Scheduler:   scheduler,
+		Categories:  make(map[string]bool),
 	}
 }

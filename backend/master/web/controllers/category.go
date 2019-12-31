@@ -6,12 +6,11 @@ import (
 	"log"
 	"strings"
 
-	"github.com/kataras/iris/v12/mvc"
-
 	"github.com/codelieche/cronjob/backend/common"
 	"github.com/codelieche/cronjob/backend/common/datamodels"
 	"github.com/codelieche/cronjob/backend/master/web/services"
 	"github.com/kataras/iris/v12"
+	"github.com/kataras/iris/v12/mvc"
 	"github.com/kataras/iris/v12/sessions"
 )
 
@@ -36,55 +35,65 @@ func (c *CategoryController) PostCreate(ctx iris.Context) (category *datamodels.
 
 	// 定义变量
 	var (
-		name        string // 分类的名称
-		isActive    string // 是否激活:true 或者 1
-		checkCmd    string // 分类命令：检查
-		setupCmd    string // 分类命令：初始化worker
-		tearDownCmd string // 分类命令：worker退出执行命令
-		description string // 分类的描述说明
+		name          string // 分类的名称
+		isActive      string // 是否激活:true 或者 1
+		isActiveValue bool   // 是否激活
+		checkCmd      string // 分类命令：检查
+		setupCmd      string // 分类命令：初始化worker
+		tearDownCmd   string // 分类命令：worker退出执行命令
+		description   string // 分类的描述说明
 	)
 	// 获取变量
-	contentType := ctx.Request().Header.Get("Context-Type")
+	// Post传过来的头信息：Content-Type
+	contentType := ctx.Request().Header.Get("Content-Type")
 
-	name = strings.TrimSpace(ctx.FormValue("name"))
-	isActive = ctx.FormValue("is_active")
-	setupCmd = ctx.FormValue("setup_cmd")
-	checkCmd = ctx.FormValue("check_cmd")
-	tearDownCmd = ctx.FormValue("tear_down_cmd")
-	description = ctx.FormValue("description")
-
-	// 创建为list的分类，路由会有冲突：
-	// /api/v1/category/list 这个list到底是获取分类详情，还是分类列表呢？
-	if name == "list" {
-		err = errors.New("不可创建名字为list的分类")
-		return nil, err
-	}
-
-	// 先判断是否存在
-	if category, err = c.Service.GetByName(name); err != nil {
-		if err != common.NotFountError {
+	// 判断是否传递的是json
+	if strings.Contains(contentType, "application/json") {
+		category = &datamodels.Category{}
+		if err = ctx.ReadJSON(category); err != nil {
 			return nil, err
 		}
 	} else {
-		if category.ID > 0 {
-			log.Println("分类已经存在")
-			return nil, fmt.Errorf("分类已经存在")
+		// 传递的不是application/json
+		name = strings.TrimSpace(ctx.FormValue("name"))
+		isActive = ctx.FormValue("is_active")
+		setupCmd = ctx.FormValue("setup_cmd")
+		checkCmd = ctx.FormValue("check_cmd")
+		tearDownCmd = ctx.FormValue("tear_down_cmd")
+		description = ctx.FormValue("description")
+
+		// 创建为list的分类，路由会有冲突：
+		// /api/v1/category/list 这个list到底是获取分类详情，还是分类列表呢？
+		if name == "list" {
+			err = errors.New("不可创建名字为list的分类")
+			return nil, err
+		}
+
+		// 先判断是否存在
+		if category, err = c.Service.GetByName(name); err != nil {
+			if err != common.NotFountError {
+				return nil, err
+			}
+		} else {
+			if category.ID > 0 {
+				log.Println("分类已经存在")
+				return nil, fmt.Errorf("分类已经存在")
+			}
+		}
+		// 创建分类
+		if isActive == "true" || isActive == "1" {
+			isActiveValue = true
+		}
+		category = &datamodels.Category{
+			EtcdKey:     "",
+			Name:        name,
+			Description: description,
+			CheckCmd:    checkCmd,
+			SetupCmd:    setupCmd,
+			TearDownCmd: tearDownCmd,
+			IsActive:    isActiveValue,
 		}
 	}
-	//log.Println()
-
-	// 创建分类
-	category = &datamodels.Category{
-		EtcdKey:     "",
-		Name:        name,
-		Description: description,
-		CheckCmd:    checkCmd,
-		SetupCmd:    setupCmd,
-		TearDownCmd: tearDownCmd,
-		IsActive:    true,
-	}
-
-	log.Println(contentType, isActive, category)
 
 	return c.Service.Create(category)
 }

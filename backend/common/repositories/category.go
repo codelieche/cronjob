@@ -75,6 +75,10 @@ func (r *categoryRepository) Save(category *datamodels.Category) (*datamodels.Ca
 		}
 	} else {
 		// 是创建操作
+		if category.Name == "" {
+			err := errors.New("name不可为空")
+			return nil, err
+		}
 		if err := r.db.Create(category).Error; err != nil {
 			return nil, err
 		} else {

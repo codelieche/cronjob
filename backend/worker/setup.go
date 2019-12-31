@@ -112,7 +112,7 @@ func (w *Worker) checkOrSetUpJobExecuteEnvironment(name string) (success bool, e
 	)
 
 	// 第1步：先获取分类信息
-	if category, err = w.CategoryRepo.GetByName(name); err != nil {
+	if category, err = executor.GetJobCategory(name); err != nil {
 		// 1-1: 如果获取当前分类没有，就返回
 		if name == "default" {
 			category = &datamodels.Category{
@@ -124,7 +124,7 @@ func (w *Worker) checkOrSetUpJobExecuteEnvironment(name string) (success bool, e
 				TearDownCmd: "echo `date`; sleep 1; echo `date`",
 			}
 			// 保存到etcd中
-			if _, err = w.CategoryRepo.Save(category); err != nil {
+			if _, err = executor.PostCategoryToMaster(category); err != nil {
 				// 插入出错，返回
 				return
 			} else {

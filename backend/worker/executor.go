@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/codelieche/cronjob/backend/common"
@@ -270,6 +271,92 @@ func (executor *Executor) PostJobExecuteResultToMaster(result *datamodels.JobExe
 			} else {
 				// 到这里，创建成功
 				return result, nil
+			}
+		} else {
+			err = errors.New(string(response.Bytes()))
+			return nil, err
+		}
+
+	}
+}
+
+// 获取计划任务的分类信息
+// URL：/api/v1/category/:name
+// Method: GET
+func (executor *Executor) GetJobCategory(idOrName string) (category *datamodels.Category, err error) {
+	// 1. 定义变量
+	var (
+		url      string                    // 创建JobExecute的url
+		ro       *grequests.RequestOptions // 请求信息
+		response *grequests.Response
+	)
+
+	// 2. 获取变量
+	idOrName = strings.TrimSpace(idOrName)
+	url = fmt.Sprintf("%s/api/v1/category/%s", common.GetConfig().Worker.MasterUrl, idOrName)
+	ro = &grequests.RequestOptions{
+		Headers:        nil,
+		UserAgent:      "",
+		Host:           "",
+		RequestTimeout: 5 * time.Second,
+	}
+
+	// 3. 向master发起请求
+	if response, err = grequests.Get(url, ro); err != nil {
+		return nil, err
+	} else {
+		// 4. 对返回的结果进行判断
+		if response.Ok {
+			// 4-1: 对返回的结果序列化
+			category = &datamodels.Category{}
+			if err = response.JSON(category); err != nil {
+				return nil, err
+			} else {
+				// 到这里，获取分类信息成功
+				return category, nil
+			}
+		} else {
+			err = errors.New(string(response.Bytes()))
+			return nil, err
+		}
+
+	}
+}
+
+// 创建分类
+// URL：/api/v1/category/:name
+// Method: GET
+func (executor *Executor) PostCategoryToMaster(category *datamodels.Category) (*datamodels.Category, error) {
+	// 1. 定义变量
+	var (
+		url      string                    // 创建JobExecute的url
+		ro       *grequests.RequestOptions // 请求信息
+		response *grequests.Response
+		err      error
+	)
+
+	// 2. 获取变量
+	url = fmt.Sprintf("%s/api/v1/category/create", common.GetConfig().Worker.MasterUrl)
+	ro = &grequests.RequestOptions{
+		JSON:           category,
+		Headers:        nil,
+		UserAgent:      "",
+		Host:           "",
+		RequestTimeout: 5 * time.Second,
+	}
+
+	// 3. 向master发起请求
+	if response, err = grequests.Post(url, ro); err != nil {
+		return nil, err
+	} else {
+		// 4. 对返回的结果进行判断
+		if response.Ok {
+			// 4-1: 对返回的结果序列化
+			if err = response.JSON(category); err != nil {
+				return nil, err
+			} else {
+				// 到这里，获取分类信息成功
+				return category, nil
 			}
 		} else {
 			err = errors.New(string(response.Bytes()))

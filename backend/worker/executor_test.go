@@ -79,3 +79,37 @@ func TestExecutor_PostJobExecuteResultToMaster(t *testing.T) {
 	}
 
 }
+
+func TestExecutor_GetJobCategory(t *testing.T) {
+	// 1. 定义变量
+	executor := Executor{}
+
+	// 2. 获取分类
+	if category, err := executor.GetJobCategory("default"); err != nil {
+		t.Error(err)
+	} else {
+		log.Println(category)
+	}
+}
+
+func TestExecutor_PostCategoryToMaster(t *testing.T) {
+	// 1. 定义变量
+	executor := Executor{}
+
+	// 2. 准备数据
+	category := &datamodels.Category{
+		Name:        "mysql",
+		Description: "数据库相关的操作",
+		CheckCmd:    "which mysql",
+		SetupCmd:    "which mysql; echo `date`",
+		TearDownCmd: "echo `date`",
+		IsActive:    true,
+	}
+
+	// 3. 创建分类
+	if category, err := executor.PostCategoryToMaster(category); err != nil {
+		t.Error(err)
+	} else {
+		log.Println(category)
+	}
+}
