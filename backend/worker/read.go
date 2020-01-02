@@ -67,9 +67,6 @@ func readLoop(socket *Socket) {
 			case "leaseLock":
 				// 释放获取到的锁: {"category": "leaseLock", "data":"{\"secret\": \"123456\", \"name\": \"jobs/default/abc\"}"}
 				go leaseLockEventHandler(event)
-			//case "releaseLock":
-			//	// 释放获取到的锁: {"category": "releaseLock", "data":"jobs/default/abc"}
-			//	go releaseLockEventHandler(event.Data, client)
 			default:
 				log.Println("我还暂时处理不了此类消息：", event)
 			}

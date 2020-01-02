@@ -56,7 +56,7 @@ func (c *WebsocketController) Get(ctx iris.Context) {
 
 		app.clients[clientStr] = client
 		// 启动一个处理不断接收消息的协程
-		go readLoop(client)
+		go readeLoop02(client)
 	}
 }
 

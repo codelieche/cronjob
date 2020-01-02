@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
+
+	"github.com/codelieche/cronjob/backend/common"
 
 	"github.com/gorilla/websocket"
 )
@@ -77,6 +80,39 @@ func readLoop(client *Client) {
 	}
 }
 
+func readeLoop02(client *Client) {
+
+	tmpBuffer := make([]byte, 0)
+	messageChan := make(chan []byte, 100)
+	go consuleMessage(messageChan)
+	for {
+		messageType, data, err := client.conn.ReadMessage()
+		if err != nil {
+			log.Println(err)
+			if messageType == -1 {
+				log.Println("messageType == -1：退出")
+				break
+			}
+		}
+		if len(data) > 0 {
+			common.UnPacketData(append(tmpBuffer, data...), messageChan)
+		} else {
+			log.Println("消息为空：", messageType, data)
+		}
+	}
+}
+
+func consuleMessage(c <-chan []byte) {
+
+	for {
+		select {
+		case message := <-c:
+			log.Println(message)
+			log.Printf("%s", message)
+		}
+	}
+}
+
 func readLoopDemo(conn *websocket.Conn) {
 	// 不断的获取数据
 	for {
@@ -100,6 +136,8 @@ func readLoopDemo(conn *websocket.Conn) {
 			// 判断消息类型，然后调用不通的处理器
 			log.Println(event)
 		}
+
+		conn.SetReadDeadline(time.Now())
 
 		// 如果想一次发送多个数据的话，需实例化个NextWriter
 		//if w, err := conn.NextWriter(websocket.TextMessage); err != nil {
