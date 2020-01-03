@@ -8,7 +8,6 @@ import (
 
 	"github.com/codelieche/cronjob/backend/common"
 
-	"github.com/codelieche/cronjob/backend/common/datamodels"
 	"github.com/codelieche/cronjob/backend/common/datasources"
 )
 
@@ -16,13 +15,11 @@ var app *App
 
 type App struct {
 	etcd                 *datasources.Etcd
-	clients              map[string]*Client              // 客户端连接
-	BroadcastMessageChan chan string                     // 广播消息channel
-	etcdLocksMap         map[string]*datamodels.EtcdLock // etcd锁
-	opEtcdLockMux        *sync.RWMutex                   // 读写锁
-	clientMux            *sync.RWMutex                   // 客户端相关信息的读写锁
-	messageChan          chan *Message                   // 消息Channel
-	closeChan            chan bool                       // 关闭通道
+	clients              map[string]*Client // 客户端连接
+	BroadcastMessageChan chan string        // 广播消息channel
+	clientMux            *sync.RWMutex      // 客户端相关信息的读写锁
+	messageChan          chan *Message      // 消息Channel
+	closeChan            chan bool          // 关闭通道
 }
 
 // 不断的消费
@@ -104,8 +101,6 @@ func initApp() {
 			etcd:                 datasources.GetEtcd(),
 			clients:              make(map[string]*Client),
 			BroadcastMessageChan: make(chan string, 1024),
-			etcdLocksMap:         make(map[string]*datamodels.EtcdLock),
-			opEtcdLockMux:        &sync.RWMutex{},
 			clientMux:            &sync.RWMutex{},
 			messageChan:          make(chan *Message, 500),
 		}

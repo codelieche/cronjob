@@ -37,7 +37,7 @@ type JobExecuteResult struct {
 	ExecuteInfo *JobExecuteInfo // 执行信息: 消费结果的时候，会根据这个来判断是否执行了
 	IsExecuted  bool            // 是否有执行
 	Output      []byte          // Job执行输出结果
-	Err         error           // 脚本错误原因
+	Error       string          // 脚本错误原因
 	StartTime   time.Time       // 启动时间
 	EndTime     time.Time       // 结束时间
 	Status      string          // 执行状态：start、finish、cancel、success、error、timeout
@@ -65,6 +65,6 @@ type JobExecute struct {
 type JobExecuteLog struct {
 	JobExecuteID uint   `json:"job_execute_id" bson:"job_execute_id"` // 任务执行ID
 	Output       string `json:"output" bson:"output"`                 // 执行任务输出结果
-	Err          string `json:"err" bson:"err"`                       // 任务错误信息
+	Error        string `json:"error" bson:"error"`                   // 任务错误信息
 	Success      bool   `json:"success" bson:"success"`               // 执行是否成功：当有错误日志的时候，就是未成功
 }

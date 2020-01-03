@@ -11,11 +11,11 @@ import (
 )
 
 type Worker struct {
-	TimeStart time.Time // 启动时间
-	//EtcdManager *repositories.EtcdManager // 计划任务管理器
+	TimeStart  time.Time       // 启动时间
 	Scheduler  *Scheduler      // 调度器
 	Categories map[string]bool // 执行计划任务的类型
 	socket     *Socket         // 工作节点连接的Master socket
+	IsActive   bool            // 是否有效
 }
 
 func (w *Worker) Run() {
@@ -41,31 +41,7 @@ func (w *Worker) Run() {
 	go runMonitorWeb()
 
 	// 连接master的socket: 回写各种数据，都是通过socket
-	connectMasterSocket()
-
-	//var jobsKeyDir = "/crontab/jobs/"
-	//var jobsKeyDir = common.ETCD_JOBS_DIR
-	//var handerJobsWatchDemo = common.WatchJobsHandlerDemo{
-	//	KeyDir: jobsKeyDir,
-	//}
-
-	//var watchHandler = WatchJobsHandler{
-	//	KeyDir:    jobsKeyDir,
-	//	Scheduler: w.Scheduler,
-	//}
-
-	// watch kill
-	//var watchKillHandler = &WatchKillHandler{
-	//	KeyDir:    common.ETCD_JOB_KILL_DIR,
-	//	Scheduler: w.Scheduler,
-	//}
-
-	// 开始监听keys
-	//go w.JobManager.WatchKeys(jobsKeyDir, &handerWatchDemo)
-	// 监听jobs
-	//go w.EtcdManager.WatchKeys(jobsKeyDir, &watchHandler)
-	// 监听kill
-	//go w.EtcdManager.WatchKeys(common.ETCD_JOB_KILL_DIR, watchKillHandler)
+	connectMasterSocket(1)
 
 	// 注册worker信息到etcd
 	//go register.keepOnlive()
@@ -78,11 +54,16 @@ func (w *Worker) Run() {
 }
 
 func (w *Worker) Stop() {
+	w.IsActive = false
+
 	// 设置调度为停止
 	app.Scheduler.isStoped = true
 
 	// 删除掉worker信息
 	register.deleteWorkerInfo()
+
+	// socket发送关闭消息
+	w.socket.Stop()
 
 	// 杀掉正在运行的任务
 	for k, v := range w.Scheduler.jobExecutingTable {
@@ -101,32 +82,18 @@ func NewWorkerApp() *Worker {
 	if app != nil {
 		return app
 	} else {
+		var scheduler *Scheduler
 
+		// 实例化调度器
+		scheduler = NewScheduler()
+
+		// 实例化Worker
+		return &Worker{
+			TimeStart:  time.Now(),
+			Scheduler:  scheduler,
+			Categories: make(map[string]bool),
+			IsActive:   true,
+		}
 	}
 
-	var (
-		//etcdManager *repositories.EtcdManager
-		scheduler *Scheduler
-		//err       error
-	)
-
-	// new category repository
-
-	// 实例化jobManager
-	//if etcdManager, err = repositories.NewEtcdManager(common.GetConfig().Etcd); err != nil {
-	//	log.Println(err.Error())
-	//	//panic(err)
-	//	os.Exit(1)
-	//}
-
-	// 实例化调度器
-	scheduler = NewScheduler()
-
-	// 实例化Worker
-	return &Worker{
-		TimeStart: time.Now(),
-		//EtcdManager: etcdManager,
-		Scheduler:  scheduler,
-		Categories: make(map[string]bool),
-	}
 }

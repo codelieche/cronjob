@@ -282,8 +282,8 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecut
 		//}
 
 		// 判断是否有错误信息
-		//if result.Err != nil {
-		//	jobExecuteLog.Err = result.Err.Error()
+		//if result.Error != nil {
+		//	jobExecuteLog.Error = result.Error.Error()
 		//}
 
 		// 交给写日志的程序处理【异步去处理】[交给logHandler处理]
@@ -291,12 +291,12 @@ func (scheduler *Scheduler) HandlerJobExecuteResult(result *datamodels.JobExecut
 
 		log.Printf("Job: %s执行完成：%s", jobExecutingKey, result.ExecuteInfo.Job.Command)
 		// fmt.Println(string(result.Output))
-		if result.Err != nil {
-			log.Printf("%s执行出现了错误：%s\n", jobExecutingKey, result.Err.Error())
+		if result.Error != "" {
+			log.Printf("%s执行出现了错误：%s\n", jobExecutingKey, result.Error)
 		}
 
 	} else {
-		// log.Printf("Job: %s 未执行：%s\n", result.ExecuteInfo.Job.Name, result.Err.Error())
+		// log.Printf("Job: %s 未执行：%s\n", result.ExecuteInfo.Job.Name, result.Error.Error())
 	}
 }
 

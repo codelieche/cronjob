@@ -58,7 +58,7 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 				ExecuteInfo: info,
 				IsExecuted:  false,
 				Output:      nil,
-				Err:         err,
+				Error:       err.Error(),
 				StartTime:   time.Now(),
 				EndTime:     time.Now(),
 			}
@@ -172,11 +172,16 @@ func (executor *Executor) ExecuteJob(info *datamodels.JobExecuteInfo, c chan<- *
 			ExecuteInfo: info,
 			IsExecuted:  true, // 有执行到
 			Output:      output,
-			Err:         err,
 			StartTime:   timeStart,
 			EndTime:     time.Now(),
 			Status:      info.Status, // 把状态的结果传递给Result，如果是正常finished的，不对状态做调整
 		}
+
+		// 判断是否有错误
+		if err != nil {
+			result.Error = err.Error()
+		}
+
 		//log.Println(info.Job.ID, "xxx", result.Status, result.ExecuteID)
 
 		// 推送结果

@@ -3,6 +3,8 @@ package app
 import (
 	"log"
 
+	"github.com/codelieche/cronjob/backend/common/datasources"
+
 	"github.com/codelieche/cronjob/backend/master/sockets"
 )
 
@@ -13,6 +15,8 @@ func handleAppOnInterput() {
 	sockets.Close()
 
 	// 关闭数据库连接等
+	db := datasources.GetDb()
+	db.Close()
 
 	// 关闭session的redis数据库
 

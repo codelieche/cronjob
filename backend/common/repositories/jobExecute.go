@@ -151,8 +151,8 @@ func (r *jobExecuteRepository) SaveExecuteLog(jobExecuteResult *datamodels.JobEx
 	)
 	// 状态可能是：kill、timeout
 	status = jobExecuteResult.Status
-	if jobExecuteResult.Err != nil {
-		errStr = jobExecuteResult.Err.Error()
+	if jobExecuteResult.Error != "" {
+		errStr = jobExecuteResult.Error
 		success = false
 		if status == "" {
 			status = "error"
@@ -166,7 +166,7 @@ func (r *jobExecuteRepository) SaveExecuteLog(jobExecuteResult *datamodels.JobEx
 	jobExecuteLog := &datamodels.JobExecuteLog{
 		JobExecuteID: jobExecuteResult.ExecuteID,
 		Output:       string(jobExecuteResult.Output),
-		Err:          errStr,
+		Error:        errStr,
 		Success:      success,
 	}
 	// 插入到mongo中

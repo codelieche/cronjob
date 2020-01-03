@@ -65,7 +65,7 @@ func TestExecutor_PostJobExecuteResultToMaster(t *testing.T) {
 			ExecuteID:  jobExecuter.ID,
 			IsExecuted: true,
 			Output:     []byte("这个是测试内容的日志"),
-			Err:        nil,
+			Error:      "",
 			StartTime:  time.Now(),
 			EndTime:    time.Now().Add(time.Minute),
 			Status:     "",

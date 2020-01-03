@@ -1,53 +1,13 @@
-
-# master相关配置
-master:
-  # apiserver相关配置
-  http:
-    host: "0.0.0.0"
-    port: 9000
-
-  # etcd相关配置
-  etcd:
-    endpoints:
-      - "127.0.0.1:2379"
-    timeout: 5000
-#    tls:
-#      certfile: "./etcd.pem"
-#      keyfile: "./etcd-key.pem"
-#      cafile: "./ca.pem"
-
-  # mongodb相关配置
-  mongo:
-    hosts:
-      - "127.0.0.1:27017"
-    user: root
-    password: '${MONGO_PASSWORD:password}'
-
 # worker相关配置
 worker:
   # monitor web相关配置
   http:
     host: "0.0.0.0"
     port: ${WORKER_PORT:8080}
-
-  # etcd相关配置
-  etcd:
-    endpoints:
-      - "127.0.0.1:2379"
-    timeout: 5000
-#    tls:
-#      certfile: "./etcd.pem"
-#      keyfile: "./etcd-key.pem"
-#      cafile: "./ca.pem"
-
-  # mongodb相关配置
-  mongo:
-    hosts:
-      - "127.0.0.1:27017"
-    user: root
-    password: "${MONGO_PASSWORD:password}"
-
+  master_url: "http://127.0.0.1:9000"
   # 当前worker可执行什么类型的任务
   categories:
     default: true
-    test: true
+
+# 是否是测试
+debug: false

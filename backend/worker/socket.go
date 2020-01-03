@@ -18,13 +18,11 @@ import (
 )
 
 type Socket struct {
-	lock       *sync.RWMutex    // 读写锁
-	RequestID  int              // 请求序号
-	jobLockMap map[int]*JobLock // JobLock
-	conn       *websocket.Conn  // Socket的连接
-	IsActive   bool             // 是否有效，断开的时候设置为false
-	dataChan   chan []byte      // 接收数据的channel
-	closeChan  chan bool        // 关闭通道
+	lock      *sync.RWMutex   // 读写锁
+	conn      *websocket.Conn // Socket的连接
+	IsActive  bool            // 是否有效，断开的时候设置为false
+	dataChan  chan []byte     // 接收数据的channel
+	closeChan chan bool       // 关闭通道
 }
 
 var socket *Socket
@@ -57,6 +55,8 @@ func (socket *Socket) ReadeLoop() {
 
 	time.Sleep(time.Second)
 	// 需要重新连接
+	log.Println("开始尝试重新连接socket")
+	connectMasterSocket(1)
 }
 
 // 把得到的消息，发送给app.messageChan，交给它处理
@@ -144,7 +144,13 @@ func (socket *Socket) SendMessageEventToMaster(category string, data string) (er
 	return err
 }
 
-func connectMasterSocket() {
+// socket即将关闭的相关操作
+func (socket *Socket) Stop() {
+	socket.closeChan <- true
+}
+
+// 连接Master的Socket
+func connectMasterSocket(times int) {
 	// 1. 定义变量
 	var (
 		config          *common.Config
@@ -155,6 +161,10 @@ func connectMasterSocket() {
 	)
 
 	// 2. 获取变量
+	if !app.IsActive {
+		log.Println("当前socket状态已经是false了，无需再次重连")
+		return
+	}
 	config = common.GetConfig()
 	if masterSocketUrl, err = config.Worker.GetSocketUrl(); err != nil {
 		log.Println("获取socket的url出错：", err.Error())
@@ -164,28 +174,34 @@ func connectMasterSocket() {
 	// 3. 连接socket
 	log.Println(masterSocketUrl)
 	if conn, response, err = websocket.DefaultDialer.Dial(masterSocketUrl, nil); err != nil {
-		log.Println("连接socket出错：", err)
-		os.Exit(1)
+		log.Printf("第%d次连接socket出错：%s", times, err)
+		if times < 10 {
+			sleepSecond := times * 5
+			log.Printf("%d秒后重试\n", sleepSecond)
+			time.Sleep(time.Second * time.Duration(times*5))
+			connectMasterSocket(times + 1)
+		} else {
+			os.Exit(1)
+		}
 	} else {
 		// log.Println(response)
 		response = response
 		// 连接成功
-	}
 
-	// 4. 实例化socket
-	socket = &Socket{
-		conn:       conn,
-		RequestID:  0,
-		lock:       &sync.RWMutex{},
-		IsActive:   true,
-		jobLockMap: make(map[int]*JobLock),
-		dataChan:   make(chan []byte, 100),
-		closeChan:  make(chan bool, 5),
+		// 4. 实例化socket
+		socket = &Socket{
+			conn:      conn,
+			lock:      &sync.RWMutex{},
+			IsActive:  true,
+			dataChan:  make(chan []byte, 100),
+			closeChan: make(chan bool, 5),
+		}
+		app.socket = socket
+		// 读取socket的消息
+		go socket.ReadeLoop()
+		// socket发送getEvent的消息
+		time.Sleep(time.Second)
+		go socket.SendMessageEventToMaster("getJobs", `{"category": "getJobs", "data": "0"}`)
 	}
-	// 读取socket的消息
-	go socket.ReadeLoop()
-	// socket发送getEvent的消息
-	go socket.SendMessageEventToMaster("getJobs", `{"category": "getJobs", "data": "0"}`)
-	app.socket = socket
 
 }
