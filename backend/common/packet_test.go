@@ -13,3 +13,11 @@ func TestPacketData(t *testing.T) {
 	log.Println("消息内容的长度是：", BinaryToInt(lengthData))
 	log.Printf("%s", data)
 }
+
+func TestBinaryToInt(t *testing.T) {
+	data := []byte("abcd")
+	log.Println(BinaryToInt(data))
+
+	data2 := []byte("000a")
+	log.Println(BinaryToInt(data2))
+}
