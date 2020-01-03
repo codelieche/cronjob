@@ -2,8 +2,11 @@ package sockets
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"time"
+
+	"github.com/codelieche/cronjob/backend/common/datamodels"
 
 	"github.com/codelieche/cronjob/backend/common"
 	"github.com/coreos/etcd/clientv3"
@@ -35,12 +38,35 @@ func pushJobsToClient(client *Client) (err error) {
 	// 获取响应中的消息
 	for _, keyValue = range getResponse.Kvs {
 		// 需要把所有的keyValue发送给客户端
-		if err = client.SendMessage(1, keyValue.Value, true); err != nil {
-			log.Println("发送消息失败：", err)
-			break
+		job := &datamodels.JobEtcd{}
+		if err := json.Unmarshal(keyValue.Value, job); err != nil {
+			log.Printf("读取到的数据不是job：%s", keyValue.Value)
 		} else {
-			// 发送消息成功
+			jobEvent := &datamodels.JobEvent{
+				Event: common.JOB_EVENT_PUT,
+				Job:   job,
+			}
+
+			if jobEventData, err := json.Marshal(jobEvent); err != nil {
+				log.Println(err)
+			} else {
+				messageEvent := &MessageEvent{
+					Category: "jobEvent",
+					Data:     string(jobEventData),
+				}
+
+				messageData := common.PacketInterfaceData(messageEvent)
+
+				if err = client.SendMessage(1, messageData, false); err != nil {
+					log.Println("发送消息失败：", err)
+					break
+				} else {
+					// 发送消息成功
+				}
+			}
+
 		}
+
 	}
 	return
 }

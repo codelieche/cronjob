@@ -7,17 +7,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/codelieche/cronjob/backend/common/repositories"
-
 	"github.com/codelieche/cronjob/backend/common"
 )
 
 type Worker struct {
-	TimeStart   time.Time                 // 启动时间
-	EtcdManager *repositories.EtcdManager // 计划任务管理器
-	Scheduler   *Scheduler                // 调度器
-	Categories  map[string]bool           // 执行计划任务的类型
-	socket      *Socket                   // 工作节点连接的Master socket
+	TimeStart time.Time // 启动时间
+	//EtcdManager *repositories.EtcdManager // 计划任务管理器
+	Scheduler  *Scheduler      // 调度器
+	Categories map[string]bool // 执行计划任务的类型
+	socket     *Socket         // 工作节点连接的Master socket
 }
 
 func (w *Worker) Run() {
@@ -46,28 +44,28 @@ func (w *Worker) Run() {
 	connectMasterSocket()
 
 	//var jobsKeyDir = "/crontab/jobs/"
-	var jobsKeyDir = common.ETCD_JOBS_DIR
+	//var jobsKeyDir = common.ETCD_JOBS_DIR
 	//var handerJobsWatchDemo = common.WatchJobsHandlerDemo{
 	//	KeyDir: jobsKeyDir,
 	//}
 
-	var watchHandler = WatchJobsHandler{
-		KeyDir:    jobsKeyDir,
-		Scheduler: w.Scheduler,
-	}
+	//var watchHandler = WatchJobsHandler{
+	//	KeyDir:    jobsKeyDir,
+	//	Scheduler: w.Scheduler,
+	//}
 
 	// watch kill
-	var watchKillHandler = &WatchKillHandler{
-		KeyDir:    common.ETCD_JOB_KILL_DIR,
-		Scheduler: w.Scheduler,
-	}
+	//var watchKillHandler = &WatchKillHandler{
+	//	KeyDir:    common.ETCD_JOB_KILL_DIR,
+	//	Scheduler: w.Scheduler,
+	//}
 
 	// 开始监听keys
 	//go w.JobManager.WatchKeys(jobsKeyDir, &handerWatchDemo)
 	// 监听jobs
-	go w.EtcdManager.WatchKeys(jobsKeyDir, &watchHandler)
+	//go w.EtcdManager.WatchKeys(jobsKeyDir, &watchHandler)
 	// 监听kill
-	go w.EtcdManager.WatchKeys(common.ETCD_JOB_KILL_DIR, watchKillHandler)
+	//go w.EtcdManager.WatchKeys(common.ETCD_JOB_KILL_DIR, watchKillHandler)
 
 	// 注册worker信息到etcd
 	//go register.keepOnlive()
@@ -107,28 +105,28 @@ func NewWorkerApp() *Worker {
 	}
 
 	var (
-		etcdManager *repositories.EtcdManager
-		scheduler   *Scheduler
-		err         error
+		//etcdManager *repositories.EtcdManager
+		scheduler *Scheduler
+		//err       error
 	)
 
 	// new category repository
 
 	// 实例化jobManager
-	if etcdManager, err = repositories.NewEtcdManager(common.GetConfig().Etcd); err != nil {
-		log.Println(err.Error())
-		//panic(err)
-		os.Exit(1)
-	}
+	//if etcdManager, err = repositories.NewEtcdManager(common.GetConfig().Etcd); err != nil {
+	//	log.Println(err.Error())
+	//	//panic(err)
+	//	os.Exit(1)
+	//}
 
 	// 实例化调度器
 	scheduler = NewScheduler()
 
 	// 实例化Worker
 	return &Worker{
-		TimeStart:   time.Now(),
-		EtcdManager: etcdManager,
-		Scheduler:   scheduler,
-		Categories:  make(map[string]bool),
+		TimeStart: time.Now(),
+		//EtcdManager: etcdManager,
+		Scheduler:  scheduler,
+		Categories: make(map[string]bool),
 	}
 }

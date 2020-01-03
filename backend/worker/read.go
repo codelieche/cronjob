@@ -63,10 +63,10 @@ func readLoop(socket *Socket) {
 			switch event.Category {
 			case "tryLock":
 				// 尝试获取锁: {"category": "tryLock", "data":"{\"id\": 123, \"name\": \"jobs/default/abc\",\"secret\": \"123456\"}"}
-				go tryLockEventHandler(event)
+				//go tryLockEventHandler(event)
 			case "leaseLock":
 				// 释放获取到的锁: {"category": "leaseLock", "data":"{\"secret\": \"123456\", \"name\": \"jobs/default/abc\"}"}
-				go leaseLockEventHandler(event)
+				//go leaseLockEventHandler(event)
 			default:
 				log.Println("我还暂时处理不了此类消息：", event)
 			}
