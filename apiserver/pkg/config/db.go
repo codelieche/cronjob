@@ -36,7 +36,7 @@ func parseDatabase() {
 	driver := GetDefaultEnv("DB_DRIVER", "mysql")
 	host := GetDefaultEnv("DB_HOST", "127.0.0.1")
 	portStr := GetDefaultEnv("DB_PORT", "3306")
-	dbName := GetDefaultEnv("DB_NAME", "CronJob_apiserver")
+	dbName := GetDefaultEnv("DB_NAME", "cronjob_apiserver")
 	user := GetDefaultEnv("DB_USER", "root")
 	password := GetDefaultEnv("DB_PASSWORD", "root")
 	schema := GetDefaultEnv("DB_SCHEMA", "public")

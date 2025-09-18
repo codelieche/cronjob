@@ -70,10 +70,11 @@ type Query interface {
 }
 
 type FilterOption struct {
-	QueryKey string
-	Column   string
-	Value    interface{}
-	Op       int
+	QueryKey  string
+	Column    string
+	Value     interface{}
+	Op        int
+	AllowNull bool
 }
 
 func (o *FilterOption) SetValueByQuery(q Query) {
@@ -119,7 +120,8 @@ func (o *FilterOption) ParseExpression() (c clause.Expression, joinTable string)
 }
 
 func (o *FilterOption) parseExpression(value interface{}) (c clause.Expression, joinTable string) {
-	if value == "" || value == nil {
+	// 如果不允许NULL值，且值为空或为nil，则返回空表达式
+	if !o.AllowNull && (value == "" || value == nil) {
 		return nil, ""
 	}
 

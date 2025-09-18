@@ -21,8 +21,8 @@ var Web *web
 
 // parseWeb 解析web配置
 func parseWeb() {
-	host := GetDefaultEnv("LISTEN_HOST", "0.0.0.0")
-	portStr := GetDefaultEnv("LISTEN_PORT", "8000")
+	host := GetDefaultEnv("WEB_HOST", "0.0.0.0")
+	portStr := GetDefaultEnv("WEB_PORT", "8000")
 	sessionSecretKey := GetDefaultEnv("SESSION_SECRET_KEY", "SessionIsSecret")
 	sessionIDName := GetDefaultEnv("SESSION_ID_NAME", "CronJob_sessionid")
 	port, err := strconv.Atoi(portStr)

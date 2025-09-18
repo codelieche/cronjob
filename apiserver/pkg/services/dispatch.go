@@ -1,5 +1,5 @@
 // Package services 业务服务层
-// 
+//
 // 实现系统的核心业务逻辑，包括：
 // - 任务调度服务：根据cron表达式创建和执行任务
 // - WebSocket服务：与Worker节点进行实时通信
@@ -28,18 +28,19 @@ var (
 	// 待执行任务队列 - 存储等待Worker节点执行的任务
 	// 容量为1024，超出容量时会阻塞或丢弃任务
 	pendingTasksQueue = make(chan *core.Task, 1024)
-	
+
 	// 停止任务队列 - 存储需要停止执行的任务
 	// 用于向Worker节点发送停止指令
 	stopTasksQueue = make(chan *core.Task, 1024)
 )
 
 // NewDispatchService 创建任务调度服务实例
-// 
+//
 // 参数:
 //   - cronJobStore: 定时任务数据存储接口
-//   - taskStore: 任务记录数据存储接口  
+//   - taskStore: 任务记录数据存储接口
 //   - locker: 分布式锁服务接口
+//
 // 返回值:
 //   - core.DispatchService: 任务调度服务接口
 func NewDispatchService(cronJobStore core.CronJobStore, taskStore core.TaskStore, locker core.Locker) core.DispatchService {
@@ -51,16 +52,16 @@ func NewDispatchService(cronJobStore core.CronJobStore, taskStore core.TaskStore
 }
 
 // DispatchService 任务调度服务实现
-// 
+//
 // 负责系统的核心调度逻辑，包括：
 // 1. 根据cron表达式创建任务实例
 // 2. 管理任务的生命周期
 // 3. 处理任务超时和重试
 // 4. 与Worker节点协调任务执行
 type DispatchService struct {
-	cronJobStore core.CronJobStore  // 定时任务数据存储
-	taskStore    core.TaskStore     // 任务记录数据存储
-	locker       core.Locker        // 分布式锁服务
+	cronJobStore core.CronJobStore // 定时任务数据存储
+	taskStore    core.TaskStore    // 任务记录数据存储
+	locker       core.Locker       // 分布式锁服务
 }
 
 // Dispatch 调度cronjob
@@ -187,6 +188,7 @@ func (d *DispatchService) DispatchLoop(ctx context.Context) error {
 				Value:  true,
 				Op:     filters.FILTER_EQ,
 			},
+			// 如果是空的，获取不到，那么会持续的无法调度，那么我们可以在创建的时候，设置当前值为last_plan
 			&filters.FilterOption{
 				Column: "last_plan",
 				Value:  now.Format("2006-01-02 15:04:05"),
@@ -204,14 +206,6 @@ func (d *DispatchService) DispatchLoop(ctx context.Context) error {
 		// 遍历CronJob列表，调用Dispatch方法
 		for _, cronJob := range cronJobs {
 			// 在Dispatch中会获取锁，避免并发调度
-			// 获取锁，避免并发调度
-			// lockKey := "cronjob:dispatch:" + cronJob.ID.String()
-			// lock, err := d.locker.TryAcquire(ctx, lockKey, 10*time.Second)
-			// if err != nil {
-			// 	msg := fmt.Sprintf("获取锁%s失败，跳过此CronJob", lockKey)
-			// 	logger.Warn(msg, zap.Error(err), zap.String("cronjob_id", cronJob.ID.String()))
-			// 	continue
-			// }
 
 			// 调用Dispatch方法
 			if err := d.Dispatch(ctx, cronJob); err != nil {
@@ -219,7 +213,6 @@ func (d *DispatchService) DispatchLoop(ctx context.Context) error {
 			}
 
 			// 释放锁
-			// lock.Release(ctx)
 		}
 
 		// 计算等待时间
@@ -228,6 +221,35 @@ func (d *DispatchService) DispatchLoop(ctx context.Context) error {
 			time.Sleep(waitDuration)
 		} else {
 			time.Sleep(10 * time.Millisecond) // 防止CPU空转
+		}
+
+		filterNullActions := []filters.Filter{
+			&filters.FilterOption{
+				Column: "is_active",
+				Value:  true,
+				Op:     filters.FILTER_EQ,
+			},
+			// 如果是空的，获取不到，那么会持续的无法调度，那么我们可以在创建的时候，设置当前值为last_plan
+			&filters.FilterOption{
+				Column:    "last_plan",
+				Value:     nil,
+				Op:        filters.FILTER_EQ,
+				AllowNull: true, // 允许parseExpression处理NULL值
+			},
+		}
+		// 得到PlanTime是NULL的CronJob列表,我们手动更新这条，后面其实可以让Store实现一个批量更新NULL为当前时间的函数
+		cronNullPlanTimeJobs, _ := d.cronJobStore.List(ctx, 0, 100, filterNullActions...)
+		if cronNullPlanTimeJobs == nil {
+			continue
+		}
+		// 遍历CronJob列表，调用Dispatch方法
+		for _, cronJob := range cronNullPlanTimeJobs {
+			cronJob.LastPlan = &now
+			_, err = d.cronJobStore.Update(ctx, cronJob)
+			if err != nil {
+				logger.Error("更新CronJob失败", zap.Error(err), zap.String("cronjob_id", cronJob.ID.String()))
+				continue
+			}
 		}
 	}
 }

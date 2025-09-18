@@ -97,7 +97,7 @@ func (wc *WebsocketController) readPump(clientID string, conn *websocket.Conn, c
 	}()
 
 	// 配置WebSocket连接参数
-	conn.SetReadLimit(1024) // 设置读取消息的大小限制
+	conn.SetReadLimit(10240) // 设置读取消息的大小限制
 	// 设置pong消息处理，延长读取超时
 	conn.SetPongHandler(func(string) error {
 		logger.Info("收到pong消息，重置读取超时", zap.String("client_id", clientID))
@@ -162,24 +162,32 @@ func (wc *WebsocketController) handleClientMessage(clientID string, conn *websoc
 			currentPos += pos + sepLen
 		}
 
-		// 提取完整的事件消息
-		for i := 0; i < len(sepPositions)-1; i++ {
-			start := sepPositions[i] + sepLen
-			end := sepPositions[i+1]
-			content := strings.TrimSpace(fullMessage[start:end])
-			if content != "" {
-				completeEvents = append(completeEvents, content)
-			}
-		}
+		logger.Debug("找到的分隔符位置", zap.String("client_id", clientID), zap.Ints("positions", sepPositions))
 
-		// 处理剩余的不完整消息
-		if len(sepPositions) > 0 {
+		// 提取完整的事件消息
+		if len(sepPositions) > 1 {
+			for i := 0; i < len(sepPositions)-1; i++ {
+				start := sepPositions[i] + sepLen
+				end := sepPositions[i+1]
+				content := strings.TrimSpace(fullMessage[start:end])
+				if content != "" {
+					completeEvents = append(completeEvents, content)
+					// logger.Debug("提取完整事件", zap.String("client_id", clientID), zap.Int("event_index", i), zap.String("event_content", content))
+				}
+			}
+
+			// 处理剩余的不完整消息
 			lastSepPos := sepPositions[len(sepPositions)-1]
 			if lastSepPos < len(fullMessage)-sepLen {
-				remainingMessage = fullMessage[lastSepPos+sepLen:]
+				// 保留分隔符，因为后续可能会有新消息需要匹配起始分隔符
+				remainingMessage = fullMessage[lastSepPos:]
 			} else {
 				remainingMessage = ""
 			}
+		} else if len(sepPositions) == 1 {
+			// 只有一个分隔符，说明消息不完整
+			// 保留分隔符，以便与后续消息正确匹配
+			remainingMessage = fullMessage[sepPositions[0]:]
 		} else {
 			// 没有找到分隔符，整个消息都是不完整的
 			remainingMessage = fullMessage
@@ -194,12 +202,20 @@ func (wc *WebsocketController) handleClientMessage(clientID string, conn *websoc
 		}
 	}
 
+	// logger.Debug("解析消息后的结果", zap.String("client_id", clientID),
+	// 	zap.Int("complete_events_count", len(completeEvents)),
+	// 	zap.String("remaining_message", remainingMessage))
+
 	// 更新消息缓存
 	wc.cacheMutex.Lock()
 	if remainingMessage != "" {
+		// 如果有剩余的不完整消息，将其缓存起来
 		wc.messageCache[clientID] = remainingMessage
+		// logger.Debug("缓存不完整消息", zap.String("client_id", clientID), zap.String("cached_message", remainingMessage))
 	} else {
+		// 如果没有剩余消息，清理缓存
 		delete(wc.messageCache, clientID) // 清理缓存
+		// logger.Debug("清理消息缓存", zap.String("client_id", clientID))
 	}
 	wc.cacheMutex.Unlock()
 
@@ -408,8 +424,13 @@ func (wc *WebsocketController) handleTaskUpdateEvent(ctx context.Context, event 
 				}
 			}
 
+			// 如果output太长，就需要截取
 			if output, ok := taskData["output"].(string); ok {
-				updates["output"] = output
+				if len(output) >= 1024 {
+					updates["output"] = output[0:100] + "\n\n....\n\n\n" + output[len(output)-100:]
+				} else {
+					updates["output"] = output
+				}
 			}
 			if workerID, ok := taskData["worker_id"].(string); ok && workerID != "" {
 				workerUUID, err := uuid.Parse(workerID)

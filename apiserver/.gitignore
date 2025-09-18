@@ -3,7 +3,8 @@
 
 /upload
 logs
-/tmp
+/temp
 /__debug_*
 /__*
 /apiserver
+/Dockerfile
