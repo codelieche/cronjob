@@ -8,6 +8,7 @@
 package services
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -180,4 +181,90 @@ func (s *apiserverService) GetTask(taskID string) (*core.Task, error) {
 	}
 
 	return &task, nil
+}
+
+// AppendTaskLog 追加/创建任务日志
+//
+// 参数:
+//   - taskID: 任务ID
+//   - logs: 要追加的日志内容
+//
+// 返回值:
+//   - error: 追加过程中的错误
+func (s *apiserverService) AppendTaskLog(taskID string, content string) error {
+	// 构建请求URL
+	url := fmt.Sprintf("%s/tasklog/%s/append/", s.ApiUrl, taskID)
+
+	// 构建请求体数据
+	requestBody := map[string]string{
+		"storage": "", // 日志存储类型，还是由后端自己决定，客户端不填写了
+		"content": content,
+	}
+
+	// 将请求体转换为JSON
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("序列化请求体失败: %w", err)
+	}
+
+	// 创建HTTP请求
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("创建HTTP请求失败: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json")
+	if s.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.AuthToken)
+	}
+
+	// 发送请求
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("发送HTTP请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查HTTP状态码
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP请求失败，状态码: %d", resp.StatusCode)
+	}
+
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("读取响应体失败: %w", err)
+	}
+
+	// 解析响应JSON
+	var apiResp core.ApiserverResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return fmt.Errorf("解析响应JSON失败: %w", err)
+	}
+
+	// 检查API返回的code
+	if apiResp.Code != 0 {
+		return fmt.Errorf("API返回错误，code: %d, message: %s", apiResp.Code, apiResp.Message)
+	}
+
+	// 将data字段解析为map，用于验证
+	dataMap, err := json.Marshal(apiResp.Data)
+	if err != nil {
+		return fmt.Errorf("序列化data字段失败: %w", err)
+	}
+
+	var resultMap map[string]interface{}
+	if err := json.Unmarshal(dataMap, &resultMap); err != nil {
+		return fmt.Errorf("解析data字段失败: %w", err)
+	}
+
+	// 验证返回结果
+	// 1. 检查size是否大于0
+	size, ok := resultMap["size"].(float64)
+	if !ok || size <= 0 {
+		return fmt.Errorf("日志追加失败，size不合法: %v", resultMap["size"])
+	}
+
+	return nil
 }

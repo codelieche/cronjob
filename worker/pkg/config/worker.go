@@ -18,6 +18,7 @@ type Worker struct {
 	Name        string       `json:"name"`        // 服务名称
 	ID          uuid.UUID    `json:"id"`          // 认证token
 	Description string       `json:"description"` // 描述
+	WorkingDir  string       `json:"working_dir"` // 工作目录
 	Metadata    WorkerConfig `json:"metadata"`    // 元数据
 }
 
@@ -48,6 +49,7 @@ func parseWorker() {
 	name := GetDefaultEnv("WORKER_NAME", "worker："+uuid.New().String())
 	description := GetDefaultEnv("WORKER_DESCRIPTION", "cronjob worker")
 	workIDStr := GetDefaultEnv("WORKER_ID", "")
+	workingDir := GetDefaultEnv("WORKER_WORKING_DIR", ".")
 	var workerID uuid.UUID
 	var err error
 
@@ -71,6 +73,7 @@ func parseWorker() {
 		Name:        name,
 		ID:          workerID,
 		Description: description,
+		WorkingDir:  workingDir,
 		Metadata:    metadata,
 	}
 

@@ -7,6 +7,7 @@ type ApiserverResponse struct {
 }
 
 type Apiserver interface {
-	GetCategory(category string) (*Category, error) // 获取任务分类
-	GetTask(taskID string) (*Task, error)           // 获取任务详情
+	GetCategory(category string) (*Category, error)    // 获取任务分类
+	GetTask(taskID string) (*Task, error)              // 获取任务详情
+	AppendTaskLog(taskID string, content string) error // 追加/创建任务日志
 }

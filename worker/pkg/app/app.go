@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/codelieche/cronjob/worker/pkg/config"
 	"github.com/codelieche/cronjob/worker/pkg/core"
@@ -14,14 +15,17 @@ import (
 
 // App Worker应用结构体
 type App struct {
-	wsService core.WebsocketService
-	done      chan struct{}
+	wsService       core.WebsocketService
+	taskService     core.TaskService
+	shutdownManager core.ShutdownManager // 优雅关闭管理器
+	done            chan struct{}
 }
 
 // NewApp 创建新的Worker应用实例
 func NewApp() *App {
 	return &App{
-		done: make(chan struct{}),
+		shutdownManager: core.NewShutdownManager(),
+		done:            make(chan struct{}),
 	}
 }
 
@@ -34,8 +38,13 @@ func (a *App) Initialize() error {
 	// 打印配置信息
 	a.printConfig()
 
-	// 创建WebSocket服务
-	a.wsService = services.NewWebsocketService()
+	// 使用工厂方法创建服务，避免循环依赖
+	a.wsService, a.taskService = services.CreateServices()
+
+	// 注册服务到关闭管理器
+	a.shutdownManager.RegisterWebSocketService(a.wsService)
+	a.shutdownManager.RegisterTaskService(a.taskService)
+	logger.Info("已注册服务到关闭管理器")
 
 	return nil
 }
@@ -66,7 +75,7 @@ func (a *App) Run() {
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	select {
 	case <-quit:
 		logger.Info("收到退出信号")
@@ -81,11 +90,17 @@ func (a *App) Run() {
 // Shutdown 优雅关闭应用
 func (a *App) Shutdown() {
 	logger.Info("Worker正在关闭...")
-	
-	if a.wsService != nil {
-		a.wsService.Stop()
+
+	// 使用优雅关闭管理器，设置60秒超时
+	if err := a.shutdownManager.Shutdown(60 * time.Second); err != nil {
+		logger.Error("优雅关闭失败，执行强制关闭", zap.Error(err))
+
+		// 强制关闭WebSocket服务
+		if a.wsService != nil {
+			a.wsService.Stop()
+		}
 	}
-	
+
 	logger.Info("Worker已关闭")
 }
 

@@ -70,9 +70,9 @@ type WebsocketService interface {
 
 // TaskService 任务服务接口
 // 定义了任务执行、管理等功能
+// 继承TaskEventHandler接口，用于处理任务事件
 type TaskService interface {
-	// 任务事件处理
-	HandleTaskEvent(event *TaskEvent) // 处理任务事件
+	TaskEventHandler // 继承任务事件处理接口
 
 	// 任务执行
 	ExecuteTask(task *Task) // 执行任务
@@ -83,6 +83,11 @@ type TaskService interface {
 	KillTasks(tasks []*Task)    // 强制终止任务列表
 	TimeoutTasks(tasks []*Task) // 处理超时任务列表
 	RetryTasks(tasks []*Task)   // 重试任务列表
+
+	// 状态查询（用于优雅关闭）
+	GetRunningTaskCount() int                           // 获取正在运行的任务数量
+	GetRunningTaskIDs() []string                        // 获取正在运行的任务ID列表
+	WaitForTasksCompletion(timeout time.Duration) error // 等待所有任务完成
 }
 
 // ========== WebSocket配置结构 ==========

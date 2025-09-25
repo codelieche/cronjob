@@ -20,34 +20,37 @@ import (
 	"go.uber.org/zap"
 )
 
-// taskServiceImpl 任务执行服务实现
+// TaskServiceImpl 任务执行服务实现
 //
 // 负责处理从API Server接收到的任务，包括：
 // - 任务执行逻辑
 // - 状态更新和结果上报
 // - 分布式锁管理
 // - 任务重试和超时处理
-type taskServiceImpl struct {
-	wsService    core.WebsocketService  // WebSocket服务，用于与API Server通信
-	locker       core.Locker            // 分布式锁服务，确保任务不重复执行
-	apiserver    core.Apiserver         // API Server通信服务，用于获取任务详情
-	runningTasks map[string]core.Runner // 正在运行的任务，key为task_id
-	taskMutex    sync.RWMutex           // 保护runningTasks的并发访问
+type TaskServiceImpl struct {
+	updateCallback core.TaskUpdateCallback // 任务更新回调，用于发送状态更新（解决循环依赖）
+	errorHandler   core.ErrorHandler       // 统一错误处理器
+	locker         core.Locker             // 分布式锁服务，确保任务不重复执行
+	apiserver      core.Apiserver          // API Server通信服务，用于获取任务详情
+	runningTasks   map[string]core.Runner  // 正在运行的任务，key为task_id
+	taskMutex      sync.RWMutex            // 保护runningTasks的并发访问
 }
 
 // NewTaskService 创建任务执行服务实例
 //
 // 参数:
-//   - wsService: WebSocket服务，用于与API Server通信
+//   - updateCallback: 任务更新回调，用于发送状态更新
+//   - apiserver: API Server通信服务
 //
 // 返回值:
 //   - core.TaskService: 任务执行服务接口
-func NewTaskService(wsService core.WebsocketService, apiserver core.Apiserver) core.TaskService {
-	return &taskServiceImpl{
-		wsService:    wsService,
-		locker:       NewLocker(),                  // 创建分布式锁服务实例
-		apiserver:    apiserver,                    // API Server通信服务，用于获取任务详情
-		runningTasks: make(map[string]core.Runner), // 初始化正在运行的任务映射
+func NewTaskService(updateCallback core.TaskUpdateCallback, apiserver core.Apiserver) core.TaskService {
+	return &TaskServiceImpl{
+		updateCallback: updateCallback,                       // 任务更新回调（解决循环依赖）
+		errorHandler:   core.NewErrorHandler(updateCallback), // 创建统一错误处理器
+		locker:         NewLocker(),                          // 创建分布式锁服务实例
+		apiserver:      apiserver,                            // API Server通信服务，用于获取任务详情
+		runningTasks:   make(map[string]core.Runner),         // 初始化正在运行的任务映射
 	}
 }
 
@@ -55,26 +58,115 @@ func NewTaskService(wsService core.WebsocketService, apiserver core.Apiserver) c
 //
 // 根据事件类型分发到相应的处理方法
 // 支持的事件类型：运行、停止、终止、超时、重试
+// 在处理任务前会检查WorkerSelect配置，确保当前Worker有权限执行任务
 //
 // 参数:
 //   - event: 任务事件对象，包含事件类型和任务列表
-func (ts *taskServiceImpl) HandleTaskEvent(event *core.TaskEvent) {
+func (ts *TaskServiceImpl) HandleTaskEvent(event *core.TaskEvent) {
 	logger.Info("收到任务事件", zap.String("action", event.Action), zap.Int("task_count", len(event.Tasks)))
+
+	// 过滤任务：检查WorkerSelect配置
+	filteredTasks := ts.filterTasksByWorkerSelect(event.Tasks)
+	if len(filteredTasks) == 0 {
+		logger.Info("没有适合当前Worker执行的任务", zap.Int("original_count", len(event.Tasks)))
+		return
+	}
+
+	if len(filteredTasks) < len(event.Tasks) {
+		logger.Info("部分任务被WorkerSelect过滤",
+			zap.Int("original_count", len(event.Tasks)),
+			zap.Int("filtered_count", len(filteredTasks)))
+	}
 
 	switch event.Action {
 	case string(core.TaskActionRun):
-		ts.RunTasks(event.Tasks) // 运行任务
+		ts.RunTasks(filteredTasks) // 运行任务
 	case string(core.TaskActionStop):
-		ts.StopTasks(event.Tasks) // 停止任务
+		ts.StopTasks(filteredTasks) // 停止任务
 	case string(core.TaskActionKill):
-		ts.KillTasks(event.Tasks) // 强制终止任务
+		ts.KillTasks(filteredTasks) // 强制终止任务
 	case string(core.TaskActionTimeout):
-		ts.TimeoutTasks(event.Tasks) // 处理超时任务
+		ts.TimeoutTasks(filteredTasks) // 处理超时任务
 	case string(core.TaskActionRetry):
-		ts.RetryTasks(event.Tasks) // 重试任务
+		ts.RetryTasks(filteredTasks) // 重试任务
 	default:
 		logger.Warn("未知的任务事件类型", zap.String("action", event.Action))
 	}
+}
+
+// filterTasksByWorkerSelect 根据WorkerSelect配置过滤任务
+//
+// 检查任务的元数据中是否配置了WorkerSelect，如果配置了则检查当前Worker是否在允许列表中
+// 如果没有配置WorkerSelect或当前Worker在允许列表中，则返回该任务
+//
+// 参数:
+//   - tasks: 原始任务列表
+//
+// 返回值:
+//   - []*core.Task: 过滤后的任务列表
+func (ts *TaskServiceImpl) filterTasksByWorkerSelect(tasks []*core.Task) []*core.Task {
+	var filteredTasks []*core.Task
+
+	for _, task := range tasks {
+		// 检查任务是否有元数据配置
+		if len(task.Metadata) == 0 {
+			// 没有元数据配置，允许执行
+			filteredTasks = append(filteredTasks, task)
+			continue
+		}
+
+		// 解析任务元数据
+		taskMetadata, err := task.GetMetadata()
+		if err != nil {
+			logger.Warn("解析任务元数据失败，跳过WorkerSelect检查",
+				zap.Error(err),
+				zap.String("task_id", task.ID.String()),
+				zap.String("task_name", task.Name))
+			// 解析失败时，允许执行（保持兼容性）
+			filteredTasks = append(filteredTasks, task)
+			continue
+		}
+
+		// 检查WorkerSelect配置
+		if len(taskMetadata.WorkerSelect) == 0 {
+			// 没有配置WorkerSelect，表示所有Worker都可以执行
+			filteredTasks = append(filteredTasks, task)
+			continue
+		}
+
+		// 检查当前Worker是否在允许列表中
+		currentWorkerID := config.WorkerInstance.ID.String()
+		currentWorkerName := config.WorkerInstance.Name
+
+		workerSelected := false
+		for _, selectedWorker := range taskMetadata.WorkerSelect {
+			// 支持按Worker ID或Name进行匹配
+			if selectedWorker == currentWorkerID || selectedWorker == currentWorkerName {
+				workerSelected = true
+				break
+			}
+		}
+
+		if workerSelected {
+			// 当前Worker在允许列表中，可以执行
+			filteredTasks = append(filteredTasks, task)
+			logger.Debug("任务通过WorkerSelect检查",
+				zap.String("task_id", task.ID.String()),
+				zap.String("worker_id", currentWorkerID),
+				zap.String("worker_name", currentWorkerName),
+				zap.Strings("worker_select", taskMetadata.WorkerSelect))
+		} else {
+			// 当前Worker不在允许列表中，跳过执行
+			logger.Info("任务指定了WorkerSelect，当前Worker不在允许列表中",
+				zap.String("task_id", task.ID.String()),
+				zap.String("task_name", task.Name),
+				zap.String("worker_id", currentWorkerID),
+				zap.String("worker_name", currentWorkerName),
+				zap.Strings("worker_select", taskMetadata.WorkerSelect))
+		}
+	}
+
+	return filteredTasks
 }
 
 // ExecuteTask 执行任务
@@ -84,7 +176,7 @@ func (ts *taskServiceImpl) HandleTaskEvent(event *core.TaskEvent) {
 //
 // 参数:
 //   - task: 要执行的任务对象
-func (ts *taskServiceImpl) ExecuteTask(task *core.Task) {
+func (ts *TaskServiceImpl) ExecuteTask(task *core.Task) {
 	logger.Info("开始处理任务",
 		zap.String("task_id", task.ID.String()),
 		zap.String("task_name", task.Name),
@@ -104,7 +196,7 @@ func (ts *taskServiceImpl) ExecuteTask(task *core.Task) {
 }
 
 // executeTask 执行任务的具体实现
-func (ts *taskServiceImpl) executeTask(task *core.Task) {
+func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 	// 生成锁的key
 	lockKey := fmt.Sprintf(config.TaskLockerKeyFormat, task.ID.String())
 
@@ -172,7 +264,7 @@ func (ts *taskServiceImpl) executeTask(task *core.Task) {
 		"worker_name": config.WorkerInstance.Name,
 	}
 	logger.Info(config.WorkerInstance.ID.String())
-	ts.wsService.SendTaskUpdate(task.ID.String(), taskStart)
+	ts.updateCallback.SendTaskUpdate(task.ID.String(), taskStart)
 
 	// 创建并执行任务
 	var taskResult *core.Result
@@ -180,44 +272,22 @@ func (ts *taskServiceImpl) executeTask(task *core.Task) {
 	// 根据任务类型创建相应的Runner
 	runnerInstance, err := core.CreateRunner(task.Category)
 	if err != nil {
-		logger.Error("创建Runner失败",
-			zap.String("task_id", task.ID.String()),
-			zap.String("category", task.Category),
-			zap.Error(err))
-
-		// 发送错误结果
-		errorResult := map[string]interface{}{
-			"status":   core.TaskStatusError,
-			"output":   fmt.Sprintf("不支持的任务类型: %s", task.Category),
-			"time_end": time.Now().Format("2006-01-02 15:04:05"),
-		}
-		ts.wsService.SendTaskUpdate(task.ID.String(), errorResult)
+		ts.handleTaskError(ctx, err, task, "CreateRunner")
 		return
 	}
 
-	// 解析任务参数
-	if err := runnerInstance.ParseArgs(task.Command, task.Args); err != nil {
-		logger.Error("解析任务参数失败",
-			zap.String("task_id", task.ID.String()),
-			zap.String("command", task.Command),
-			zap.String("args", task.Args),
-			zap.Error(err))
-
-		// 发送错误结果
-		errorResult := map[string]interface{}{
-			"status":   core.TaskStatusError,
-			"output":   fmt.Sprintf("参数解析失败: %v", err),
-			"time_end": time.Now().Format("2006-01-02 15:04:05"),
-		}
-		ts.wsService.SendTaskUpdate(task.ID.String(), errorResult)
+	// 解析任务参数和配置
+	if err := runnerInstance.ParseArgs(task); err != nil {
+		ts.handleTaskError(ctx, err, task, "ParseArgs")
 		runnerInstance.Cleanup()
 		return
 	}
 
-	// 设置超时时间
-	if task.Timeout > 0 {
-		runnerInstance.SetTimeout(time.Duration(task.Timeout) * time.Second)
-	}
+	logger.Debug("成功解析任务配置",
+		zap.String("task_id", task.ID.String()),
+		zap.String("command", task.Command),
+		zap.String("args", task.Args),
+		zap.Int("timeout", task.Timeout))
 
 	// 将Runner添加到正在运行的任务列表
 	taskID := task.ID.String()
@@ -238,42 +308,37 @@ func (ts *taskServiceImpl) executeTask(task *core.Task) {
 		}
 	}()
 
+	// 根据task.SaveLog决定是否启用实时日志回写
+	var logChan chan string
+	if task.SaveLog != nil && *task.SaveLog {
+		// 创建日志通道用于实时日志回写
+		logChan = make(chan string, 100) // 阻塞，确保日志顺序
+		defer close(logChan)
+
+		// 启动goroutine处理实时日志回写
+		go ts.handleRealtimeLogs(task.ID.String(), logChan)
+	}
+
 	// 执行任务
 	logger.Info("开始执行任务",
 		zap.String("task_id", task.ID.String()),
 		zap.String("category", task.Category),
 		zap.String("command", task.Command),
-		zap.Int("timeout", task.Timeout))
+		zap.Int("timeout", task.Timeout),
+		zap.Bool("save_log", task.SaveLog != nil && *task.SaveLog))
 
-	taskResult, err = runnerInstance.Execute(ctx)
+	// 执行任务：核心功能
+	taskResult, err = runnerInstance.Execute(ctx, logChan)
 
 	// 处理执行结果
 	if err != nil {
-		logger.Error("任务执行失败",
-			zap.String("task_id", task.ID.String()),
-			zap.Error(err))
-
-		// 发送错误结果
-		errorResult := map[string]interface{}{
-			"status":   core.TaskStatusError,
-			"error":    err.Error(),
-			"time_end": time.Now().Format("2006-01-02 15:04:05"),
-		}
-		ts.wsService.SendTaskUpdate(task.ID.String(), errorResult)
+		ts.handleTaskError(ctx, err, task, "ExecuteTask")
 		return
 	}
 
 	// 处理Runner返回的结果
 	if taskResult == nil {
-		logger.Error("任务执行结果为空",
-			zap.String("task_id", task.ID.String()))
-
-		errorResult := map[string]interface{}{
-			"status":   core.TaskStatusError,
-			"error":    "任务执行结果为空",
-			"time_end": time.Now().Format("2006-01-02 15:04:05"),
-		}
-		ts.wsService.SendTaskUpdate(task.ID.String(), errorResult)
+		ts.handleTaskError(ctx, fmt.Errorf("任务执行结果为空"), task, "ExecuteTask")
 		return
 	}
 
@@ -282,6 +347,10 @@ func (ts *taskServiceImpl) executeTask(task *core.Task) {
 	switch taskResult.Status {
 	case core.StatusSuccess:
 		taskStatus = core.TaskStatusSuccess
+		if task.SaveLog == nil || !*task.SaveLog {
+			// 无需保存日志的话，就将输出设置为执行成功
+			taskResult.Output = "执行成功"
+		}
 	case core.StatusFailed:
 		taskStatus = core.TaskStatusFailed
 	case core.StatusTimeout:
@@ -300,17 +369,23 @@ func (ts *taskServiceImpl) executeTask(task *core.Task) {
 		"time_end": taskResult.EndTime.Format("2006-01-02 15:04:05"),
 	}
 
-	// 添加输出信息
+	// 添加输出信息（用于后续任务取数据）
 	if taskResult.Output != "" {
 		result["output"] = taskResult.Output
 	}
+
+	// 添加执行日志（用于显示给用户）
+	if taskResult.ExecuteLog != "" {
+		result["execute_log"] = taskResult.ExecuteLog
+	}
+
 	if taskStatus != core.TaskStatusSuccess {
 		// 任务失败，添加错误信息
 		if taskResult.Error != "" {
-			if output, ok := result["output"].(string); ok {
-				result["output"] = output + "\n\n-------\n\n" + taskResult.Error
+			if executeLog, ok := result["execute_log"].(string); ok {
+				result["execute_log"] = executeLog + "\n\n-------\n\n" + taskResult.Error
 			} else {
-				result["output"] = taskResult.Error
+				result["execute_log"] = taskResult.Error
 			}
 		}
 	}
@@ -331,7 +406,7 @@ func (ts *taskServiceImpl) executeTask(task *core.Task) {
 	}
 
 	// 发送任务执行结果
-	ts.wsService.SendTaskUpdate(task.ID.String(), result)
+	ts.updateCallback.SendTaskUpdate(task.ID.String(), result)
 
 	// 记录执行结果日志
 	if taskStatus == core.TaskStatusSuccess {
@@ -352,7 +427,7 @@ func (ts *taskServiceImpl) executeTask(task *core.Task) {
 }
 
 // isTaskCategorySupported 检查任务类型是否被Worker支持
-func (ts *taskServiceImpl) isTaskCategorySupported(category string) bool {
+func (ts *TaskServiceImpl) isTaskCategorySupported(category string) bool {
 	supportedTasks := config.WorkerInstance.Metadata.Tasks
 	for _, supportedCategory := range supportedTasks {
 		if supportedCategory == category {
@@ -362,15 +437,48 @@ func (ts *taskServiceImpl) isTaskCategorySupported(category string) bool {
 	return false
 }
 
+// 注意：sendErrorResult方法已被移除，统一使用ErrorHandler处理错误
+
+// handleRealtimeLogs 处理实时日志回写
+func (ts *TaskServiceImpl) handleRealtimeLogs(taskID string, logChan <-chan string) {
+
+	// 收集所有日志内容
+	// var allLogs strings.Builder
+
+	for logContent := range logChan {
+		// 收到空消息就是退出：日志消息写完了
+		if logContent == "" {
+			break
+		}
+		// logger.Info("收到实时日志", zap.String("task_id", taskID), zap.String("log_content", logContent))
+		if logContent != "" {
+			// 追加到本地日志收集器
+			// allLogs.WriteString(logContent)
+
+			// 实时回写到API Server
+			if err := ts.apiserver.AppendTaskLog(taskID, logContent); err != nil {
+				logger.Error("回写任务日志失败",
+					zap.String("task_id", taskID),
+					zap.Error(err))
+			}
+		}
+	}
+	// 执行结果的日志
+
+	// logger.Info("实时日志处理完成",
+	// 	zap.String("task_id", taskID),
+	// 	zap.Int("total_log_size", allLogs.Len()))
+}
+
 // RunTasks 运行任务列表
-func (ts *taskServiceImpl) RunTasks(tasks []*core.Task) {
+func (ts *TaskServiceImpl) RunTasks(tasks []*core.Task) {
 	for _, task := range tasks {
 		ts.ExecuteTask(task)
 	}
 }
 
 // StopTasks 停止任务列表
-func (ts *taskServiceImpl) StopTasks(tasks []*core.Task) {
+func (ts *TaskServiceImpl) StopTasks(tasks []*core.Task) {
 	for _, task := range tasks {
 		taskID := task.ID.String()
 
@@ -392,23 +500,13 @@ func (ts *taskServiceImpl) StopTasks(tasks []*core.Task) {
 				"status":   core.TaskStatusCanceled,
 				"time_end": time.Now().Format("2006-01-02 15:04:05"),
 			}
-			ts.wsService.SendTaskUpdate(taskID, result)
+			ts.updateCallback.SendTaskUpdate(taskID, result)
 			continue
 		}
 
 		// 尝试优雅停止任务
 		if err := runnerInstance.Stop(); err != nil {
-			logger.Error("停止任务失败",
-				zap.String("task_id", taskID),
-				zap.Error(err))
-
-			// 发送停止失败结果
-			result := map[string]interface{}{
-				"status":   core.TaskStatusError,
-				"error":    fmt.Sprintf("停止任务失败: %v", err),
-				"time_end": time.Now().Format("2006-01-02 15:04:05"),
-			}
-			ts.wsService.SendTaskUpdate(taskID, result)
+			ts.handleTaskError(context.Background(), err, task, "StopTask")
 		} else {
 			logger.Info("任务停止请求已发送",
 				zap.String("task_id", taskID))
@@ -417,7 +515,7 @@ func (ts *taskServiceImpl) StopTasks(tasks []*core.Task) {
 }
 
 // KillTasks 强制终止任务列表
-func (ts *taskServiceImpl) KillTasks(tasks []*core.Task) {
+func (ts *TaskServiceImpl) KillTasks(tasks []*core.Task) {
 	for _, task := range tasks {
 		taskID := task.ID.String()
 
@@ -439,23 +537,13 @@ func (ts *taskServiceImpl) KillTasks(tasks []*core.Task) {
 				"status":   core.TaskStatusCanceled,
 				"time_end": time.Now().Format("2006-01-02 15:04:05"),
 			}
-			ts.wsService.SendTaskUpdate(taskID, result)
+			ts.updateCallback.SendTaskUpdate(taskID, result)
 			continue
 		}
 
 		// 强制终止任务
 		if err := runnerInstance.Kill(); err != nil {
-			logger.Error("强制终止任务失败",
-				zap.String("task_id", taskID),
-				zap.Error(err))
-
-			// 发送终止失败结果
-			result := map[string]interface{}{
-				"status":   core.TaskStatusError,
-				"error":    fmt.Sprintf("强制终止任务失败: %v", err),
-				"time_end": time.Now().Format("2006-01-02 15:04:05"),
-			}
-			ts.wsService.SendTaskUpdate(taskID, result)
+			ts.handleTaskError(context.Background(), err, task, "KillTask")
 		} else {
 			logger.Info("任务强制终止请求已发送",
 				zap.String("task_id", taskID))
@@ -464,7 +552,7 @@ func (ts *taskServiceImpl) KillTasks(tasks []*core.Task) {
 }
 
 // TimeoutTasks 处理超时任务列表
-func (ts *taskServiceImpl) TimeoutTasks(tasks []*core.Task) {
+func (ts *TaskServiceImpl) TimeoutTasks(tasks []*core.Task) {
 	for _, task := range tasks {
 		logger.Info("任务超时",
 			zap.String("task_id", task.ID.String()),
@@ -474,12 +562,12 @@ func (ts *taskServiceImpl) TimeoutTasks(tasks []*core.Task) {
 		result := map[string]interface{}{
 			"status": "timeout",
 		}
-		ts.wsService.SendTaskUpdate(task.ID.String(), result)
+		ts.updateCallback.SendTaskUpdate(task.ID.String(), result)
 	}
 }
 
 // RetryTasks 重试任务列表
-func (ts *taskServiceImpl) RetryTasks(tasks []*core.Task) {
+func (ts *TaskServiceImpl) RetryTasks(tasks []*core.Task) {
 	for _, task := range tasks {
 		logger.Info("重试任务",
 			zap.String("task_id", task.ID.String()),
@@ -488,4 +576,78 @@ func (ts *taskServiceImpl) RetryTasks(tasks []*core.Task) {
 		// 重新执行任务
 		ts.ExecuteTask(task)
 	}
+}
+
+// GetRunningTaskCount 获取正在运行的任务数量
+func (ts *TaskServiceImpl) GetRunningTaskCount() int {
+	ts.taskMutex.RLock()
+	defer ts.taskMutex.RUnlock()
+	return len(ts.runningTasks)
+}
+
+// GetRunningTaskIDs 获取正在运行的任务ID列表
+func (ts *TaskServiceImpl) GetRunningTaskIDs() []string {
+	ts.taskMutex.RLock()
+	defer ts.taskMutex.RUnlock()
+
+	taskIDs := make([]string, 0, len(ts.runningTasks))
+	for taskID := range ts.runningTasks {
+		taskIDs = append(taskIDs, taskID)
+	}
+	return taskIDs
+}
+
+// WaitForTasksCompletion 等待所有任务完成
+func (ts *TaskServiceImpl) WaitForTasksCompletion(timeout time.Duration) error {
+	logger.Info("等待所有任务完成", zap.Duration("timeout", timeout))
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			runningCount := ts.GetRunningTaskCount()
+			runningIDs := ts.GetRunningTaskIDs()
+			logger.Warn("等待任务完成超时",
+				zap.Int("remaining_tasks", runningCount),
+				zap.Strings("task_ids", runningIDs))
+			return fmt.Errorf("等待任务完成超时，还有 %d 个任务未完成", runningCount)
+		case <-ticker.C:
+			runningCount := ts.GetRunningTaskCount()
+			if runningCount == 0 {
+				logger.Info("所有任务已完成")
+				return nil
+			}
+			logger.Debug("等待任务完成", zap.Int("remaining_tasks", runningCount))
+		}
+	}
+}
+
+// handleTaskError 处理任务错误的辅助函数
+//
+// 参数:
+//   - ctx: 上下文信息
+//   - err: 错误对象
+//   - task: 任务对象
+//   - action: 执行的动作名称
+//
+// 功能:
+//   - 统一错误处理格式
+//   - 自动提取任务相关信息
+//   - 简化错误处理代码
+func (ts *TaskServiceImpl) handleTaskError(ctx context.Context, err error, task *core.Task, action string) {
+	ts.errorHandler.HandleTaskError(ctx, err, core.ErrorContext{
+		TaskID:    task.ID.String(),
+		Component: "TaskService",
+		Action:    action,
+		Level:     core.LevelError,
+		Extra: map[string]interface{}{
+			"category": task.Category,
+			"name":     task.Name,
+		},
+	})
 }

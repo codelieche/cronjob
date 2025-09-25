@@ -3,14 +3,19 @@ package runner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/codelieche/cronjob/worker/pkg/config"
 	"github.com/codelieche/cronjob/worker/pkg/core"
+	"github.com/google/uuid"
 )
 
 // CommandRunner 命令执行器
@@ -19,16 +24,13 @@ import (
 // 使用 bash -c 执行完整的命令字符串，支持复杂的shell命令
 // 包括管道、重定向、逻辑操作符等
 type CommandRunner struct {
-	command   string             // 完整的命令字符串
-	timeout   time.Duration      // 执行超时时间
-	status    core.Status        // 当前状态
-	result    *core.Result       // 执行结果
-	cmd       *exec.Cmd          // 执行命令对象
-	startTime time.Time          // 开始时间
-	endTime   time.Time          // 结束时间
-	mutex     sync.RWMutex       // 读写锁
-	ctx       context.Context    // 执行上下文
-	cancel    context.CancelFunc // 取消函数
+	task    *core.Task    // 完整的任务对象，包含所有配置信息
+	command string        // 最终执行的完整命令字符串（从task.command和task.args解析组合）
+	timeout time.Duration // 执行超时时间（从task中提取，便于理解和操作）
+	status  core.Status   // 当前状态
+	result  *core.Result  // 执行结果
+	cmd     *exec.Cmd     // 执行命令对象
+	mutex   sync.RWMutex  // 读写锁
 }
 
 // NewCommandRunner 创建新的CommandRunner实例
@@ -38,60 +40,198 @@ func NewCommandRunner() *CommandRunner {
 	}
 }
 
-// ParseArgs 解析任务参数
-func (r *CommandRunner) ParseArgs(command string, args string) error {
+// ParseArgs 解析任务参数和配置
+func (r *CommandRunner) ParseArgs(task *core.Task) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	// 构建完整的命令字符串
-	if args == "" || args == "[]" {
-		// 如果args为空，直接使用command作为完整命令
-		r.command = command
-	} else {
-		// 如果args不为空，将command和args拼接为完整命令
-		// 这里简单地将args作为字符串拼接，不进行JSON解析
-		r.command = command + " " + args
+	// 保存任务对象
+	r.task = task
+	if r.task == nil {
+		return fmt.Errorf("任务对象未设置")
+	} else if r.task.ID == uuid.Nil {
+		return fmt.Errorf("任务ID未设置")
 	}
+
+	// 提取超时时间
+	r.timeout = time.Duration(task.Timeout) * time.Second
+
+	// 专业地解析和构建完整的命令字符串
+	fullCommand, err := r.buildFullCommand(task.Command, task.Args)
+	if err != nil {
+		return fmt.Errorf("构建命令失败: %w", err)
+	}
+	r.command = fullCommand
 
 	// 检查命令是否为空
 	if strings.TrimSpace(r.command) == "" {
 		return fmt.Errorf("命令不能为空")
 	}
 
-	// 执行安全检查 - 这里需要调整安全检查逻辑
-	// 暂时注释掉，因为现在command是完整字符串而不是分离的command和args
-	// if err := GetGlobalSecurity().ValidateCommand(r.command, []string{}); err != nil {
-	// 	return fmt.Errorf("安全检查失败: %w", err)
-	// }
+	// 执行安全检查
+	baseCommand := r.extractBaseCommand(r.command)
+	if err := GetGlobalSecurity().ValidateCommand(baseCommand, []string{}); err != nil {
+		return fmt.Errorf("安全检查失败: %w", err)
+	}
 
 	return nil
 }
 
+// buildFullCommand 专业地构建完整的命令字符串
+// 正确处理JSON数组格式的args参数
+func (r *CommandRunner) buildFullCommand(command, args string) (string, error) {
+	// 如果args为空或空数组，直接返回command
+	if args == "" || args == "[]" || strings.TrimSpace(args) == "" {
+		return command, nil
+	}
 
-// Execute 执行任务
-func (r *CommandRunner) Execute(ctx context.Context) (*core.Result, error) {
+	// 尝试解析args为JSON数组
+	var argsList []string
+	if err := json.Unmarshal([]byte(args), &argsList); err != nil {
+		// 如果JSON解析失败，可能args是普通字符串，直接拼接
+		// 但这种情况需要谨慎处理，因为可能存在注入风险
+		return command + " " + args, nil
+	}
+
+	// 如果是空数组，直接返回command
+	if len(argsList) == 0 {
+		return command, nil
+	}
+
+	// 将参数数组安全地拼接到命令后面
+	// 每个参数都需要适当的转义和引用
+	var fullCommand strings.Builder
+	fullCommand.WriteString(command)
+
+	for _, arg := range argsList {
+		fullCommand.WriteString(" ")
+		// 如果参数包含空格或特殊字符，需要加引号
+		if r.needsQuoting(arg) {
+			fullCommand.WriteString("'")
+			// 转义单引号
+			escapedArg := strings.ReplaceAll(arg, "'", "'\"'\"'")
+			fullCommand.WriteString(escapedArg)
+			fullCommand.WriteString("'")
+		} else {
+			fullCommand.WriteString(arg)
+		}
+	}
+
+	return fullCommand.String(), nil
+}
+
+// needsQuoting 检查参数是否需要加引号
+func (r *CommandRunner) needsQuoting(arg string) bool {
+	// 如果包含空格、特殊字符等，需要加引号
+	specialChars := " \t\n\r\"'\\|&;<>()$`*?[]{}"
+	for _, char := range specialChars {
+		if strings.ContainsRune(arg, char) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractBaseCommand 从完整命令字符串中提取基础命令
+// 例如: "ls -la" -> "ls", "bash -c 'echo hello'" -> "bash"
+func (r *CommandRunner) extractBaseCommand(fullCommand string) string {
+	// 去除首尾空格
+	command := strings.TrimSpace(fullCommand)
+
+	// 如果命令为空，返回空字符串
+	if command == "" {
+		return ""
+	}
+
+	// 按空格分割，取第一个部分作为基础命令
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return ""
+	}
+
+	// 返回第一个部分作为基础命令
+	return parts[0]
+}
+
+// updateStatus 更新状态和结果
+func (r *CommandRunner) updateStatus(status core.Status, errorMsg string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
+	r.status = status
+	if r.result != nil {
+		r.result.Status = status
+		r.result.Error = errorMsg
+	} else {
+		r.result = &core.Result{
+			Status:    status,
+			Error:     errorMsg,
+			StartTime: time.Now(),
+			EndTime:   time.Now(),
+			Duration:  0,
+		}
+	}
+}
+
+// Execute 执行任务
+func (r *CommandRunner) Execute(ctx context.Context, logChan chan<- string) (*core.Result, error) {
 	// 检查状态
+	r.mutex.Lock()
 	if r.status != core.StatusPending {
+		r.mutex.Unlock()
 		return nil, fmt.Errorf("任务状态不正确，当前状态: %s", r.status)
+	}
+
+	if r.task == nil {
+		r.mutex.Unlock()
+		return nil, fmt.Errorf("任务对象未设置，请先调用ParseArgs")
+	}
+
+	if r.command == "" {
+		r.mutex.Unlock()
+		return nil, fmt.Errorf("命令未设置，请先调用ParseArgs")
 	}
 
 	// 设置状态为运行中
 	r.status = core.StatusRunning
-	r.startTime = time.Now()
+	startTime := time.Now()
 
 	// 创建带超时的上下文
+	var execCtx context.Context
+	var cancel context.CancelFunc
 	if r.timeout > 0 {
-		r.ctx, r.cancel = context.WithTimeout(ctx, r.timeout)
+		execCtx, cancel = context.WithTimeout(ctx, r.timeout)
 	} else {
-		r.ctx, r.cancel = context.WithCancel(ctx)
+		execCtx, cancel = context.WithCancel(ctx)
 	}
-	defer r.cancel()
+	defer cancel()
+
+	r.mutex.Unlock()
 
 	// 创建执行命令 - 使用 bash -c 执行完整命令字符串
-	r.cmd = exec.CommandContext(r.ctx, "bash", "-c", r.command)
+	r.cmd = exec.CommandContext(execCtx, "bash", "-c", r.command)
+
+	// 设置工作目录
+	workingDir, err := r.setupWorkingDirectory()
+	if err != nil {
+		r.mutex.Lock()
+		r.updateStatus(core.StatusError, fmt.Sprintf("工作目录设置失败: %v", err))
+		r.mutex.Unlock()
+		return r.result, err
+	}
+	r.cmd.Dir = workingDir
+
+	// 设置环境变量
+	if r.task != nil && len(r.task.Metadata) > 0 {
+		if metadata, err := r.task.GetMetadata(); err == nil && len(metadata.Environment) > 0 {
+			// 继承系统环境变量
+			r.cmd.Env = append(r.cmd.Env, os.Environ()...)
+			// 添加任务特定的环境变量
+			for key, value := range metadata.Environment {
+				r.cmd.Env = append(r.cmd.Env, fmt.Sprintf("%s=%s", key, value))
+			}
+		}
+	}
 
 	// 设置输出捕获
 	var stdout, stderr bytes.Buffer
@@ -99,40 +239,68 @@ func (r *CommandRunner) Execute(ctx context.Context) (*core.Result, error) {
 	r.cmd.Stderr = &stderr
 
 	// 执行命令
-	err := r.cmd.Run()
+	err = r.cmd.Run()
 
 	// 设置结束时间
-	r.endTime = time.Now()
-	duration := r.endTime.Sub(r.startTime).Milliseconds()
+	endTime := time.Now()
+	duration := endTime.Sub(startTime).Milliseconds()
+
+	// 获取输出内容
+	output := stdout.String()
+	errorOutput := stderr.String()
 
 	// 构建结果
+	r.mutex.Lock()
 	r.result = &core.Result{
-		StartTime: r.startTime,
-		EndTime:   r.endTime,
-		Duration:  duration,
-		Output:    stdout.String(),
+		StartTime:  startTime,
+		EndTime:    endTime,
+		Duration:   duration,
+		Output:     output, // 用于后续任务取数据
+		ExecuteLog: output, // 用于显示给用户的执行日志（与Output相同）
 	}
 
 	// 处理执行结果
 	if err != nil {
-		// 检查是否是超时错误
-		if r.ctx.Err() == context.DeadlineExceeded {
+		// 在锁内处理错误状态
+		if err == context.DeadlineExceeded {
 			r.status = core.StatusTimeout
 			r.result.Status = core.StatusTimeout
 			r.result.Error = fmt.Sprintf("任务执行超时 (超时时间: %v)", r.timeout)
-		} else if r.ctx.Err() == context.Canceled {
+		} else if err == context.Canceled {
 			r.status = core.StatusCanceled
 			r.result.Status = core.StatusCanceled
 			r.result.Error = "任务被取消"
 		} else {
-			r.status = core.StatusFailed
-			r.result.Status = core.StatusFailed
-			r.result.Error = err.Error()
+			// 检查是否是信号杀死
+			if strings.Contains(err.Error(), "signal: killed") {
+				// 检查是否是超时导致的信号杀死
+				if r.timeout > 0 {
+					// 超时导致的信号杀死
+					r.status = core.StatusTimeout
+					r.result.Status = core.StatusTimeout
+					r.result.Error = fmt.Sprintf("任务执行超时 (超时时间: %v)", r.timeout)
+				} else {
+					// 其他信号杀死（包括SIGKILL）
+					r.status = core.StatusCanceled
+					r.result.Status = core.StatusCanceled
+					r.result.Error = "任务被强制终止 (SIGKILL信号)"
+				}
+			} else {
+				r.status = core.StatusFailed
+				r.result.Status = core.StatusFailed
+				r.result.Error = err.Error()
+			}
+		}
+		// 把错误消息给发送出去
+		if logChan != nil && r.result.Error != "" {
+			logChan <- r.result.Error
 		}
 	} else {
 		r.status = core.StatusSuccess
 		r.result.Status = core.StatusSuccess
 	}
+
+	r.mutex.Unlock()
 
 	// 设置退出码
 	if r.cmd.ProcessState != nil {
@@ -140,31 +308,50 @@ func (r *CommandRunner) Execute(ctx context.Context) (*core.Result, error) {
 	}
 
 	// 如果有stderr输出，添加到错误信息中
-	if stderr.Len() > 0 {
+	if errorOutput != "" {
 		if r.result.Error != "" {
-			r.result.Error += "\n" + stderr.String()
+			r.result.Error += "\n" + errorOutput
 		} else {
-			r.result.Error = stderr.String()
+			r.result.Error = errorOutput
 		}
+		// 同时添加到ExecuteLog中
+		r.result.ExecuteLog += "\n" + errorOutput
 	}
 
-	return r.result, nil
+	result := r.result
+
+	// 如果有日志通道，发送执行日志
+	if logChan != nil && result.ExecuteLog != "" {
+		select {
+		case logChan <- result.ExecuteLog:
+		default:
+			// 如果通道已满，跳过发送
+		}
+		// 写入个空，就是结束了
+		logChan <- ""
+
+		// 等待接收完成，确保发送顺序
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	return result, nil
 }
 
 // Stop 停止任务执行
 func (r *CommandRunner) Stop() error {
 	r.mutex.Lock()
-	defer r.mutex.Unlock()
 
 	if r.cmd != nil && r.cmd.Process != nil {
 		// 检查进程是否还在运行
 		if r.cmd.ProcessState != nil && r.cmd.ProcessState.Exited() {
 			// 进程已经退出，不需要发送信号
+			r.mutex.Unlock()
 			return nil
 		}
 
 		// 发送SIGTERM信号
 		if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			r.mutex.Unlock()
 			return fmt.Errorf("发送SIGTERM信号失败: %w", err)
 		}
 
@@ -174,32 +361,27 @@ func (r *CommandRunner) Stop() error {
 			done <- r.cmd.Wait()
 		}()
 
-		// 等待最多5秒
+		r.mutex.Unlock()
+
+		// 等待最多2秒
 		select {
 		case <-done:
-			// 进程已退出
-		case <-time.After(5 * time.Second):
+			// 进程已退出，更新状态
+			r.mutex.Lock()
+			if r.status == core.StatusRunning {
+				r.status = core.StatusCanceled
+				if r.result != nil {
+					r.result.Status = core.StatusCanceled
+					r.result.Error = "任务被停止 (SIGTERM信号)"
+				}
+			}
+			r.mutex.Unlock()
+		case <-time.After(120 * time.Second):
 			// 超时，强制终止
 			return r.Kill()
 		}
-
-		// 更新状态
-		if r.status == core.StatusRunning {
-			r.status = core.StatusCanceled
-			if r.result != nil {
-				r.result.Status = core.StatusCanceled
-				r.result.Error = "任务被停止 (SIGTERM信号)"
-			} else {
-				// 如果result还没有创建，创建一个新的
-				r.result = &core.Result{
-					Status:    core.StatusCanceled,
-					Error:     "任务被停止 (SIGTERM信号)",
-					StartTime: r.startTime,
-					EndTime:   time.Now(),
-					Duration:  time.Since(r.startTime).Milliseconds(),
-				}
-			}
-		}
+	} else {
+		r.mutex.Unlock()
 	}
 
 	return nil
@@ -222,15 +404,6 @@ func (r *CommandRunner) Kill() error {
 			if r.result != nil {
 				r.result.Status = core.StatusCanceled
 				r.result.Error = "任务被强制终止 (SIGKILL信号)"
-			} else {
-				// 如果result还没有创建，创建一个新的
-				r.result = &core.Result{
-					Status:    core.StatusCanceled,
-					Error:     "任务被强制终止 (SIGKILL信号)",
-					StartTime: r.startTime,
-					EndTime:   time.Now(),
-					Duration:  time.Since(r.startTime).Milliseconds(),
-				}
 			}
 		}
 	}
@@ -240,41 +413,72 @@ func (r *CommandRunner) Kill() error {
 
 // GetStatus 获取当前执行状态
 func (r *CommandRunner) GetStatus() core.Status {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
 	return r.status
 }
 
 // GetResult 获取执行结果
 func (r *CommandRunner) GetResult() *core.Result {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
 	return r.result
 }
 
-// SetTimeout 设置执行超时时间
-func (r *CommandRunner) SetTimeout(timeout time.Duration) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.timeout = timeout
-}
+// setupWorkingDirectory 设置并确保工作目录存在
+//
+// 根据元数据配置或任务ID生成工作目录路径，并确保目录存在
+// 返回最终使用的工作目录路径和可能的错误
+func (r *CommandRunner) setupWorkingDirectory() (string, error) {
+	var workingDir string
 
-// GetCommand 获取完整命令字符串（用于测试和调试）
-func (r *CommandRunner) GetCommand() string {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.command
+	// 如果任务有CronJob，则使用CronJob的名称作为工作目录
+	if r.task.CronJob != nil {
+		workingDir = filepath.Join(config.WorkerInstance.WorkingDir, "tasks", r.task.CronJob.String())
+	} else {
+		workingDir = filepath.Join(config.WorkerInstance.WorkingDir, "tasks", r.task.ID.String())
+	}
+
+	// 实时从task获取元数据: 如果任务有元数据，则使用元数据中配置的工作目录
+	if r.task != nil && len(r.task.Metadata) > 0 {
+		if metadata, err := r.task.GetMetadata(); err == nil && metadata.WorkingDir != "" {
+			// 使用元数据中配置的工作目录
+			workingDir = metadata.WorkingDir
+		}
+	}
+
+	// 如果不是当前目录，检查并创建目录
+	if workingDir != "." {
+		// 转换为绝对路径以便更好地处理
+		absPath, err := filepath.Abs(workingDir)
+		if err != nil {
+			return "", fmt.Errorf("无法解析工作目录路径 %s: %w", workingDir, err)
+		}
+
+		// 检查目录是否存在
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			// 目录不存在，创建目录
+			if err := os.MkdirAll(absPath, 0755); err != nil {
+				return "", fmt.Errorf("无法创建工作目录 %s: %w", absPath, err)
+			}
+		} else if err != nil {
+			// 其他错误（权限问题等）
+			return "", fmt.Errorf("无法访问工作目录 %s: %w", absPath, err)
+		}
+
+		// 检查是否为目录
+		if stat, err := os.Stat(absPath); err == nil {
+			if !stat.IsDir() {
+				return "", fmt.Errorf("工作目录路径 %s 不是一个目录", absPath)
+			}
+		}
+
+		workingDir = absPath
+	}
+
+	return workingDir, nil
 }
 
 // Cleanup 清理资源
 func (r *CommandRunner) Cleanup() error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-
-	// 取消上下文
-	if r.cancel != nil {
-		r.cancel()
-	}
 
 	// 清理命令对象
 	if r.cmd != nil {
@@ -288,10 +492,6 @@ func (r *CommandRunner) Cleanup() error {
 	// 重置状态
 	r.status = core.StatusPending
 	r.result = nil
-	r.startTime = time.Time{}
-	r.endTime = time.Time{}
-	r.ctx = nil
-	r.cancel = nil
 
 	return nil
 }

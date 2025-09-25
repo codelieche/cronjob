@@ -16,28 +16,31 @@ import (
 	"go.uber.org/zap"
 )
 
-// websocketServiceImpl WebSocket服务实现
-// 实现了core.WebsocketService接口
-type websocketServiceImpl struct {
+// WebsocketServiceImpl WebSocket服务实现
+// 实现了core.WebsocketService和core.TaskUpdateCallback接口
+type WebsocketServiceImpl struct {
 	conn           *websocket.Conn
 	messageCache   string
 	cacheMutex     sync.Mutex
-	writeMutex     sync.Mutex
 	done           chan struct{}
 	config         *core.WebsocketConfig
-	workerConfig   *config.Worker
 	connected      bool
 	connectedMutex sync.RWMutex
-	taskService    core.TaskService
+	eventHandler   core.TaskEventHandler // 任务事件处理器（解决循环依赖）
 	reconnecting   bool
 	reconnectMutex sync.Mutex
 	apiserver      core.Apiserver
-	pingStopChan   chan struct{} // 用于停止ping goroutine
-	pingStopMutex  sync.Mutex    // 保护pingStopChan的并发访问
+	writeMutex     sync.Mutex // 统一的写入锁，保护所有WebSocket写操作
 }
 
 // NewWebsocketService 创建WebSocket服务实例
-func NewWebsocketService() core.WebsocketService {
+//
+// 参数:
+//   - taskService: 任务服务实例，用于处理任务事件
+//
+// 返回值:
+//   - core.WebsocketService: WebSocket服务接口
+func NewWebsocketService(taskService core.TaskEventHandler) core.WebsocketService {
 	// 从配置中获取WebSocket配置
 	wsConfig := core.DefaultWebsocketConfig()
 	wsConfig.ServerURL = config.Server.ApiUrl
@@ -46,22 +49,20 @@ func NewWebsocketService() core.WebsocketService {
 
 	apiserver := NewApiserverService(config.Server.ApiUrl, config.Server.AuthToken)
 
-	ws := &websocketServiceImpl{
+	ws := &WebsocketServiceImpl{
 		config:       wsConfig,
-		workerConfig: config.WorkerInstance,
 		done:         make(chan struct{}),
 		apiserver:    apiserver,
-		pingStopChan: make(chan struct{}),
+		eventHandler: taskService, // 通过依赖注入解决循环依赖
 	}
-
-	// 创建Task服务
-	ws.taskService = NewTaskService(ws, apiserver)
 
 	return ws
 }
 
+// 注意：GetTaskService方法已移除，通过依赖注入管理服务依赖
+
 // Connect 连接到apiserver的WebSocket
-func (ws *websocketServiceImpl) Connect() error {
+func (ws *WebsocketServiceImpl) Connect() error {
 	// 构建WebSocket URL
 	wsUrl := strings.Replace(ws.config.ServerURL, "http://", "ws://", 1)
 	wsUrl = strings.Replace(wsUrl, "https://", "wss://", 1)
@@ -109,9 +110,9 @@ func (ws *websocketServiceImpl) Connect() error {
 }
 
 // registerWorker 注册Worker到服务端
-func (ws *websocketServiceImpl) registerWorker() error {
+func (ws *WebsocketServiceImpl) registerWorker() error {
 	// 构建Worker数据
-	workerData, err := json.Marshal(ws.workerConfig)
+	workerData, err := json.Marshal(config.WorkerInstance)
 	if err != nil {
 		return fmt.Errorf("序列化Worker数据失败: %v", err)
 	}
@@ -119,7 +120,7 @@ func (ws *websocketServiceImpl) registerWorker() error {
 	// 构建注册事件
 	clientEvent := core.ClientEvent{
 		Action:   core.ClientEventActionRegistWorker,
-		WorkerID: ws.workerConfig.ID.String(),
+		WorkerID: config.WorkerInstance.ID.String(),
 		Data:     workerData,
 	}
 
@@ -145,11 +146,8 @@ func (ws *websocketServiceImpl) registerWorker() error {
 }
 
 // Close 关闭WebSocket连接
-func (ws *websocketServiceImpl) Close() {
+func (ws *WebsocketServiceImpl) Close() {
 	ws.setConnected(false)
-
-	// 停止ping goroutine
-	ws.stopPingPump()
 
 	// 安全地关闭连接
 	ws.writeMutex.Lock()
@@ -169,34 +167,21 @@ func (ws *websocketServiceImpl) Close() {
 }
 
 // IsConnected 检查连接状态
-func (ws *websocketServiceImpl) IsConnected() bool {
+func (ws *WebsocketServiceImpl) IsConnected() bool {
 	ws.connectedMutex.RLock()
 	defer ws.connectedMutex.RUnlock()
 	return ws.connected
 }
 
 // setConnected 设置连接状态
-func (ws *websocketServiceImpl) setConnected(connected bool) {
+func (ws *WebsocketServiceImpl) setConnected(connected bool) {
 	ws.connectedMutex.Lock()
 	defer ws.connectedMutex.Unlock()
 	ws.connected = connected
 }
 
-// stopPingPump 停止ping goroutine
-func (ws *websocketServiceImpl) stopPingPump() {
-	ws.pingStopMutex.Lock()
-	defer ws.pingStopMutex.Unlock()
-
-	select {
-	case <-ws.pingStopChan:
-		// 已经关闭了
-	default:
-		close(ws.pingStopChan)
-	}
-}
-
 // Start 启动WebSocket服务
-func (ws *websocketServiceImpl) Start() error {
+func (ws *WebsocketServiceImpl) Start() error {
 	// 连接到apiserver
 	if err := ws.Connect(); err != nil {
 		logger.Error("连接apiserver失败，将自动重试", zap.Error(err))
@@ -211,17 +196,14 @@ func (ws *websocketServiceImpl) Start() error {
 		return fmt.Errorf("Worker Setup失败: %w", err)
 	}
 
-	// 启动消息读取goroutine
 	go ws.readPump()
-
-	// 启动ping goroutine
 	go ws.pingPump()
 
 	return nil
 }
 
 // Stop 停止WebSocket服务
-func (ws *websocketServiceImpl) Stop() {
+func (ws *WebsocketServiceImpl) Stop() {
 	// 在关闭前执行Teardown
 	// if err := ws.Teardown(); err != nil {
 	// 	logger.Error("Worker Teardown失败", zap.Error(err))
@@ -232,7 +214,7 @@ func (ws *websocketServiceImpl) Stop() {
 }
 
 // readPump 读取WebSocket消息的goroutine
-func (ws *websocketServiceImpl) readPump() {
+func (ws *WebsocketServiceImpl) readPump() {
 	defer func() {
 		// 安全地关闭连接
 		ws.writeMutex.Lock()
@@ -306,16 +288,13 @@ func (ws *websocketServiceImpl) readPump() {
 }
 
 // pingPump 定时发送ping消息的goroutine
-func (ws *websocketServiceImpl) pingPump() {
+func (ws *WebsocketServiceImpl) pingPump() {
 	ticker := time.NewTicker(ws.config.PingInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ws.done:
-			return
-		case <-ws.pingStopChan:
-			logger.Debug("收到ping停止信号，停止ping goroutine")
 			return
 		case <-ticker.C:
 			// 检查是否正在重连
@@ -351,7 +330,7 @@ func (ws *websocketServiceImpl) pingPump() {
 }
 
 // SendPing 发送ping消息
-func (ws *websocketServiceImpl) SendPing() error {
+func (ws *WebsocketServiceImpl) SendPing() error {
 	ws.writeMutex.Lock()
 	defer ws.writeMutex.Unlock()
 
@@ -366,7 +345,8 @@ func (ws *websocketServiceImpl) SendPing() error {
 }
 
 // SendTaskUpdate 发送任务更新
-func (ws *websocketServiceImpl) SendTaskUpdate(taskID string, data map[string]interface{}) error {
+func (ws *WebsocketServiceImpl) SendTaskUpdate(taskID string, data map[string]interface{}) error {
+	// 使用writeMutex确保串行发送，避免分片混乱
 	ws.writeMutex.Lock()
 	defer ws.writeMutex.Unlock()
 
@@ -382,7 +362,7 @@ func (ws *websocketServiceImpl) SendTaskUpdate(taskID string, data map[string]in
 
 	clientEvent := core.ClientEvent{
 		Action:   core.ClientEventActionTaskUpdate,
-		WorkerID: ws.workerConfig.ID.String(),
+		WorkerID: config.WorkerInstance.ID.String(),
 		TaskID:   taskID,
 		Data:     eventData,
 	}
@@ -397,9 +377,11 @@ func (ws *websocketServiceImpl) SendTaskUpdate(taskID string, data map[string]in
 	message := ws.config.MessageSeparator + string(eventBytes) + ws.config.MessageSeparator
 
 	ws.conn.SetWriteDeadline(time.Now().Add(ws.config.WriteTimeout))
+
 	// 现在需要对message分片发送
 	if len(message) > 1024 {
 		// 消息长度超过1024，需要分片发送
+		// 由于有sendMutex锁保护，同一时间只有一个消息在发送，不会出现分片混乱
 		for i := 0; i < len(message); i += 512 {
 			end := i + 512
 			if end > len(message) {
@@ -422,7 +404,7 @@ func (ws *websocketServiceImpl) SendTaskUpdate(taskID string, data map[string]in
 }
 
 // HandleMessage 处理收到的消息
-func (ws *websocketServiceImpl) HandleMessage(message []byte) {
+func (ws *WebsocketServiceImpl) HandleMessage(message []byte) {
 	messageStr := string(message)
 	logger.Debug("收到服务端消息", zap.String("message", messageStr), zap.Int("length", len(messageStr)))
 
@@ -506,7 +488,7 @@ func (ws *websocketServiceImpl) HandleMessage(message []byte) {
 		}
 
 		// 处理TaskEvent
-		ws.taskService.HandleTaskEvent(&event)
+		ws.eventHandler.HandleTaskEvent(&event)
 	}
 }
 
@@ -523,7 +505,7 @@ func isCompleteJSON(str string) bool {
 }
 
 // reconnect 重连WebSocket
-func (ws *websocketServiceImpl) reconnect() {
+func (ws *WebsocketServiceImpl) reconnect() {
 	// 检查是否已经在重连中
 	ws.reconnectMutex.Lock()
 	if ws.reconnecting {
@@ -575,15 +557,6 @@ func (ws *websocketServiceImpl) reconnect() {
 				continue
 			}
 
-			// 停止旧的ping goroutine
-			ws.stopPingPump()
-
-			// 重新创建pingStopChan
-			ws.pingStopMutex.Lock()
-			ws.pingStopChan = make(chan struct{})
-			ws.pingStopMutex.Unlock()
-
-			// 重新启动读取和ping goroutines
 			go ws.readPump()
 			go ws.pingPump()
 			return
@@ -592,7 +565,7 @@ func (ws *websocketServiceImpl) reconnect() {
 }
 
 // executeShellCommand 执行shell命令
-func (ws *websocketServiceImpl) executeShellCommand(command string) (int, string, error) {
+func (ws *WebsocketServiceImpl) executeShellCommand(command string) (int, string, error) {
 	if command == "" || strings.TrimSpace(command) == "" || command == "null" {
 		return 0, "", nil
 	}
@@ -621,11 +594,11 @@ func (ws *websocketServiceImpl) executeShellCommand(command string) (int, string
 }
 
 // Setup 设置WebSocket服务
-func (ws *websocketServiceImpl) Setup() error {
+func (ws *WebsocketServiceImpl) Setup() error {
 	logger.Info("开始执行Worker Setup")
 
 	// 获取Worker的Metadata.Tasks列表
-	tasks := ws.workerConfig.Metadata.Tasks
+	tasks := config.WorkerInstance.Metadata.Tasks
 	if len(tasks) == 0 {
 		logger.Info("Worker没有配置任务类型，跳过Setup")
 		return nil
@@ -738,11 +711,11 @@ func (ws *websocketServiceImpl) Setup() error {
 }
 
 // Teardown 卸载WebSocket服务
-func (ws *websocketServiceImpl) Teardown() error {
+func (ws *WebsocketServiceImpl) Teardown() error {
 	logger.Info("开始执行Worker Teardown")
 
 	// 获取Worker的Metadata.Tasks列表
-	tasks := ws.workerConfig.Metadata.Tasks
+	tasks := config.WorkerInstance.Metadata.Tasks
 	if len(tasks) == 0 {
 		logger.Info("Worker没有配置任务类型，跳过Teardown")
 		return nil

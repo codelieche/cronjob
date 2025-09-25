@@ -1,22 +1,42 @@
-## 说明
+# CronJob 分布式定时任务系统
 
-### 目录
-- `docs`: 项目文档
-- `tutorial`: 项目技术点的示例代码
-- `entry`: 程序的入口
-- `backend`: 后端源代码
-- `front`: 前端源代码
+基于Go语言开发的分布式定时任务系统，支持高并发任务调度和执行。
 
-### 开发环境
-- 操作系统：`MacOS 10.14.3`
-- go版本：`go version go1.11.1 darwin/amd64`
+## 架构组件
 
-### Package
-- [etcd](https://github.com/etcd-io/etcd/tree/master/clientv3): `go get github.com/coreos/etcd/clientv3`
-- [cronexpr](https://github.com/gorhill/cronexpr)：`go get github.com/gorhill/cronexpr`
-- [go-elasticsearch](https://github.com/elastic/go-elasticsearch/tree/6.x)
-  - `git clone --branch 6.x https://github.com/elastic/go-elasticsearch.git $GOPATH/src/github.com/elastic/go-elasticsearch`
-- [mongo](https://github.com/mongodb/mongo-go-driver): `go get go.mongodb.org/mongo-driver`
+- **apiserver/**: API服务器，负责任务管理、调度和WebSocket通信
+- **worker/**: 工作节点，负责接收和执行具体任务
+- **deploy/**: 部署配置文件，包含Docker和监控配置
 
-### 参考文档
-- [etcd docs](https://godoc.org/github.com/coreos/etcd/clientv3)
+## 快速启动
+
+### 1. 启动API Server
+```bash
+cd apiserver
+go build && ./apiserver
+```
+
+### 2. 启动Worker节点
+```bash
+cd worker  
+go build && ./worker
+```
+
+### 3. 监控面板
+```bash
+cd deploy
+docker-compose -f docker-compose.monitoring.yml up -d
+```
+
+## 访问地址
+
+- **API接口**: http://localhost:8080
+- **健康检查**: http://localhost:8080/api/v1/health/
+- **监控指标**: http://localhost:8080/metrics
+- **Grafana面板**: http://localhost:3000 (admin/***** */)
+
+## 环境要求
+
+- Go 1.21+
+- MySQL/PostgreSQL
+- Redis

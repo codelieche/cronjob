@@ -6,5 +6,9 @@ logs
 /__debug*
 /*.json
 /__*
-/example
+/examples
 /Dockerfile
+/tasks
+/workdir
+/docs
+
