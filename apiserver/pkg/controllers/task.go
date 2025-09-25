@@ -122,7 +122,7 @@ func (controller *TaskController) Update(c *gin.Context) {
 	}
 
 	// 更新IsGroup字段
-	task.IsGroup = form.IsGroup
+	task.IsGroup = &form.IsGroup
 
 	// 更新TaskOrder字段
 	task.TaskOrder = form.TaskOrder
@@ -158,10 +158,10 @@ func (controller *TaskController) Update(c *gin.Context) {
 		task.Output = form.Output
 	}
 
-	task.SaveLog = form.SaveLog
+	task.SaveLog = &form.SaveLog
 	task.RetryCount = form.RetryCount
 	task.MaxRetry = form.MaxRetry
-	task.IsStandalone = form.IsStandalone
+	task.IsStandalone = &form.IsStandalone
 
 	if form.WorkerName != "" {
 		task.WorkerName = form.WorkerName

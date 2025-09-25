@@ -1,10 +1,14 @@
 .idea/
 .DS_Store
+.DS_Store
 
 /upload
 logs
 /temp
+/cmd
+/examples
 /__debug_*
 /__*
 /apiserver
 /Dockerfile
+/docs

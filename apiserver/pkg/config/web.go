@@ -10,6 +10,7 @@ type web struct {
 	Port             int    // 监听端口
 	SessionSecretKey string // 会话的secretKey
 	SessionIDName    string // 会话的cookie name
+	LogStorage       string // 保存日志默认的存储类型
 }
 
 // Address 获取web服务监听的地址
@@ -25,6 +26,7 @@ func parseWeb() {
 	portStr := GetDefaultEnv("WEB_PORT", "8000")
 	sessionSecretKey := GetDefaultEnv("SESSION_SECRET_KEY", "SessionIsSecret")
 	sessionIDName := GetDefaultEnv("SESSION_ID_NAME", "CronJob_sessionid")
+	logStorage := GetDefaultEnv("LOG_STORAGE", "file")
 	port, err := strconv.Atoi(portStr)
 
 	// 解析端口
@@ -37,6 +39,7 @@ func parseWeb() {
 		port,
 		sessionSecretKey,
 		sessionIDName,
+		logStorage,
 	}
 }
 

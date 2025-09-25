@@ -10,27 +10,28 @@ import (
 
 // TaskCreateForm 任务创建表单
 type TaskCreateForm struct {
-	ID           string    `json:"id" form:"id"`
-	Project      string    `json:"project" form:"project"`
-	Category     string    `json:"category" form:"category"`
-	CronJob      string    `json:"cronjob" form:"cronjob"`
-	Name         string    `json:"name" form:"name" binding:"required"`
-	IsGroup      bool      `json:"is_group" form:"is_group"`
-	TaskOrder    int       `json:"task_order" form:"task_order"`
-	Previous     string    `json:"previous" form:"previous"`
-	Next         string    `json:"next" form:"next"`
-	Command      string    `json:"command" form:"command"`
-	Args         string    `json:"args" form:"args"`
-	Description  string    `json:"description" form:"description"`
-	TimePlan     time.Time `json:"time_plan" form:"time_plan"`
-	TimeoutAt    time.Time `json:"timeout_at" form:"timeout_at"`
-	Status       string    `json:"status" form:"status"`
-	SaveLog      bool      `json:"save_log" form:"save_log"`
-	MaxRetry     int       `json:"max_retry" form:"max_retry"`
-	WorkerID     string    `json:"worker_id" form:"worker_id"`
-	WorkerName   string    `json:"worker_name" form:"worker_name"`
-	IsStandalone bool      `json:"is_standalone" form:"is_standalone"`
-	Timeout      int       `json:"timeout" form:"timeout"`
+	ID           string             `json:"id" form:"id"`
+	Project      string             `json:"project" form:"project"`
+	Category     string             `json:"category" form:"category"`
+	CronJob      string             `json:"cronjob" form:"cronjob"`
+	Name         string             `json:"name" form:"name" binding:"required"`
+	IsGroup      bool               `json:"is_group" form:"is_group"`
+	TaskOrder    int                `json:"task_order" form:"task_order"`
+	Previous     string             `json:"previous" form:"previous"`
+	Next         string             `json:"next" form:"next"`
+	Command      string             `json:"command" form:"command"`
+	Args         string             `json:"args" form:"args"`
+	Description  string             `json:"description" form:"description"`
+	TimePlan     time.Time          `json:"time_plan" form:"time_plan"`
+	TimeoutAt    time.Time          `json:"timeout_at" form:"timeout_at"`
+	Status       string             `json:"status" form:"status"`
+	SaveLog      bool               `json:"save_log" form:"save_log"`
+	MaxRetry     int                `json:"max_retry" form:"max_retry"`
+	WorkerID     string             `json:"worker_id" form:"worker_id"`
+	WorkerName   string             `json:"worker_name" form:"worker_name"`
+	IsStandalone bool               `json:"is_standalone" form:"is_standalone"`
+	Timeout      int                `json:"timeout" form:"timeout"`
+	Metadata     *core.TaskMetadata `json:"metadata" form:"metadata"`
 }
 
 // Validate 验证表单
@@ -167,13 +168,13 @@ func (form *TaskCreateForm) ToTask() *core.Task {
 		}
 	}
 
-	return &core.Task{
+	task := &core.Task{
 		ID:           id,
 		Project:      form.Project,
 		Category:     form.Category,
 		CronJob:      cronJobID,
 		Name:         form.Name,
-		IsGroup:      form.IsGroup,
+		IsGroup:      &form.IsGroup,
 		TaskOrder:    form.TaskOrder,
 		Previous:     previousID,
 		Next:         nextID,
@@ -183,39 +184,50 @@ func (form *TaskCreateForm) ToTask() *core.Task {
 		TimePlan:     form.TimePlan,
 		TimeoutAt:    form.TimeoutAt,
 		Status:       form.Status,
-		SaveLog:      form.SaveLog,
+		SaveLog:      &form.SaveLog,
 		MaxRetry:     form.MaxRetry,
 		WorkerID:     workerID,
 		WorkerName:   form.WorkerName,
-		IsStandalone: form.IsStandalone,
+		IsStandalone: &form.IsStandalone,
 		Timeout:      form.Timeout,
 	}
+
+	// 处理元数据
+	if form.Metadata != nil {
+		if err := task.SetMetadata(form.Metadata); err != nil {
+			// 如果设置元数据失败，记录错误但不阻塞创建
+			fmt.Printf("设置Task元数据失败: %v\n", err)
+		}
+	}
+
+	return task
 }
 
 // TaskInfoForm 任务信息表单（用于更新）
 type TaskInfoForm struct {
-	Project      string    `json:"project" form:"project"`
-	Category     string    `json:"category" form:"category"`
-	CronJob      string    `json:"cronjob" form:"cronjob"`
-	Name         string    `json:"name" form:"name"`
-	IsGroup      bool      `json:"is_group" form:"is_group"`
-	TaskOrder    int       `json:"task_order" form:"task_order"`
-	Timeout      int       `json:"timeout" form:"timeout"`
-	Previous     string    `json:"previous" form:"previous"`
-	Next         string    `json:"next" form:"next"`
-	Command      string    `json:"command" form:"command"`
-	Args         string    `json:"args" form:"args"`
-	Description  string    `json:"description" form:"description"`
-	TimePlan     time.Time `json:"time_plan" form:"time_plan"`
-	TimeoutAt    time.Time `json:"timeout_at" form:"timeout_at"`
-	Status       string    `json:"status" form:"status"`
-	Output       string    `json:"output" form:"output"`
-	SaveLog      bool      `json:"save_log" form:"save_log"`
-	RetryCount   int       `json:"retry_count" form:"retry_count"`
-	MaxRetry     int       `json:"max_retry" form:"max_retry"`
-	WorkerID     string    `json:"worker_id" form:"worker_id"`
-	WorkerName   string    `json:"worker_name" form:"worker_name"`
-	IsStandalone bool      `json:"is_standalone" form:"is_standalone"`
+	Project      string             `json:"project" form:"project"`
+	Category     string             `json:"category" form:"category"`
+	CronJob      string             `json:"cronjob" form:"cronjob"`
+	Name         string             `json:"name" form:"name"`
+	IsGroup      bool               `json:"is_group" form:"is_group"`
+	TaskOrder    int                `json:"task_order" form:"task_order"`
+	Timeout      int                `json:"timeout" form:"timeout"`
+	Previous     string             `json:"previous" form:"previous"`
+	Next         string             `json:"next" form:"next"`
+	Command      string             `json:"command" form:"command"`
+	Args         string             `json:"args" form:"args"`
+	Description  string             `json:"description" form:"description"`
+	TimePlan     time.Time          `json:"time_plan" form:"time_plan"`
+	TimeoutAt    time.Time          `json:"timeout_at" form:"timeout_at"`
+	Status       string             `json:"status" form:"status"`
+	Output       string             `json:"output" form:"output"`
+	SaveLog      bool               `json:"save_log" form:"save_log"`
+	RetryCount   int                `json:"retry_count" form:"retry_count"`
+	MaxRetry     int                `json:"max_retry" form:"max_retry"`
+	WorkerID     string             `json:"worker_id" form:"worker_id"`
+	WorkerName   string             `json:"worker_name" form:"worker_name"`
+	IsStandalone bool               `json:"is_standalone" form:"is_standalone"`
+	Metadata     *core.TaskMetadata `json:"metadata" form:"metadata"`
 }
 
 // Validate 验证表单
@@ -294,6 +306,80 @@ func (form *TaskInfoForm) Validate() error {
 		if _, err := uuid.Parse(form.Next); err != nil {
 			err = fmt.Errorf("Next任务ID格式无效")
 			return err
+		}
+	}
+
+	return nil
+}
+
+// UpdateTask 根据表单更新任务信息
+func (form *TaskInfoForm) UpdateTask(task *core.Task) error {
+	// 更新基本字段（如果提供了非空值）
+	if form.Project != "" {
+		task.Project = form.Project
+	}
+	if form.Category != "" {
+		task.Category = form.Category
+	}
+	if form.Name != "" {
+		task.Name = form.Name
+	}
+	if form.Command != "" {
+		task.Command = form.Command
+	}
+
+	// 处理可能为空的字段
+	task.Args = form.Args
+	task.Description = form.Description
+	task.Output = form.Output
+	task.IsGroup = &form.IsGroup
+	task.TaskOrder = form.TaskOrder
+	task.SaveLog = &form.SaveLog
+	task.RetryCount = form.RetryCount
+	task.MaxRetry = form.MaxRetry
+	task.WorkerName = form.WorkerName
+	task.IsStandalone = &form.IsStandalone
+	task.Timeout = form.Timeout
+
+	// 处理时间字段（如果不是零值）
+	if !form.TimePlan.IsZero() {
+		task.TimePlan = form.TimePlan
+	}
+	if !form.TimeoutAt.IsZero() {
+		task.TimeoutAt = form.TimeoutAt
+	}
+
+	// 处理状态更新
+	if form.Status != "" {
+		task.Status = form.Status
+	}
+
+	// 处理UUID字段
+	if form.CronJob != "" {
+		if parsedID, err := uuid.Parse(form.CronJob); err == nil {
+			task.CronJob = &parsedID
+		}
+	}
+	if form.Previous != "" {
+		if parsedID, err := uuid.Parse(form.Previous); err == nil {
+			task.Previous = &parsedID
+		}
+	}
+	if form.Next != "" {
+		if parsedID, err := uuid.Parse(form.Next); err == nil {
+			task.Next = &parsedID
+		}
+	}
+	if form.WorkerID != "" {
+		if parsedID, err := uuid.Parse(form.WorkerID); err == nil {
+			task.WorkerID = &parsedID
+		}
+	}
+
+	// 处理元数据更新
+	if form.Metadata != nil {
+		if err := task.SetMetadata(form.Metadata); err != nil {
+			return fmt.Errorf("更新Task元数据失败: %v", err)
 		}
 	}
 

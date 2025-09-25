@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
+	"github.com/codelieche/cronjob/apiserver/pkg/monitoring"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/controllers"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/filters"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
@@ -79,6 +80,10 @@ func (hc *HealthController) Health(c *gin.Context) {
 		if clientManager != nil {
 			websocketClientsCount = clientManager.Count()
 			workers = clientManager.GetWorkers()
+
+			// 更新监控指标
+			monitoring.GlobalMetrics.WebSocketConnections.Set(float64(websocketClientsCount))
+			monitoring.GlobalMetrics.UpdateWorkerCount(websocketClientsCount)
 		}
 	}
 
@@ -97,6 +102,8 @@ func (hc *HealthController) Health(c *gin.Context) {
 			logger.Error("获取Pending任务数量失败", zap.Error(err))
 		} else {
 			pendingTasksCount = int(count)
+			// 更新任务队列大小指标
+			monitoring.GlobalMetrics.TaskQueueSize.Set(float64(pendingTasksCount))
 		}
 	}
 

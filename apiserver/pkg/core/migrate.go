@@ -12,6 +12,7 @@ func AutoMigrate(db *gorm.DB) error {
 			&Category{},
 			&CronJob{},
 			&Task{},
+			&TaskLog{},
 		); err != nil {
 			return err
 		}

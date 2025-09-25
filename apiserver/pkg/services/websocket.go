@@ -179,9 +179,7 @@ func (cm *ClientManagerImpl) Remove(clientID string) {
 			cm.mutexWorker.Unlock()
 			logger.Info("Worker信息已移除", zap.String("client_id", tmpClientID))
 		}()
-		if _, exists := cm.workers[clientID]; exists {
-			delete(cm.workers, clientID)
-		}
+		delete(cm.workers, clientID)
 	}
 }
 
@@ -213,18 +211,22 @@ func (cm *ClientManagerImpl) Broadcast(event *core.TaskEvent) {
 
 		// 获取客户端对应的Worker信息
 		var supportedTasks []string
+		var workerName string
 		cm.mutexWorker.RLock()
 		worker, exists := cm.workers[clientID]
 		cm.mutexWorker.RUnlock()
 
 		// 如果存在Worker信息，尝试解析其支持的任务类型
-		if exists && worker != nil && worker.Metadata != nil {
-			// 定义一个临时结构来解析Metadata中的tasks字段
-			var metadata core.WorkerMetadata
+		if exists && worker != nil {
+			workerName = worker.Name
+			if worker.Metadata != nil {
+				// 定义一个临时结构来解析Metadata中的tasks字段
+				var metadata core.WorkerMetadata
 
-			// 尝试解析Metadata
-			if err := json.Unmarshal(worker.Metadata, &metadata); err == nil {
-				supportedTasks = metadata.Tasks // 支持的任务类型列表
+				// 尝试解析Metadata
+				if err := json.Unmarshal(worker.Metadata, &metadata); err == nil {
+					supportedTasks = metadata.Tasks // 支持的任务类型列表
+				}
 			}
 		}
 
@@ -242,15 +244,56 @@ func (cm *ClientManagerImpl) Broadcast(event *core.TaskEvent) {
 			Tasks:  []*core.Task{},
 		}
 
-		// 根据Worker支持的任务类型过滤任务
+		// 根据Worker支持的任务类型和WorkerSelect过滤任务
 		for _, task := range event.Tasks {
-			// 检查任务的Category是否在Worker支持的任务类型列表中
+			// 首先检查任务的Category是否在Worker支持的任务类型列表中
+			categoryMatched := false
 			for _, supportedTask := range supportedTasks {
 				if task.Category == supportedTask {
-					filteredEvent.Tasks = append(filteredEvent.Tasks, task)
+					categoryMatched = true
 					break
 				}
 			}
+
+			if !categoryMatched {
+				continue
+			}
+
+			// 检查任务的WorkerSelect配置
+			if len(task.Metadata) > 0 {
+				taskMetadata, err := task.GetMetadata()
+				if err != nil {
+					logger.Warn("解析任务元数据失败", zap.Error(err), zap.String("task_id", task.ID.String()))
+					// 解析失败时，仍然按照原逻辑处理
+					filteredEvent.Tasks = append(filteredEvent.Tasks, task)
+					continue
+				}
+
+				// 如果任务指定了WorkerSelect，检查当前Worker是否在列表中
+				if len(taskMetadata.WorkerSelect) > 0 {
+					workerSelected := false
+					for _, selectedWorker := range taskMetadata.WorkerSelect {
+						// 支持按Worker ID或Name进行匹配
+						if selectedWorker == clientID || selectedWorker == workerName || (worker != nil && selectedWorker == worker.ID.String()) {
+							workerSelected = true
+							break
+						}
+					}
+
+					// 如果当前Worker不在选择列表中，跳过这个任务
+					if !workerSelected {
+						logger.Debug("任务指定了WorkerSelect，当前Worker不在选择列表中",
+							zap.String("client_id", clientID),
+							zap.String("worker_name", workerName),
+							zap.String("task_id", task.ID.String()),
+							zap.Strings("worker_select", taskMetadata.WorkerSelect))
+						continue
+					}
+				}
+			}
+
+			// 通过所有过滤条件，添加到过滤后的任务列表
+			filteredEvent.Tasks = append(filteredEvent.Tasks, task)
 		}
 
 		// 只有当过滤后的任务列表长度大于0时，才发送消息
@@ -263,8 +306,9 @@ func (cm *ClientManagerImpl) Broadcast(event *core.TaskEvent) {
 					zap.Int("filtered_tasks", len(filteredEvent.Tasks)))
 			}
 		} else {
-			logger.Debug("没有符合Worker支持的任务类型，不发送消息",
+			logger.Debug("没有符合Worker条件的任务，不发送消息",
 				zap.String("client_id", clientID),
+				zap.String("worker_name", workerName),
 				zap.Strings("supported_tasks", supportedTasks))
 		}
 	}

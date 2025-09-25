@@ -10,17 +10,18 @@ import (
 
 // CronJobCreateForm 定时任务创建表单
 type CronJobCreateForm struct {
-	ID          string `json:"id" form:"id"`
-	Project     string `json:"project" form:"project"`
-	Category    string `json:"category" form:"category"`
-	Name        string `json:"name" form:"name" binding:"required"`
-	Time        string `json:"time" form:"time" binding:"required"`
-	Command     string `json:"command" form:"command" binding:"required"`
-	Args        string `json:"args" form:"args"`
-	Description string `json:"description" form:"description"`
-	IsActive    bool   `json:"is_active" form:"is_active"`
-	SaveLog     bool   `json:"save_log" form:"save_log"`
-	Timeout     int    `json:"timeout" form:"timeout"`
+	ID          string                `json:"id" form:"id"`
+	Project     string                `json:"project" form:"project"`
+	Category    string                `json:"category" form:"category"`
+	Name        string                `json:"name" form:"name" binding:"required"`
+	Time        string                `json:"time" form:"time" binding:"required"`
+	Command     string                `json:"command" form:"command" binding:"required"`
+	Args        string                `json:"args" form:"args"`
+	Description string                `json:"description" form:"description"`
+	IsActive    bool                  `json:"is_active" form:"is_active"`
+	SaveLog     bool                  `json:"save_log" form:"save_log"`
+	Timeout     int                   `json:"timeout" form:"timeout"`
+	Metadata    *core.CronJobMetadata `json:"metadata" form:"metadata"`
 }
 
 // Validate 验证表单
@@ -128,14 +129,11 @@ func (form *CronJobCreateForm) ToCronJob() *core.CronJob {
 	// 设置默认值
 	isActive := form.IsActive
 	saveLog := form.SaveLog
-	if !saveLog {
-		saveLog = true
-	}
 
 	// 设置时间字段为当前时间，避免MySQL零值错误
 	// now := time.Now()
 
-	return &core.CronJob{
+	cronJob := &core.CronJob{
 		ID:           id,
 		Project:      project,
 		Category:     category,
@@ -146,24 +144,36 @@ func (form *CronJobCreateForm) ToCronJob() *core.CronJob {
 		Description:  form.Description,
 		LastPlan:     nil,
 		LastDispatch: nil,
-		IsActive:     isActive,
-		SaveLog:      saveLog,
+		IsActive:     &isActive,
+		SaveLog:      &saveLog,
 		Timeout:      form.Timeout,
 	}
+
+	// 处理元数据
+	if form.Metadata != nil {
+		if err := cronJob.SetMetadata(form.Metadata); err != nil {
+			// 如果设置元数据失败，记录错误但不阻塞创建
+			// 在实际应用中可能需要更严格的处理
+			fmt.Printf("设置CronJob元数据失败: %v\n", err)
+		}
+	}
+
+	return cronJob
 }
 
 // CronJobInfoForm 定时任务信息表单（用于更新）
 type CronJobInfoForm struct {
-	Project     string `json:"project" form:"project"`
-	Category    string `json:"category" form:"category"`
-	Name        string `json:"name" form:"name"`
-	Time        string `json:"time" form:"time"`
-	Command     string `json:"command" form:"command"`
-	Args        string `json:"args" form:"args"`
-	Description string `json:"description" form:"description"`
-	IsActive    bool   `json:"is_active" form:"is_active"`
-	SaveLog     bool   `json:"save_log" form:"save_log"`
-	Timeout     int    `json:"timeout" form:"timeout"`
+	Project     string                `json:"project" form:"project"`
+	Category    string                `json:"category" form:"category"`
+	Name        string                `json:"name" form:"name"`
+	Time        string                `json:"time" form:"time"`
+	Command     string                `json:"command" form:"command"`
+	Args        string                `json:"args" form:"args"`
+	Description string                `json:"description" form:"description"`
+	IsActive    bool                  `json:"is_active" form:"is_active"`
+	SaveLog     bool                  `json:"save_log" form:"save_log"`
+	Timeout     int                   `json:"timeout" form:"timeout"`
+	Metadata    *core.CronJobMetadata `json:"metadata" form:"metadata"`
 }
 
 // Validate 验证表单
@@ -244,7 +254,15 @@ func (form *CronJobInfoForm) UpdateCronJob(CronJob *core.CronJob) {
 	// 这样可以支持将字段置空
 	CronJob.Args = form.Args
 	CronJob.Description = form.Description
-	CronJob.IsActive = form.IsActive
-	CronJob.SaveLog = form.SaveLog
+	CronJob.IsActive = &form.IsActive
+	CronJob.SaveLog = &form.SaveLog
 	CronJob.Timeout = form.Timeout
+
+	// 处理元数据更新
+	if form.Metadata != nil {
+		if err := CronJob.SetMetadata(form.Metadata); err != nil {
+			// 如果设置元数据失败，记录错误但不阻塞更新
+			fmt.Printf("更新CronJob元数据失败: %v\n", err)
+		}
+	}
 }

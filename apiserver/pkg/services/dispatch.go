@@ -115,6 +115,7 @@ func (d *DispatchService) Dispatch(ctx context.Context, cronJob *core.CronJob) e
 	// 如果没有符合条件的任务，则创建新任务
 	if len(tasks) == 0 {
 		// 创建Task对象
+		isStandalone := false
 		task := &core.Task{
 			ID:           uuid.New(),
 			Project:      cronJob.Project,
@@ -127,8 +128,13 @@ func (d *DispatchService) Dispatch(ctx context.Context, cronJob *core.CronJob) e
 			TimePlan:     lastPlan,
 			Status:       core.TaskStatusPending,
 			SaveLog:      cronJob.SaveLog,
-			IsStandalone: false,
+			IsStandalone: &isStandalone,
 			Timeout:      cronJob.Timeout,
+		}
+
+		// 继承CronJob的元数据
+		if err := task.InheritMetadataFromCronJob(cronJob, nil); err != nil {
+			logger.Warn("继承CronJob元数据失败", zap.Error(err), zap.String("cronjob_id", cronJob.ID.String()))
 		}
 
 		// 计算TimeoutAt：基于LastPlan计算CronJob的再下一次执行时间
@@ -216,7 +222,7 @@ func (d *DispatchService) DispatchLoop(ctx context.Context) error {
 		}
 
 		// 计算等待时间
-		waitDuration := nextExecuteTime.Sub(time.Now())
+		waitDuration := time.Until(nextExecuteTime)
 		if waitDuration > 0 {
 			time.Sleep(waitDuration)
 		} else {

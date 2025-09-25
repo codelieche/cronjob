@@ -251,7 +251,8 @@ func (controller *CronJobController) ToggleActive(c *gin.Context) {
 	}
 
 	// 3. 切换激活状态
-	cronJob.IsActive = !cronJob.IsActive
+	newIsActive := cronJob.IsActive == nil || !*cronJob.IsActive
+	cronJob.IsActive = &newIsActive
 
 	// 4. 调用服务更新定时任务
 	updatedCronJob, err := controller.service.Update(c.Request.Context(), cronJob)

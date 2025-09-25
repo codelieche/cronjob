@@ -1,0 +1,46 @@
+# 版本控制相关文件
+.git
+.gitignore
+
+# 构建输出目录
+/build
+/bin
+/out
+/dist
+
+# 日志文件
+/logs
+*.log
+
+# 临时文件和缓存
+/temp
+/tmp
+.cache
+
+# IDE和编辑器配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 环境变量和敏感文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 文档
+/docs
+*.md
+
+# 其他不需要的文件
+Dockerfile
+.dockerignore
+*.test
+*.prof
+coverage.out
+
+# 调试相关文件
+__debug*
+__*

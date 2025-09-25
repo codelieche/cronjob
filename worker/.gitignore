@@ -1,0 +1,10 @@
+.idea
+.vscode
+logs
+/temp
+/worker
+/__debug*
+/*.json
+/__*
+/example
+/Dockerfile
