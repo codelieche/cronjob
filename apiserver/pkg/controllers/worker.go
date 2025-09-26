@@ -26,6 +26,18 @@ func NewWorkerController(service core.WorkerService) *WorkerController {
 }
 
 // Create 创建工作节点
+// @Summary 注册工作节点
+// @Description 注册新的Worker工作节点
+// @Tags workers
+// @Accept json
+// @Produce json
+// @Param worker body forms.WorkerCreateForm true "工作节点创建表单"
+// @Success 201 {object} core.Worker "创建成功的工作节点信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 409 {object} core.ErrorResponse "工作节点已存在"
+// @Router /worker/ [post]
+// @Security BearerAuth
 func (controller *WorkerController) Create(c *gin.Context) {
 	// 1. 处理表单
 	var form forms.WorkerCreateForm
@@ -59,6 +71,18 @@ func (controller *WorkerController) Create(c *gin.Context) {
 }
 
 // Find 获取工作节点信息
+// @Summary 根据ID获取工作节点
+// @Description 根据工作节点ID获取详细信息
+// @Tags workers
+// @Accept json
+// @Produce json
+// @Param id path string true "工作节点ID"
+// @Success 200 {object} core.Worker "工作节点信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "工作节点不存在"
+// @Router /worker/{id}/ [get]
+// @Security BearerAuth
 func (controller *WorkerController) Find(c *gin.Context) {
 	// 1. 获取工作节点的id
 	id := c.Param("id")
@@ -79,6 +103,20 @@ func (controller *WorkerController) Find(c *gin.Context) {
 }
 
 // Update 更新工作节点信息
+// @Summary 更新工作节点
+// @Description 根据ID更新工作节点的详细信息
+// @Tags workers
+// @Accept json
+// @Produce json
+// @Param id path string true "工作节点ID"
+// @Param worker body forms.WorkerInfoForm true "工作节点更新表单"
+// @Success 200 {object} core.Worker "更新后的工作节点信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "工作节点不存在"
+// @Failure 409 {object} core.ErrorResponse "工作节点名称冲突"
+// @Router /worker/{id}/ [put]
+// @Security BearerAuth
 func (controller *WorkerController) Update(c *gin.Context) {
 	// 1. 获取工作节点的id
 	id := c.Param("id")
@@ -126,6 +164,18 @@ func (controller *WorkerController) Update(c *gin.Context) {
 }
 
 // Delete 删除工作节点
+// @Summary 删除工作节点
+// @Description 根据ID删除指定的工作节点
+// @Tags workers
+// @Accept json
+// @Produce json
+// @Param id path string true "工作节点ID"
+// @Success 200 {object} map[string]string "删除成功信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "工作节点不存在"
+// @Router /worker/{id}/ [delete]
+// @Security BearerAuth
 func (controller *WorkerController) Delete(c *gin.Context) {
 	// 1. 获取工作节点的id
 	id := c.Param("id")
@@ -146,6 +196,25 @@ func (controller *WorkerController) Delete(c *gin.Context) {
 }
 
 // List 获取工作节点列表
+// @Summary 获取工作节点列表
+// @Description 获取工作节点列表，支持分页、搜索和过滤
+// @Tags workers
+// @Accept json
+// @Produce json
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Param search query string false "搜索关键词（在name、description中搜索）"
+// @Param id query string false "工作节点ID"
+// @Param name query string false "工作节点名称"
+// @Param name__contains query string false "工作节点名称包含"
+// @Param is_active query bool false "是否活跃"
+// @Param deleted query bool false "是否已删除"
+// @Param ordering query string false "排序字段" Enums(name, created_at, updated_at, last_active, -name, -created_at, -updated_at, -last_active)
+// @Success 200 {object} types.ResponseList "工作节点列表和分页信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Router /worker/ [get]
+// @Security BearerAuth
 func (controller *WorkerController) List(c *gin.Context) {
 	// 1. 解析分页参数
 	pagination := controller.ParsePagination(c)
@@ -219,7 +288,18 @@ func (controller *WorkerController) List(c *gin.Context) {
 }
 
 // Ping 工作节点心跳接口
-// 更新工作节点的is_active状态和last_active时间
+// @Summary 工作节点心跳
+// @Description 更新工作节点的is_active状态和last_active时间
+// @Tags workers
+// @Accept json
+// @Produce json
+// @Param id path string true "工作节点ID"
+// @Success 200 {object} map[string]interface{} "心跳响应，包含pong消息和工作节点信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "工作节点不存在"
+// @Router /worker/{id}/ping/ [put]
+// @Security BearerAuth
 func (controller *WorkerController) Ping(c *gin.Context) {
 	// 1. 获取工作节点的id
 	id := c.Param("id")

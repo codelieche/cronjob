@@ -36,6 +36,7 @@ type WebsocketController struct {
 	service      core.WebsocketService // WebSocket服务接口
 	messageCache map[string]string     // 消息缓存，用于存储每个客户端的不完整消息
 	cacheMutex   sync.Mutex            // 用于保护messageCache的互斥锁
+	authService  services.AuthService  // 认证服务，用于验证Worker的ApiKey
 }
 
 // NewWebsocketController 创建WebsocketController实例
@@ -48,15 +49,19 @@ func NewWebsocketController(service core.WebsocketService) *WebsocketController 
 	return &WebsocketController{
 		service:      service,
 		messageCache: make(map[string]string),
+		authService:  services.GetAuthService(), // 获取认证服务实例
 	}
 }
 
 // HandleConnect 处理WebSocket连接请求
-// 功能：
-//   - 将HTTP连接升级为WebSocket连接
-//   - 创建客户端实例并添加到客户端管理器
-//   - 向客户端发送待执行任务
-//   - 启动消息读取循环
+// @Summary WebSocket连接建立
+// @Description 将HTTP连接升级为WebSocket连接，用于实时通信和任务分发
+// @Tags websocket
+// @Accept json
+// @Produce json
+// @Success 101 {string} string "Switching Protocols - WebSocket连接建立成功"
+// @Failure 400 {object} core.ErrorResponse "升级WebSocket连接失败"
+// @Router /ws/ [get]
 func (wc *WebsocketController) HandleConnect(c *gin.Context) {
 	// 升级HTTP连接到WebSocket连接
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -258,12 +263,40 @@ func isCompleteJSON(str string) bool {
 
 // handleRegistWorkerEvent 处理Worker注册事件
 // 功能：
+//   - 验证ApiKey有效性（新增）
 //   - 验证WorkerID有效性
 //   - 查找或创建Worker记录
 //   - 更新Worker信息（名称、描述、元数据等）
 //   - 设置Worker为活跃状态
 func (wc *WebsocketController) handleRegistWorkerEvent(ctx context.Context, clientID string, event *core.ClientEvent) {
-	// 验证WorkerID是否存在
+	// 1. 验证ApiKey是否存在
+	if event.ApiKey == "" {
+		logger.Warn("注册Worker事件中ApiKey为空",
+			zap.String("client_id", clientID),
+			zap.String("worker_id", event.WorkerID))
+		return
+	}
+
+	// 2. 验证ApiKey有效性
+	authResult := wc.authService.Authenticate(ctx, event.ApiKey)
+	if !authResult.Success {
+		logger.Warn("Worker注册认证失败",
+			zap.String("client_id", clientID),
+			zap.String("worker_id", event.WorkerID),
+			zap.String("error_code", authResult.ErrorCode),
+			zap.String("error_message", authResult.ErrorMessage))
+		return
+	}
+
+	// 3. 记录认证成功的用户信息
+	logger.Info("Worker注册认证成功",
+		zap.String("client_id", clientID),
+		zap.String("worker_id", event.WorkerID),
+		zap.String("user_id", authResult.User.UserID),
+		zap.String("username", authResult.User.Username),
+		zap.String("auth_type", authResult.User.AuthType))
+
+	// 4. 验证WorkerID是否存在
 	if event.WorkerID == "" {
 		logger.Warn("注册Worker事件中WorkerID为空")
 		return
@@ -298,6 +331,26 @@ func (wc *WebsocketController) handleRegistWorkerEvent(ctx context.Context, clie
 	worker.IsActive = &isActive
 	now := time.Now()
 	worker.LastActive = &now
+
+	// 记录认证用户信息到Worker的Metadata中
+	if worker.Metadata == nil {
+		worker.Metadata = json.RawMessage("{}")
+	}
+
+	var metadata map[string]interface{}
+	if err := json.Unmarshal(worker.Metadata, &metadata); err != nil {
+		metadata = make(map[string]interface{})
+	}
+
+	// 添加认证信息
+	metadata["auth_user_id"] = authResult.User.UserID
+	metadata["auth_username"] = authResult.User.Username
+	metadata["auth_type"] = authResult.User.AuthType
+	metadata["registered_at"] = now.Format(time.RFC3339)
+
+	if updatedMetadata, err := json.Marshal(metadata); err == nil {
+		worker.Metadata = updatedMetadata
+	}
 
 	// 如果有Data字段，解析并更新Worker详细信息
 	if event.Data != nil {
@@ -346,12 +399,40 @@ func (wc *WebsocketController) handleRegistWorkerEvent(ctx context.Context, clie
 
 // handleTaskUpdateEvent 处理任务更新事件
 // 功能：
+//   - 验证ApiKey有效性（新增）
 //   - 验证TaskID有效性
 //   - 检查任务是否可更新（未完成）
 //   - 解析并更新任务字段（状态、输出、Worker信息等）
 //   - 根据任务状态自动设置相关时间字段
 func (wc *WebsocketController) handleTaskUpdateEvent(ctx context.Context, event *core.ClientEvent) {
-	// 验证TaskID是否存在
+	// 1. 验证ApiKey是否存在
+	if event.ApiKey == "" {
+		logger.Warn("任务更新事件中ApiKey为空",
+			zap.String("task_id", event.TaskID),
+			zap.String("worker_id", event.WorkerID))
+		return
+	}
+
+	// 2. 验证ApiKey有效性
+	authResult := wc.authService.Authenticate(ctx, event.ApiKey)
+	if !authResult.Success {
+		logger.Warn("任务更新认证失败",
+			zap.String("task_id", event.TaskID),
+			zap.String("worker_id", event.WorkerID),
+			zap.String("error_code", authResult.ErrorCode),
+			zap.String("error_message", authResult.ErrorMessage))
+		return
+	}
+
+	// 3. 记录认证成功的用户信息
+	logger.Debug("任务更新认证成功",
+		zap.String("task_id", event.TaskID),
+		zap.String("worker_id", event.WorkerID),
+		zap.String("user_id", authResult.User.UserID),
+		zap.String("username", authResult.User.Username),
+		zap.String("auth_type", authResult.User.AuthType))
+
+	// 4. 验证TaskID是否存在
 	if event.TaskID == "" {
 		logger.Warn("任务更新事件中TaskID为空")
 		return

@@ -24,3 +24,10 @@ var (
 	// ErrLockAlreadyAcquired
 	ErrLockAlreadyAcquired = errors.New("lock already acquired")
 )
+
+// ErrorResponse API错误响应结构体，用于Swagger文档
+type ErrorResponse struct {
+	Error   string `json:"error" example:"请求参数错误"`   // 错误信息
+	Message string `json:"message" example:"参数验证失败"` // 详细错误消息
+	Code    int    `json:"code" example:"400"`       // HTTP状态码
+}

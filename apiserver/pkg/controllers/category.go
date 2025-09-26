@@ -24,6 +24,18 @@ func NewCategoryController(service core.CategoryService) *CategoryController {
 }
 
 // Create 创建分类
+// @Summary 创建任务分类
+// @Description 创建新的任务分类
+// @Tags categories
+// @Accept json
+// @Produce json
+// @Param category body forms.CategoryCreateForm true "分类创建表单"
+// @Success 201 {object} core.Category "创建成功的分类信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 409 {object} core.ErrorResponse "分类已存在"
+// @Router /category/ [post]
+// @Security BearerAuth
 func (controller *CategoryController) Create(c *gin.Context) {
 	// 1. 处理表单
 	var form forms.CategoryCreateForm
@@ -57,6 +69,18 @@ func (controller *CategoryController) Create(c *gin.Context) {
 }
 
 // Find 获取分类信息
+// @Summary 根据ID或编码获取分类
+// @Description 根据分类ID或编码获取详细信息
+// @Tags categories
+// @Accept json
+// @Produce json
+// @Param id path string true "分类ID或编码"
+// @Success 200 {object} core.Category "分类信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认诃"
+// @Failure 404 {object} core.ErrorResponse "分类不存在"
+// @Router /category/{id}/ [get]
+// @Security BearerAuth
 func (controller *CategoryController) Find(c *gin.Context) {
 	// 1. 获取ID或Code
 	idOrCode := c.Param("id")
@@ -77,6 +101,20 @@ func (controller *CategoryController) Find(c *gin.Context) {
 }
 
 // Update 更新分类信息
+// @Summary 更新任务分类
+// @Description 根据ID或编码更新分类信息
+// @Tags categories
+// @Accept json
+// @Produce json
+// @Param id path string true "分类ID或编码"
+// @Param category body forms.CategoryInfoForm true "分类更新表单"
+// @Success 200 {object} core.Category "更新成功的分类信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "分类不存在"
+// @Failure 409 {object} core.ErrorResponse "分类编码冲突"
+// @Router /category/{id}/ [put]
+// @Security BearerAuth
 func (controller *CategoryController) Update(c *gin.Context) {
 	// 1. 获取ID或Code
 	idOrCode := c.Param("id")
@@ -124,6 +162,18 @@ func (controller *CategoryController) Update(c *gin.Context) {
 }
 
 // Delete 删除分类
+// @Summary 删除任务分类
+// @Description 根据ID或编码删除分类
+// @Tags categories
+// @Accept json
+// @Produce json
+// @Param id path string true "分类ID或编码"
+// @Success 200 {object} map[string]string "删除成功信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "分类不存在"
+// @Router /category/{id}/ [delete]
+// @Security BearerAuth
 func (controller *CategoryController) Delete(c *gin.Context) {
 	// 1. 获取ID或Code
 	idOrCode := c.Param("id")
@@ -151,6 +201,26 @@ func (controller *CategoryController) Delete(c *gin.Context) {
 }
 
 // List 获取分类列表
+// @Summary 获取任务分类列表
+// @Description 根据查询条件获取分类列表，支持分页、搜索和过滤
+// @Tags categories
+// @Accept json
+// @Produce json
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Param search query string false "搜索关键词（在code、name、description中搜索）"
+// @Param id query int false "分类ID"
+// @Param code query string false "分类编码"
+// @Param code__contains query string false "分类编码包含"
+// @Param name query string false "分类名称"
+// @Param name__contains query string false "分类名称包含"
+// @Param deleted query bool false "是否已删除"
+// @Param ordering query string false "排序字段" Enums(code, name, created_at, updated_at, -code, -name, -created_at, -updated_at)
+// @Success 200 {object} map[string]interface{} "分类列表和分页信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Router /category/ [get]
+// @Security BearerAuth
 func (controller *CategoryController) List(c *gin.Context) {
 	// 1. 解析分页参数
 	pagination := controller.ParsePagination(c)

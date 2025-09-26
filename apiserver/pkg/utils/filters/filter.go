@@ -98,11 +98,10 @@ func (o *FilterOption) SetValueByQuery(q Query) {
 		queryKey = o.Column
 	}
 
-	var value interface{}
-	value = q.Query(queryKey)
+	value := q.Query(queryKey)
 
-	// 只有当值不为空且不为nil时才设置
-	if value != "" && value != nil {
+	// 只有当值不为空时才设置
+	if value != "" {
 		o.Value = value
 	}
 }
@@ -115,8 +114,7 @@ func (o *FilterOption) ParseExpressionFromQuery(q Query) (c clause.Expression, j
 		queryKey = o.Column
 	}
 
-	var value interface{}
-	value = q.Query(queryKey)
+	value := q.Query(queryKey)
 
 	// 如果查询参数为空且Value也为空，则返回空表达式
 	if value == "" && o.Value == nil {
@@ -129,8 +127,7 @@ func (o *FilterOption) ParseExpressionFromQuery(q Query) (c clause.Expression, j
 // ParseExpression 从已设置的Value中解析并生成GORM子句表达式
 // 返回生成的表达式和需要JOIN的表名（如果有的话）
 func (o *FilterOption) ParseExpression() (c clause.Expression, joinTable string) {
-	var value interface{}
-	value = o.Value
+	value := o.Value
 
 	// 如果值为空，则返回空表达式
 	if value == "" || value == nil {
@@ -166,7 +163,7 @@ func (o *FilterOption) parseExpression(value interface{}) (c clause.Expression, 
 // HandlerQueryFilters 处理查询过滤器的通用函数
 // 将多个FilterOption应用到GORM查询中，自动处理表关联
 func HandlerQueryFilters(query *gorm.DB, q Query, opts ...*FilterOption) *gorm.DB {
-	if opts != nil && len(opts) > 0 {
+	if len(opts) > 0 {
 		tablesLock := map[string]bool{} // 用于避免重复JOIN同一个表
 
 		for _, opt := range opts {

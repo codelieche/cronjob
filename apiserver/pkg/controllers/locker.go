@@ -37,7 +37,8 @@ func NewLockController(locker core.Locker) *LockController {
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 409 {object} map[string]string "锁已被占用"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/v1/lock/acquire [get]
+// @Router /lock/acquire [get]
+// @Security BearerAuth
 func (controller *LockController) Acquire(c *gin.Context) {
 	// 1. 获取请求参数
 	key := c.Query("key")
@@ -99,7 +100,8 @@ func (controller *LockController) Acquire(c *gin.Context) {
 // @Success 200 {object} map[string]string "成功响应"
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/v1/lock/release [get]
+// @Router /lock/release [get]
+// @Security BearerAuth
 func (controller *LockController) Release(c *gin.Context) {
 	// 1. 获取请求参数
 	key := c.Query("key")
@@ -138,7 +140,8 @@ func (controller *LockController) Release(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "成功响应，包含锁状态"
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/v1/lock/check [get]
+// @Router /lock/check [get]
+// @Security BearerAuth
 func (controller *LockController) Check(c *gin.Context) {
 	// 1. 获取请求参数
 	key := c.Query("key")
@@ -185,7 +188,8 @@ func (controller *LockController) Check(c *gin.Context) {
 // @Success 200 {object} map[string]string "成功响应"
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/v1/lock/refresh [get]
+// @Router /lock/refresh [get]
+// @Security BearerAuth
 func (controller *LockController) Refresh(c *gin.Context) {
 	// 1. 获取请求参数
 	key := c.Query("key")

@@ -74,8 +74,9 @@ const (
 
 // ClientEvent 定义客户端发送到服务端的事件结构
 type ClientEvent struct {
-	Action   string          `json:"action"`    // 操作类型
-	WorkerID string          `json:"worker_id"` // 工作节点ID
-	TaskID   string          `json:"task_id"`   // 任务ID
-	Data     json.RawMessage `json:"data"`      // 附加数据
+	Action   string          `json:"action"`                    // 操作类型
+	WorkerID string          `json:"worker_id"`                 // 工作节点ID
+	TaskID   string          `json:"task_id"`                   // 任务ID
+	Data     json.RawMessage `json:"data" swaggertype:"object"` // 附加数据
+	ApiKey   string          `json:"api_key"`                   // API Key
 }

@@ -21,7 +21,7 @@ func NewFilterAction(options []*FilterOption, query Query) Filter {
 // Filter 实现Filter接口，将多个过滤条件应用到GORM查询中
 // 批量处理多个FilterOption，自动处理表关联和条件组合
 func (f *FilterAction) Filter(db *gorm.DB) *gorm.DB {
-	if f.Options == nil || len(f.Options) < 1 {
+	if len(f.Options) < 1 {
 		return db
 	}
 
@@ -55,9 +55,9 @@ func (f *FilterAction) Filter(db *gorm.DB) *gorm.DB {
 	}
 
 	// 如果有条件表达式，则应用到查询中
-	if conds != nil && len(conds) > 0 {
+	if len(conds) > 0 {
 		// 先添加所有需要的JOIN
-		if joinTables != nil && len(joinTables) > 0 {
+		if len(joinTables) > 0 {
 			for _, table := range joinTables {
 				db = db.Joins(table)
 			}
@@ -74,7 +74,7 @@ func (f *FilterAction) Filter(db *gorm.DB) *gorm.DB {
 func FromQueryGetFilterAction(q Query, opts []*FilterOption) Filter {
 	var options []*FilterOption
 
-	if opts != nil && len(opts) > 0 {
+	if len(opts) > 0 {
 		// 遍历所有过滤器选项，从查询参数中设置值
 		for _, opt := range opts {
 			opt.SetValueByQuery(q)
@@ -86,7 +86,7 @@ func FromQueryGetFilterAction(q Query, opts []*FilterOption) Filter {
 	}
 
 	// 如果没有有效的过滤器选项，返回nil
-	if options == nil || len(options) < 1 {
+	if len(options) < 1 {
 		return nil
 	}
 

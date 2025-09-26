@@ -17,6 +17,12 @@ func NewMetricsController() *MetricsController {
 }
 
 // Metrics 提供Prometheus指标端点
+// @Summary Prometheus指标接口
+// @Description 提供Prometheus格式的系统监控指标数据
+// @Tags monitoring
+// @Produce text/plain
+// @Success 200 {string} string "Prometheus格式的指标数据"
+// @Router /metrics [get]
 func (mc *MetricsController) Metrics(c *gin.Context) {
 	// 使用Prometheus的HTTP处理器
 	handler := promhttp.Handler()

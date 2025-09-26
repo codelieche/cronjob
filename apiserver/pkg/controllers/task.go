@@ -27,6 +27,18 @@ func NewTaskController(service core.TaskService) *TaskController {
 }
 
 // Create 创建任务
+// @Summary 创建任务
+// @Description 创建新的任务执行记录
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param task body forms.TaskCreateForm true "任务创建表单"
+// @Success 201 {object} core.Task "创建成功的任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 409 {object} core.ErrorResponse "任务已存在"
+// @Router /task/ [post]
+// @Security BearerAuth
 func (controller *TaskController) Create(c *gin.Context) {
 	// 1. 处理表单
 	var form forms.TaskCreateForm
@@ -60,6 +72,18 @@ func (controller *TaskController) Create(c *gin.Context) {
 }
 
 // Find 获取任务信息
+// @Summary 根据ID获取任务
+// @Description 根据任务ID获取任务执行记录详细信息
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Success 200 {object} core.Task "任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Router /task/{id}/ [get]
+// @Security BearerAuth
 func (controller *TaskController) Find(c *gin.Context) {
 	// 1. 获取任务的id
 	id := c.Param("id")
@@ -80,6 +104,19 @@ func (controller *TaskController) Find(c *gin.Context) {
 }
 
 // Update 更新任务信息
+// @Summary 更新任务
+// @Description 根据ID更新任务的完整信息
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Param task body forms.TaskInfoForm true "任务更新表单"
+// @Success 200 {object} core.Task "更新后的任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Router /task/{id}/ [put]
+// @Security BearerAuth
 func (controller *TaskController) Update(c *gin.Context) {
 	// 1. 获取任务的id
 	id := c.Param("id")
@@ -215,6 +252,18 @@ func (controller *TaskController) Update(c *gin.Context) {
 }
 
 // Delete 删除任务
+// @Summary 删除任务
+// @Description 根据ID删除指定的任务记录
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Success 200 {object} map[string]string "删除成功信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Router /task/{id}/ [delete]
+// @Security BearerAuth
 func (controller *TaskController) Delete(c *gin.Context) {
 	// 1. 获取任务的id
 	id := c.Param("id")
@@ -235,6 +284,24 @@ func (controller *TaskController) Delete(c *gin.Context) {
 }
 
 // List 获取任务列表
+// @Summary 获取任务列表
+// @Description 获取任务执行记录列表，支持分页和过滤
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param page query int false "页码" default(1)
+// @Param size query int false "每页数量" default(10)
+// @Param project query string false "项目名称过滤"
+// @Param category query string false "分类过滤"
+// @Param name query string false "任务名称过滤"
+// @Param status query string false "任务状态过滤"
+// @Param cronjob query string false "定时任务ID过滤"
+// @Param search query string false "搜索关键词"
+// @Success 200 {object} types.ResponseList "分页的任务列表"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Router /task/ [get]
+// @Security BearerAuth
 func (controller *TaskController) List(c *gin.Context) {
 	// 1. 解析分页参数
 	pagination := controller.ParsePagination(c)
@@ -353,6 +420,19 @@ func (controller *TaskController) List(c *gin.Context) {
 }
 
 // UpdateStatus 更新任务状态
+// @Summary 更新任务执行状态
+// @Description 更新指定任务的执行状态
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Param status body object{status=string} true "任务状态" example({"status": "running"})
+// @Success 200 {object} core.Task "更新后的任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Router /task/{id}/update-status/ [put]
+// @Security BearerAuth
 func (controller *TaskController) UpdateStatus(c *gin.Context) {
 	// 1. 获取任务的id
 	id := c.Param("id")
@@ -380,6 +460,19 @@ func (controller *TaskController) UpdateStatus(c *gin.Context) {
 }
 
 // UpdateOutput 更新任务输出
+// @Summary 更新任务执行输出
+// @Description 更新指定任务的执行输出结果
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Param output body object{output=string} true "任务输出" example({"output": "执行成功"})
+// @Success 200 {object} core.Task "更新后的任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Router /task/{id}/update-output/ [put]
+// @Security BearerAuth
 func (controller *TaskController) UpdateOutput(c *gin.Context) {
 	// 1. 获取任务的id
 	id := c.Param("id")
@@ -410,7 +503,19 @@ func (controller *TaskController) UpdateOutput(c *gin.Context) {
 }
 
 // Patch 动态更新任务信息
-// 根据传递的字段动态更新任务，直接使用map[string]interface{}处理
+// @Summary 部分更新任务
+// @Description 根据传递的字段动态更新任务的部分信息
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Param updates body map[string]interface{} true "要更新的字段和值" example({"status": "completed", "output": "执行完成"})
+// @Success 200 {object} core.Task "更新后的任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Router /task/{id}/ [patch]
+// @Security BearerAuth
 func (controller *TaskController) Patch(c *gin.Context) {
 	// 1. 获取任务的id
 	id := c.Param("id")

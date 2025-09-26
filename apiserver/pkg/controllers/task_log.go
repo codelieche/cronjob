@@ -27,6 +27,18 @@ func NewTaskLogController(service core.TaskLogService) *TaskLogController {
 }
 
 // Create 创建任务日志
+// @Summary 创建任务日志
+// @Description 创建新的任务日志记录
+// @Tags task-logs
+// @Accept json
+// @Produce json
+// @Param task_log body forms.TaskLogCreateForm true "任务日志创建表单"
+// @Success 201 {object} core.TaskLog "创建成功的任务日志信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 409 {object} core.ErrorResponse "任务日志已存在"
+// @Router /task-log/ [post]
+// @Security BearerAuth
 func (controller *TaskLogController) Create(c *gin.Context) {
 	// 1. 处理表单
 	var form forms.TaskLogCreateForm
@@ -60,6 +72,18 @@ func (controller *TaskLogController) Create(c *gin.Context) {
 }
 
 // Find 根据任务ID获取任务日志信息
+// @Summary 根据任务ID获取任务日志
+// @Description 根据任务ID获取任务日志信息和内容
+// @Tags task-logs
+// @Accept json
+// @Produce json
+// @Param task_id path string true "任务ID"
+// @Success 200 {object} map[string]interface{} "任务日志信息和内容"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务日志不存在"
+// @Router /task-log/{task_id}/ [get]
+// @Security BearerAuth
 func (controller *TaskLogController) Find(c *gin.Context) {
 	// 1. 获取任务ID
 	taskID := c.Param("task_id")
@@ -101,6 +125,19 @@ func (controller *TaskLogController) Find(c *gin.Context) {
 }
 
 // Update 更新任务日志信息
+// @Summary 更新任务日志
+// @Description 根据任务ID更新任务日志信息
+// @Tags task-logs
+// @Accept json
+// @Produce json
+// @Param task_id path string true "任务ID"
+// @Param task_log body forms.TaskLogUpdateForm true "任务日志更新表单"
+// @Success 200 {object} core.TaskLog "更新后的任务日志信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务日志不存在"
+// @Router /task-log/{task_id}/ [put]
+// @Security BearerAuth
 func (controller *TaskLogController) Update(c *gin.Context) {
 	// 1. 获取任务ID
 	taskID := c.Param("task_id")
@@ -152,6 +189,18 @@ func (controller *TaskLogController) Update(c *gin.Context) {
 }
 
 // Delete 删除任务日志
+// @Summary 删除任务日志
+// @Description 根据任务ID删除任务日志
+// @Tags task-logs
+// @Accept json
+// @Produce json
+// @Param task_id path string true "任务ID"
+// @Success 200 {object} map[string]string "删除成功信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务日志不存在"
+// @Router /task-log/{task_id}/ [delete]
+// @Security BearerAuth
 func (controller *TaskLogController) Delete(c *gin.Context) {
 	// 1. 获取任务ID
 	taskID := c.Param("task_id")
@@ -176,6 +225,23 @@ func (controller *TaskLogController) Delete(c *gin.Context) {
 }
 
 // List 获取任务日志列表
+// @Summary 获取任务日志列表
+// @Description 获取任务日志列表，支持分页、搜索和过滤
+// @Tags task-logs
+// @Accept json
+// @Produce json
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Param search query string false "搜索关键词（在path中搜索）"
+// @Param task_id query string false "任务ID"
+// @Param storage query string false "存储类型"
+// @Param deleted query bool false "是否已删除"
+// @Param ordering query string false "排序字段" Enums(created_at, updated_at, size, -created_at, -updated_at, -size)
+// @Success 200 {object} types.ResponseList "任务日志列表和分页信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Router /task-log/ [get]
+// @Security BearerAuth
 func (controller *TaskLogController) List(c *gin.Context) {
 	// 1. 解析分页参数
 	pagination := controller.ParsePagination(c)
@@ -260,6 +326,18 @@ func (controller *TaskLogController) List(c *gin.Context) {
 }
 
 // GetContent 获取任务日志内容
+// @Summary 获取任务日志内容
+// @Description 根据任务ID获取任务日志的具体内容
+// @Tags task-logs
+// @Accept json
+// @Produce json
+// @Param task_id path string true "任务ID"
+// @Success 200 {object} map[string]interface{} "任务日志内容和相关信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务日志不存在"
+// @Router /task-log/{task_id}/content/ [get]
+// @Security BearerAuth
 func (controller *TaskLogController) GetContent(c *gin.Context) {
 	// 1. 获取任务ID
 	taskID := c.Param("task_id")
@@ -297,6 +375,19 @@ func (controller *TaskLogController) GetContent(c *gin.Context) {
 }
 
 // SaveContent 保存任务日志内容
+// @Summary 保存任务日志内容
+// @Description 保存或更新任务日志的内容
+// @Tags task-logs
+// @Accept json
+// @Produce json
+// @Param task_id path string true "任务ID"
+// @Param content body object{content=string} true "日志内容" example({"content": "任务执行日志内容"})
+// @Success 200 {object} map[string]string "保存成功信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务日志不存在"
+// @Router /task-log/{task_id}/content/ [put]
+// @Security BearerAuth
 func (controller *TaskLogController) SaveContent(c *gin.Context) {
 	// 1. 获取任务ID
 	taskID := c.Param("task_id")
@@ -337,6 +428,18 @@ func (controller *TaskLogController) SaveContent(c *gin.Context) {
 }
 
 // AppendContent 追加任务日志内容（智能创建+追加）
+// @Summary 追加任务日志内容
+// @Description 智能追加任务日志内容，如果日志不存在则创建，存在则追加
+// @Tags task-logs
+// @Accept json
+// @Produce json
+// @Param task_id path string true "任务ID"
+// @Param data body object{task_id=string,storage=string,content=string} true "追加日志数据" example({"task_id": "uuid", "storage": "file", "content": "追加的日志内容"})
+// @Success 200 {object} map[string]interface{} "追加成功的任务日志信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Router /task-log/{task_id}/append/ [post]
+// @Security BearerAuth
 func (controller *TaskLogController) AppendContent(c *gin.Context) {
 	// 1. 获取任务ID
 	taskID := c.Param("task_id")

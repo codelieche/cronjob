@@ -30,6 +30,14 @@ func NewHealthController(
 }
 
 // Health 健康检查接口
+// @Summary 系统健康检查
+// @Description 检查系统各个组件的健康状态，包括MySQL、Redis、WebSocket连接数和待处理任务数
+// @Tags system
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "系统健康状态信息"
+// @Failure 503 {object} map[string]interface{} "服务降级或不可用"
+// @Router /health/ [get]
 func (hc *HealthController) Health(c *gin.Context) {
 	// 创建上下文
 	ctx := c.Request.Context()

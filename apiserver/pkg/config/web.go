@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"strconv"
 )
 
@@ -24,8 +26,8 @@ var Web *web
 func parseWeb() {
 	host := GetDefaultEnv("WEB_HOST", "0.0.0.0")
 	portStr := GetDefaultEnv("WEB_PORT", "8000")
-	sessionSecretKey := GetDefaultEnv("SESSION_SECRET_KEY", "SessionIsSecret")
-	sessionIDName := GetDefaultEnv("SESSION_ID_NAME", "CronJob_sessionid")
+	sessionSecretKey := GetDefaultEnv("SESSION_SECRET_KEY", generateRandomSessionKey())
+	sessionIDName := GetDefaultEnv("SESSION_ID_NAME", "cronjob_sessionid")
 	logStorage := GetDefaultEnv("LOG_STORAGE", "file")
 	port, err := strconv.Atoi(portStr)
 
@@ -41,6 +43,17 @@ func parseWeb() {
 		sessionIDName,
 		logStorage,
 	}
+}
+
+// generateRandomSessionKey 生成随机的会话密钥
+// 如果环境变量未设置SESSION_SECRET_KEY，则生成一个32字节的随机密钥
+func generateRandomSessionKey() string {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		// 如果生成随机密钥失败，使用一个固定但复杂的默认密钥
+		return "CronJob-Default-Session-Secret-Key-2024-Please-Change-In-Production!"
+	}
+	return hex.EncodeToString(key)
 }
 
 // parseWeb 解析web配置

@@ -1,5 +1,5 @@
 // Package main 计划任务系统 API Server 主程序
-// 
+//
 // 这是一个分布式计划任务系统的API服务器，提供以下核心功能：
 // 1. 定时任务管理 (CronJob) - 支持cron表达式的时间调度
 // 2. 任务执行记录 (Task) - 记录每次任务执行的详细信息
@@ -13,6 +13,25 @@
 // - Worker: 负责具体任务的执行
 // - Redis: 提供分布式锁和缓存
 // - MySQL/PostgreSQL: 持久化存储任务和配置数据
+
+// @title           计划任务系统 API
+// @version         1.0.0
+// @description     分布式计划任务系统API服务器，提供定时任务管理、工作节点管理、任务调度等功能
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.example.com/support
+// @contact.email  support@example.com
+
+// @license.name  Apache 2.0
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @BasePath  /api/v1
+
+// @securityDefinitions.apikey  BearerAuth
+// @in                         header
+// @name                       Authorization
+// @description                JWT token, format: Bearer {token}
 package main
 
 import (

@@ -42,21 +42,21 @@ type CronJobMetadata struct {
 // 这是系统的核心实体，用于定义何时执行什么任务
 type CronJob struct {
 	types.BaseModel
-	ID           uuid.UUID       `gorm:"size:256;primaryKey" json:"id"`                 // 定时任务唯一标识
-	Project      string          `gorm:"size:128;index;default:default" json:"project"` // 所属项目，用于任务分组管理，默认为"default"
-	Category     string          `gorm:"size:128;index;not null" json:"category"`       // 任务分类编码，用于任务类型管理，不能为空
-	Name         string          `gorm:"size:128" json:"name"`                          // 任务名称，便于识别和管理
-	Time         string          `gorm:"size:100" json:"time"`                          // cron时间表达式，定义任务执行时间规则
-	Command      string          `gorm:"size:512" json:"command"`                       // 要执行的命令，支持系统命令和脚本
-	Args         string          `gorm:"size:512" json:"args"`                          // 命令参数，JSON格式存储
-	Description  string          `gorm:"size:512" json:"description"`                   // 任务描述，说明任务用途和注意事项
-	LastPlan     *time.Time      `gorm:"column:last_plan" json:"last_plan"`             // 上次计划执行时间，用于调度计算
-	LastDispatch *time.Time      `gorm:"column:last_dispatch" json:"last_dispatch"`     // 上次实际执行时间，用于监控和统计
-	LastStatus   string          `gorm:"size:128" json:"last_status"`                   // 上次执行状态，用于监控任务健康度
-	IsActive     *bool           `gorm:"type:boolean;default:false" json:"is_active"`   // 是否激活，只有激活的任务才会被调度执行
-	SaveLog      *bool           `gorm:"type:boolean;default:true" json:"save_log"`     // 是否保存执行日志，用于调试和审计
-	Timeout      int             `gorm:"type:int;default:0" json:"timeout"`             // 任务超时时间（秒），0表示不限制
-	Metadata     json.RawMessage `gorm:"type:json" json:"metadata"`                     // 任务元数据，存储执行环境、Worker配置等信息
+	ID           uuid.UUID       `gorm:"size:256;primaryKey" json:"id"`                  // 定时任务唯一标识
+	Project      string          `gorm:"size:128;index;default:default" json:"project"`  // 所属项目，用于任务分组管理，默认为"default"
+	Category     string          `gorm:"size:128;index;not null" json:"category"`        // 任务分类编码，用于任务类型管理，不能为空
+	Name         string          `gorm:"size:128" json:"name"`                           // 任务名称，便于识别和管理
+	Time         string          `gorm:"size:100" json:"time"`                           // cron时间表达式，定义任务执行时间规则
+	Command      string          `gorm:"size:512" json:"command"`                        // 要执行的命令，支持系统命令和脚本
+	Args         string          `gorm:"size:512" json:"args"`                           // 命令参数，JSON格式存储
+	Description  string          `gorm:"size:512" json:"description"`                    // 任务描述，说明任务用途和注意事项
+	LastPlan     *time.Time      `gorm:"column:last_plan" json:"last_plan"`              // 上次计划执行时间，用于调度计算
+	LastDispatch *time.Time      `gorm:"column:last_dispatch" json:"last_dispatch"`      // 上次实际执行时间，用于监控和统计
+	LastStatus   string          `gorm:"size:128" json:"last_status"`                    // 上次执行状态，用于监控任务健康度
+	IsActive     *bool           `gorm:"type:boolean;default:false" json:"is_active"`    // 是否激活，只有激活的任务才会被调度执行
+	SaveLog      *bool           `gorm:"type:boolean;default:true" json:"save_log"`      // 是否保存执行日志，用于调试和审计
+	Timeout      int             `gorm:"type:int;default:0" json:"timeout"`              // 任务超时时间（秒），0表示不限制
+	Metadata     json.RawMessage `gorm:"type:json" json:"metadata" swaggertype:"object"` // 任务元数据，存储执行环境、Worker配置等信息
 }
 
 // TableName 返回数据库表名

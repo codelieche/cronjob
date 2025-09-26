@@ -27,6 +27,18 @@ func NewCronJobController(service core.CronJobService) *CronJobController {
 }
 
 // Create 创建定时任务
+// @Summary 创建定时任务
+// @Description 创建新的定时任务，支持cron表达式调度
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param cronjob body forms.CronJobCreateForm true "定时任务创建表单"
+// @Success 201 {object} core.CronJob "创建成功的定时任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 409 {object} core.ErrorResponse "定时任务已存在"
+// @Router /cronjob/ [post]
+// @Security BearerAuth
 func (controller *CronJobController) Create(c *gin.Context) {
 	// 1. 处理表单
 	var form forms.CronJobCreateForm
@@ -60,6 +72,18 @@ func (controller *CronJobController) Create(c *gin.Context) {
 }
 
 // Find 获取定时任务信息
+// @Summary 根据ID获取定时任务
+// @Description 根据定时任务ID获取详细信息
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param id path string true "定时任务ID"
+// @Success 200 {object} core.CronJob "定时任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "定时任务不存在"
+// @Router /cronjob/{id}/ [get]
+// @Security BearerAuth
 func (controller *CronJobController) Find(c *gin.Context) {
 	// 1. 获取定时任务的id
 	id := c.Param("id")
@@ -80,6 +104,20 @@ func (controller *CronJobController) Find(c *gin.Context) {
 }
 
 // Update 更新定时任务信息
+// @Summary 更新定时任务
+// @Description 根据ID更新定时任务的完整信息
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param id path string true "定时任务ID"
+// @Param cronjob body forms.CronJobInfoForm true "定时任务更新表单"
+// @Success 200 {object} core.CronJob "更新后的定时任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "定时任务不存在"
+// @Failure 409 {object} core.ErrorResponse "定时任务名称冲突"
+// @Router /cronjob/{id}/ [put]
+// @Security BearerAuth
 func (controller *CronJobController) Update(c *gin.Context) {
 	// 1. 获取定时任务的id
 	id := c.Param("id")
@@ -127,6 +165,18 @@ func (controller *CronJobController) Update(c *gin.Context) {
 }
 
 // Delete 删除定时任务
+// @Summary 删除定时任务
+// @Description 根据ID删除指定的定时任务
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param id path string true "定时任务ID"
+// @Success 200 {object} map[string]string "删除成功信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "定时任务不存在"
+// @Router /cronjob/{id}/ [delete]
+// @Security BearerAuth
 func (controller *CronJobController) Delete(c *gin.Context) {
 	// 1. 获取定时任务的id
 	id := c.Param("id")
@@ -147,6 +197,23 @@ func (controller *CronJobController) Delete(c *gin.Context) {
 }
 
 // List 获取定时任务列表
+// @Summary 获取定时任务列表
+// @Description 获取定时任务列表，支持分页和过滤
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param page query int false "页码" default(1)
+// @Param size query int false "每页数量" default(10)
+// @Param project query string false "项目名称过滤"
+// @Param category query string false "分类过滤"
+// @Param name query string false "任务名称过滤"
+// @Param is_active query bool false "激活状态过滤"
+// @Param search query string false "搜索关键词"
+// @Success 200 {object} types.ResponseList "分页的定时任务列表"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Router /cronjob/ [get]
+// @Security BearerAuth
 func (controller *CronJobController) List(c *gin.Context) {
 	// 1. 解析分页参数
 	pagination := controller.ParsePagination(c)
@@ -235,6 +302,18 @@ func (controller *CronJobController) List(c *gin.Context) {
 }
 
 // ToggleActive 切换定时任务的激活状态
+// @Summary 切换定时任务激活状态
+// @Description 切换指定定时任务的激活/停用状态
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param id path string true "定时任务ID"
+// @Success 200 {object} core.CronJob "更新后的定时任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "定时任务不存在"
+// @Router /cronjob/{id}/toggle-active/ [put]
+// @Security BearerAuth
 func (controller *CronJobController) ToggleActive(c *gin.Context) {
 	// 1. 获取定时任务的id
 	id := c.Param("id")
@@ -266,6 +345,19 @@ func (controller *CronJobController) ToggleActive(c *gin.Context) {
 }
 
 // FindByProjectAndName 根据项目和名称获取定时任务
+// @Summary 根据项目和名称获取定时任务
+// @Description 根据项目名称和任务名称获取定时任务信息
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param project path string true "项目名称"
+// @Param name path string true "任务名称"
+// @Success 200 {object} core.CronJob "定时任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "定时任务不存在"
+// @Router /cronjob/project/{project}/name/{name}/ [get]
+// @Security BearerAuth
 func (controller *CronJobController) FindByProjectAndName(c *gin.Context) {
 	// 1. 获取项目名和任务名
 	project := c.Param("project")
@@ -287,7 +379,17 @@ func (controller *CronJobController) FindByProjectAndName(c *gin.Context) {
 }
 
 // ValidateExpression 验证cron表达式并返回下次执行时间
-// 通过POST请求，接收expr字段来校验表达式是否有效，并计算下次执行时间
+// @Summary 验证cron表达式
+// @Description 验证cron表达式的有效性并计算下次执行时间
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param expression body object{expr=string} true "cron表达式" example({"expr": "0 0 12 * * ?"})
+// @Success 200 {object} map[string]interface{} "验证结果和下次执行时间"
+// @Failure 400 {object} core.ErrorResponse "表达式无效或请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Router /cronjob/validate-expression/ [post]
+// @Security BearerAuth
 func (controller *CronJobController) ValidateExpression(c *gin.Context) {
 	// 1. 定义请求参数结构
 	req := struct {
@@ -330,7 +432,19 @@ func (controller *CronJobController) ValidateExpression(c *gin.Context) {
 }
 
 // Patch 动态更新定时任务信息
-// 根据传递的字段动态更新定时任务，直接使用map[string]interface{}处理
+// @Summary 部分更新定时任务
+// @Description 根据传递的字段动态更新定时任务的部分信息
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param id path string true "定时任务ID"
+// @Param updates body map[string]interface{} true "要更新的字段和值" example({"is_active": true, "description": "更新描述"})
+// @Success 200 {object} core.CronJob "更新后的定时任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "定时任务不存在"
+// @Router /cronjob/{id}/ [patch]
+// @Security BearerAuth
 func (controller *CronJobController) Patch(c *gin.Context) {
 	// 1. 获取定时任务的id
 	id := c.Param("id")

@@ -14,7 +14,7 @@ const OrderingParam string = "ordering"
 
 // orderingRegMatch 排序字段的正则表达式
 // 匹配格式：可选的"-"前缀 + 字段名（字母开头，可包含字母、数字、下划线、连字符）
-var orderingRegMatch = regexp.MustCompile("^([\\-])?([\\w][\\w\\d\\-\\_]*)$")
+var orderingRegMatch = regexp.MustCompile(`^([\-])?([\w][\w\d\-\_]*)$`)
 
 // Ordering 排序结构体
 // 实现多字段排序功能，支持升序和降序

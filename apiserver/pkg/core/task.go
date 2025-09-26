@@ -80,7 +80,7 @@ type Task struct {
 	WorkerName   string          `gorm:"size:256;" json:"worker_name,omitempty"`                      // 执行此任务的Worker节点名称
 	IsStandalone *bool           `gorm:"type:boolean;default:false" json:"is_standalone"`             // 是否为独立任务（非CronJob产生）
 	Timeout      int             `gorm:"type:int;default:0" json:"timeout"`                           // 超时时间（秒），0表示不限制
-	Metadata     json.RawMessage `gorm:"type:json" json:"metadata"`                                   // 任务元数据，存储执行环境、Worker配置等信息
+	Metadata     json.RawMessage `gorm:"type:json" json:"metadata" swaggertype:"object"`              // 任务元数据，存储执行环境、Worker配置等信息
 	CreatedAt    time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`          // 任务创建时间
 	UpdatedAt    time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`          // 任务最后更新时间
 	DeletedAt    gorm.DeletedAt  `gorm:"index" json:"-"`                                              // 软删除时间

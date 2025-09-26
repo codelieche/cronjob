@@ -7,6 +7,7 @@ package app
 import (
 	"net/http"
 
+	_ "github.com/codelieche/cronjob/apiserver/docs" // 导入生成的 Swagger 文档
 	"github.com/codelieche/cronjob/apiserver/pkg/config"
 	"github.com/codelieche/cronjob/apiserver/pkg/controllers"
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
@@ -17,6 +18,8 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 )
 
@@ -49,6 +52,9 @@ func initRouter(app *gin.Engine) {
 		})
 	})
 
+	// Swagger 文档路由
+	app.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	// 创建API v1路由组
 	// 所有业务接口都挂载在 /api/v1 路径下
 	apis := app.Group("/api/v1")
@@ -76,8 +82,9 @@ func initRouter(app *gin.Engine) {
 
 	// 配置Session选项
 	sstore.Options(sessions.Options{
-		Secure:   true,          // 仅HTTPS传输
-		SameSite: 5,             // SameSite=Lax，防止CSRF攻击
+		Secure:   false,         // 开发环境可以设为false，生产环境应设为true
+		HttpOnly: true,          // 防止XSS攻击
+		SameSite: 3,             // SameSite=Lax，防止CSRF攻击 (http.SameSiteLaxMode = 3)
 		Path:     "/",           // 所有路径都可用
 		MaxAge:   3600 * 24 * 7, // 7天过期
 	})
@@ -90,125 +97,184 @@ func initRouter(app *gin.Engine) {
 	apis.Use(middleware.MetricsCollectionMiddleware()) // 业务指标收集
 	apis.Use(middleware.DatabaseMetricsMiddleware())   // 数据库操作监控
 
-	// ========== 用户管理模块 ==========
-	// 提供用户账户的CRUD操作
-	// 注意：根据要求，用户模块暂时不处理
-	s := store.NewUserStore(db)
-	userService := services.NewUserService(s)
-	userControler := controllers.NewUserController(userService)
-	apis.POST("/user/", userControler.Create)       // 创建用户
-	apis.GET("/user/", userControler.List)          // 获取用户列表
-	apis.GET("/user/:id/", userControler.Find)      // 根据ID获取用户
-	apis.PUT("/user/:id/", userControler.Update)    // 更新用户信息
-	apis.DELETE("/user/:id/", userControler.Delete) // 删除用户
+	// ========== 创建认证中间件组合 ==========
+	// 使用新的模块化认证中间件设计
+	authGroup := middleware.NewAuthMiddlewareGroup()
 
 	// ========== 工作节点管理模块 ==========
 	// 管理工作节点（Worker）的注册、状态监控等
-	// Worker是执行具体任务的节点，通过心跳保持连接状态
+	// Worker节点可能有自己的认证机制，暂时不使用HTTP认证中间件
+	// 后续可以根据需要添加专门的Worker认证中间件
 	workerStore := store.NewWorkerStore(db)
 	workerService := services.NewWorkerService(workerStore)
 	workerController := controllers.NewWorkerController(workerService)
-	apis.POST("/worker/", workerController.Create)       // 注册新的工作节点
-	apis.GET("/worker/", workerController.List)          // 获取工作节点列表
-	apis.GET("/worker/:id/", workerController.Find)      // 根据ID获取工作节点信息
-	apis.PUT("/worker/:id/", workerController.Update)    // 更新工作节点信息
-	apis.DELETE("/worker/:id/", workerController.Delete) // 注销工作节点
-	apis.GET("/worker/:id/ping/", workerController.Ping) // 工作节点心跳接口，用于保持连接状态
+
+	// Worker接口暂时不使用认证中间件（根据业务需求可调整）
+	workerRoutes := apis.Group("/worker")
+	// 如果需要为Worker添加认证，可以使用：
+	workerRoutes.Use(authGroup.Standard)
+	{
+		workerRoutes.POST("/", workerController.Create)       // 注册新的工作节点
+		workerRoutes.GET("/", workerController.List)          // 获取工作节点列表
+		workerRoutes.GET("/:id/", workerController.Find)      // 根据ID获取工作节点信息
+		workerRoutes.PUT("/:id/", workerController.Update)    // 更新工作节点信息
+		workerRoutes.DELETE("/:id/", workerController.Delete) // 注销工作节点
+		workerRoutes.GET("/:id/ping/", workerController.Ping) // 工作节点心跳接口
+	}
 
 	// ========== 分类管理模块 ==========
-	// 管理任务分类，用于对定时任务进行分类管理
-	// 分类可以帮助组织和管理不同类型的任务
+	// 管理任务分类，需要用户认证
 	categoryStore := store.NewCategoryStore(db)
 	categoryService := services.NewCategoryService(categoryStore)
 	categoryController := controllers.NewCategoryController(categoryService)
-	apis.POST("/category/", categoryController.Create)       // 创建分类
-	apis.GET("/category/", categoryController.List)          // 获取分类列表
-	apis.GET("/category/:id/", categoryController.Find)      // 根据ID获取分类
-	apis.PUT("/category/:id/", categoryController.Update)    // 更新分类信息
-	apis.DELETE("/category/:id/", categoryController.Delete) // 删除分类
+
+	// 分类管理接口需要用户认证
+	categoryRoutes := apis.Group("/category")
+	categoryRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		categoryRoutes.POST("/", categoryController.Create)       // 创建分类
+		categoryRoutes.GET("/", categoryController.List)          // 获取分类列表
+		categoryRoutes.GET("/:id/", categoryController.Find)      // 根据ID获取分类
+		categoryRoutes.PUT("/:id/", categoryController.Update)    // 更新分类信息
+		categoryRoutes.DELETE("/:id/", categoryController.Delete) // 删除分类
+	}
 
 	// ========== 定时任务管理模块 ==========
-	// 核心模块：管理定时任务的定义、调度和执行
-	// 支持cron表达式，可以创建复杂的定时调度规则
+	// 核心模块：管理定时任务的定义、调度和执行，需要用户认证
 	cronjobStore := store.NewCronJobStore(db)
 	cronjobService := services.NewCronJobService(cronjobStore)
 	cronjobController := controllers.NewCronJobController(cronjobService)
-	apis.POST("/cronjob/", cronjobController.Create)                                          // 创建定时任务
-	apis.GET("/cronjob/", cronjobController.List)                                             // 获取定时任务列表
-	apis.GET("/cronjob/:id/", cronjobController.Find)                                         // 根据ID获取定时任务
-	apis.PUT("/cronjob/:id/", cronjobController.Update)                                       // 更新定时任务信息
-	apis.DELETE("/cronjob/:id/", cronjobController.Delete)                                    // 删除定时任务
-	apis.PUT("/cronjob/:id/toggle-active/", cronjobController.ToggleActive)                   // 切换任务激活状态（启用/禁用）
-	apis.POST("/cronjob/validate-expression/", cronjobController.ValidateExpression)          // 验证cron表达式是否有效
-	apis.GET("/cronjob/project/:project/name/:name/", cronjobController.FindByProjectAndName) // 根据项目和名称获取定时任务
-	apis.PATCH("/cronjob/:id/", cronjobController.Patch)                                      // 动态更新定时任务的部分字段
+
+	// 定时任务管理接口需要用户认证
+	cronjobRoutes := apis.Group("/cronjob")
+	cronjobRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		cronjobRoutes.POST("/", cronjobController.Create)                                          // 创建定时任务
+		cronjobRoutes.GET("/", cronjobController.List)                                             // 获取定时任务列表
+		cronjobRoutes.GET("/:id/", cronjobController.Find)                                         // 根据ID获取定时任务
+		cronjobRoutes.PUT("/:id/", cronjobController.Update)                                       // 更新定时任务信息
+		cronjobRoutes.DELETE("/:id/", cronjobController.Delete)                                    // 删除定时任务
+		cronjobRoutes.PUT("/:id/toggle-active/", cronjobController.ToggleActive)                   // 切换任务激活状态
+		cronjobRoutes.POST("/validate-expression/", cronjobController.ValidateExpression)          // 验证cron表达式
+		cronjobRoutes.GET("/project/:project/name/:name/", cronjobController.FindByProjectAndName) // 根据项目和名称获取任务
+		cronjobRoutes.PATCH("/:id/", cronjobController.Patch)                                      // 动态更新部分字段
+	}
 
 	// ========== 分布式锁管理模块 ==========
-	// 基于Redis的分布式锁，确保任务不重复执行
-	// 在分布式环境下，防止多个节点同时执行同一个任务
+	// 基于Redis的分布式锁，主要供Worker节点使用，暂时不使用认证中间件
+	// 如果需要保护这些接口，可以添加专门的Worker认证机制
 	lockerService, err := services.NewRedisLocker()
 	if err != nil {
 		logger.Panic("创建Redis分布式锁服务失败", zap.Error(err))
 	}
 	lockController := controllers.NewLockController(lockerService)
-	apis.GET("/lock/acquire", lockController.Acquire) // 获取分布式锁
-	apis.GET("/lock/release", lockController.Release) // 释放分布式锁
-	apis.GET("/lock/check", lockController.Check)     // 检查锁状态
-	apis.GET("/lock/refresh", lockController.Refresh) // 刷新锁的过期时间
+
+	// 分布式锁接口暂时不使用认证中间件（主要供Worker使用）
+	lockRoutes := apis.Group("/lock")
+	// 如果需要为分布式锁添加认证，可以使用：
+	lockRoutes.Use(authGroup.Standard)
+	{
+		lockRoutes.GET("/acquire", lockController.Acquire) // 获取分布式锁
+		lockRoutes.GET("/release", lockController.Release) // 释放分布式锁
+		lockRoutes.GET("/check", lockController.Check)     // 检查锁状态
+		lockRoutes.GET("/refresh", lockController.Refresh) // 刷新锁的过期时间
+	}
 
 	// ========== 任务执行记录模块 ==========
-	// 记录每次任务执行的详细信息，包括状态、输出、时间等
-	// 这是定时任务执行后产生的具体任务实例
+	// 记录每次任务执行的详细信息，需要用户认证
 	taskStore := store.NewTaskStore(db)
 	taskService := services.NewTaskService(taskStore)
 	taskController := controllers.NewTaskController(taskService)
-	apis.POST("/task/", taskController.Create)                        // 创建任务记录
-	apis.GET("/task/", taskController.List)                           // 获取任务记录列表
-	apis.GET("/task/:id/", taskController.Find)                       // 根据ID获取任务记录
-	apis.PUT("/task/:id/", taskController.Update)                     // 更新任务记录
-	apis.DELETE("/task/:id/", taskController.Delete)                  // 删除任务记录
-	apis.PUT("/task/:id/update-status/", taskController.UpdateStatus) // 更新任务执行状态
-	apis.PUT("/task/:id/update-output/", taskController.UpdateOutput) // 更新任务执行输出
-	apis.PATCH("/task/:id/", taskController.Patch)                    // 动态更新任务记录的部分字段
+
+	// 任务记录管理接口需要用户认证
+	taskRoutes := apis.Group("/task")
+	taskRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		taskRoutes.POST("/", taskController.Create)                        // 创建任务记录
+		taskRoutes.GET("/", taskController.List)                           // 获取任务记录列表
+		taskRoutes.GET("/:id/", taskController.Find)                       // 根据ID获取任务记录
+		taskRoutes.PUT("/:id/", taskController.Update)                     // 更新任务记录
+		taskRoutes.DELETE("/:id/", taskController.Delete)                  // 删除任务记录
+		taskRoutes.PUT("/:id/update-status/", taskController.UpdateStatus) // 更新任务执行状态
+		taskRoutes.PUT("/:id/update-output/", taskController.UpdateOutput) // 更新任务执行输出
+		taskRoutes.PATCH("/:id/", taskController.Patch)                    // 动态更新任务记录的部分字段
+	}
 
 	// ========== 任务日志管理模块 ==========
-	// 管理任务执行的详细日志，支持多种存储方式（数据库、文件、S3）
-	// 提供日志的增删改查、内容读写等功能
+	// 管理任务执行的详细日志，需要用户认证
 	taskLogStore := store.NewTaskLogStore(db)
 	taskLogService := services.NewTaskLogService(taskLogStore)
 	taskLogController := controllers.NewTaskLogController(taskLogService)
-	apis.POST("/tasklog/", taskLogController.Create)                        // 创建任务日志
-	apis.GET("/tasklog/", taskLogController.List)                           // 获取任务日志列表
-	apis.GET("/tasklog/:task_id/", taskLogController.Find)                  // 根据任务ID获取任务日志
-	apis.PUT("/tasklog/:task_id/", taskLogController.Update)                // 更新任务日志
-	apis.DELETE("/tasklog/:task_id/", taskLogController.Delete)             // 删除任务日志
-	apis.GET("/tasklog/:task_id/content/", taskLogController.GetContent)    // 获取任务日志内容
-	apis.PUT("/tasklog/:task_id/content/", taskLogController.SaveContent)   // 保存任务日志内容
-	apis.POST("/tasklog/:task_id/append/", taskLogController.AppendContent) // 追加任务日志内容
+
+	// 任务日志管理接口需要用户认证
+	taskLogRoutes := apis.Group("/tasklog")
+	taskLogRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		taskLogRoutes.POST("/", taskLogController.Create)                        // 创建任务日志
+		taskLogRoutes.GET("/", taskLogController.List)                           // 获取任务日志列表
+		taskLogRoutes.GET("/:task_id/", taskLogController.Find)                  // 根据任务ID获取任务日志
+		taskLogRoutes.PUT("/:task_id/", taskLogController.Update)                // 更新任务日志
+		taskLogRoutes.DELETE("/:task_id/", taskLogController.Delete)             // 删除任务日志
+		taskLogRoutes.GET("/:task_id/content/", taskLogController.GetContent)    // 获取任务日志内容
+		taskLogRoutes.PUT("/:task_id/content/", taskLogController.SaveContent)   // 保存任务日志内容
+		taskLogRoutes.POST("/:task_id/append/", taskLogController.AppendContent) // 追加任务日志内容
+	}
 
 	// ========== WebSocket实时通信模块 ==========
-	// 提供与Worker节点的实时通信能力
-	// 用于任务分发、状态同步、实时监控等
+	// 提供与Worker节点的实时通信能力，不使用HTTP认证中间件
+	// WebSocket有自己的认证机制
 	websocketService := services.NewWebsocketService(taskStore, workerStore)
 	websocketController := controllers.NewWebsocketController(websocketService)
-	// WebSocket连接接口，不使用中间件（特别是认证中间件）
-	// 因为Worker节点需要通过WebSocket进行实时通信
-	apis.GET("/ws/task/", websocketController.HandleConnect)
+
+	// WebSocket连接接口，不使用认证中间件（有自己的认证机制）
+	wsRoutes := apis.Group("/ws")
+	{
+		wsRoutes.GET("/task/", websocketController.HandleConnect) // WebSocket连接
+	}
 
 	// ========== 系统健康检查模块 ==========
-	// 提供系统状态监控和健康检查功能
-	// 用于监控系统各组件的工作状态
+	// 系统健康检查，不需要认证（公共接口）
 	healthController := controllers.NewHealthController(websocketService, taskService)
-	apis.GET("/health/", healthController.Health)
+
+	// 健康检查接口不需要认证
+	healthRoutes := apis.Group("/health")
+	{
+		healthRoutes.GET("/", healthController.Health) // 系统健康检查
+	}
 
 	// ========== 监控指标模块 ==========
-	// 提供Prometheus监控指标端点
-	// 用于监控系统性能和业务指标
+	// Prometheus监控指标端点，不需要认证（但可以考虑在生产环境中保护）
 	metricsController := controllers.NewMetricsController()
-	app.GET("/metrics", metricsController.Metrics) // 注意：直接注册到app，不经过apis路由组
 
-	// 为了安全考虑，也可以将metrics端点放在单独的端口
-	// 或者添加认证中间件保护
+	// 监控指标直接注册到app根路由，不经过apis路由组，避免中间件影响
+	app.GET("/metrics", metricsController.Metrics)
 
-	logger.Info("所有API路由初始化完成")
+	// ========== 认证缓存管理接口 ==========
+	// 提供认证缓存管理功能，需要管理员权限
+	cacheRoutes := apis.Group("/auth-cache")
+	cacheRoutes.Use(authGroup.Admin) // 需要管理员权限
+	{
+		// 清空认证缓存
+		cacheRoutes.DELETE("/", func(c *gin.Context) {
+			middleware.ClearAuthCache()
+			c.JSON(200, gin.H{
+				"code":    0,
+				"message": "认证缓存已清空",
+			})
+		})
+
+		// 获取认证缓存统计
+		cacheRoutes.GET("/stats/", func(c *gin.Context) {
+			stats := middleware.GetAuthCacheStats()
+			c.JSON(200, gin.H{
+				"code": 0,
+				"data": stats,
+			})
+		})
+	}
+
+	logger.Info("所有API路由初始化完成",
+		zap.String("认证服务地址", config.Auth.ApiUrl),
+		zap.Bool("认证缓存启用", config.Auth.EnableCache),
+		zap.Duration("认证超时", config.Auth.Timeout))
 }

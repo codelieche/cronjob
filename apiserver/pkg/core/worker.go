@@ -36,7 +36,7 @@ type Worker struct {
 	Description string          `gorm:"text" json:"description"`                                      // Worker节点描述信息
 	IsActive    *bool           `gorm:"type:boolean;default:false" json:"is_active" form:"is_active"` // 是否活跃，只有活跃的节点才会接收任务
 	LastActive  *time.Time      `gorm:"column:last_active" json:"last_active"`                        // 最后活跃时间，用于健康检查
-	Metadata    json.RawMessage `gorm:"type:json" json:"metadata"`                                    // 元数据，存储节点能力、配置等信息
+	Metadata    json.RawMessage `gorm:"type:json" json:"metadata" swaggertype:"object"`               // 元数据，存储节点能力、配置等信息
 	CreatedAt   time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`           // 节点注册时间
 	UpdatedAt   time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`           // 节点最后更新时间
 	DeletedAt   gorm.DeletedAt  `gorm:"index" json:"-"`                                               // 软删除时间
