@@ -16,7 +16,7 @@ import (
 //   - core.TaskService: 任务服务实例
 func CreateServices() (core.WebsocketService, core.TaskService) {
 	// 创建API服务器通信服务
-	apiserver := NewApiserverService(config.Server.ApiUrl, config.Server.AuthToken)
+	apiserver := NewApiserverService(config.Server.ApiUrl, config.Server.ApiKey)
 
 	// 创建WebSocket服务实现（不依赖TaskService）
 	wsService := &WebsocketServiceImpl{

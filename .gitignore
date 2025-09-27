@@ -4,6 +4,8 @@
 .vscode
 .DS_Store
 tmp/
+temp/
 /pkg
 sqlite3.db
 /deploy
+/usercenter

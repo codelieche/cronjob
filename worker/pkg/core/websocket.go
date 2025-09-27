@@ -39,6 +39,7 @@ type ClientEvent struct {
 	WorkerID string          `json:"worker_id"` // 工作节点ID
 	TaskID   string          `json:"task_id"`   // 任务ID
 	Data     json.RawMessage `json:"data"`      // 附加数据
+	ApiKey   string          `json:"api_key"`   // API Key
 }
 
 // ========== WebSocket服务接口定义 ==========

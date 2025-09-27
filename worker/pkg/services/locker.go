@@ -84,8 +84,8 @@ func (hl *httpLocker) TryAcquire(ctx context.Context, key string, expire time.Du
 	}
 
 	// 添加认证头（如果有）
-	if config.Server.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+config.Server.AuthToken)
+	if config.Server.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.Server.ApiKey)
 	}
 
 	// 发送请求
@@ -165,8 +165,8 @@ func (hl *httpLocker) ReleaseByKeyAndValue(ctx context.Context, key, value strin
 	}
 
 	// 添加认证头（如果有）
-	if config.Server.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+config.Server.AuthToken)
+	if config.Server.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.Server.ApiKey)
 	}
 
 	// 发送请求
@@ -231,8 +231,8 @@ func (hl *httpLocker) CheckLock(ctx context.Context, key string, value string) (
 	}
 
 	// 添加认证头（如果有）
-	if config.Server.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+config.Server.AuthToken)
+	if config.Server.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.Server.ApiKey)
 	}
 
 	// 发送请求
@@ -304,8 +304,8 @@ func (hl *httpLocker) RefreshLock(ctx context.Context, key string, value string,
 	}
 
 	// 添加认证头（如果有）
-	if config.Server.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+config.Server.AuthToken)
+	if config.Server.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.Server.ApiKey)
 	}
 
 	// 发送请求
@@ -383,8 +383,8 @@ func (l *lockImpl) Release(ctx context.Context) error {
 	}
 
 	// 添加认证头（如果有）
-	if config.Server.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+config.Server.AuthToken)
+	if config.Server.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.Server.ApiKey)
 	}
 
 	// 发送请求
@@ -456,8 +456,8 @@ func (l *lockImpl) Refresh(ctx context.Context, expire time.Duration) error {
 	}
 
 	// 添加认证头（如果有）
-	if config.Server.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+config.Server.AuthToken)
+	if config.Server.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.Server.ApiKey)
 	}
 
 	// 发送请求
@@ -564,8 +564,8 @@ func (l *lockImpl) IsLocked(ctx context.Context) (bool, error) {
 	}
 
 	// 添加认证头（如果有）
-	if config.Server.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+config.Server.AuthToken)
+	if config.Server.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.Server.ApiKey)
 	}
 
 	// 发送请求

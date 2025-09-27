@@ -47,7 +47,7 @@ func NewWebsocketService(taskService core.TaskEventHandler) core.WebsocketServic
 	wsConfig.PingInterval = time.Duration(config.WebsocketPingInterval) * time.Second
 	wsConfig.MessageSeparator = config.WebsocketMessageSeparator
 
-	apiserver := NewApiserverService(config.Server.ApiUrl, config.Server.AuthToken)
+	apiserver := NewApiserverService(config.Server.ApiUrl, config.Server.ApiKey)
 
 	ws := &WebsocketServiceImpl{
 		config:       wsConfig,
@@ -122,6 +122,7 @@ func (ws *WebsocketServiceImpl) registerWorker() error {
 		Action:   core.ClientEventActionRegistWorker,
 		WorkerID: config.WorkerInstance.ID.String(),
 		Data:     workerData,
+		ApiKey:   config.Server.ApiKey,
 	}
 
 	// 序列化事件
@@ -365,6 +366,7 @@ func (ws *WebsocketServiceImpl) SendTaskUpdate(taskID string, data map[string]in
 		WorkerID: config.WorkerInstance.ID.String(),
 		TaskID:   taskID,
 		Data:     eventData,
+		ApiKey:   config.Server.ApiKey,
 	}
 
 	// 序列化ClientEvent

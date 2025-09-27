@@ -27,3 +27,4 @@ type TaskEventHandler interface {
 	//   - event: 任务事件对象，包含事件类型和任务列表
 	HandleTaskEvent(event *TaskEvent)
 }
+

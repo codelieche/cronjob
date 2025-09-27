@@ -26,23 +26,23 @@ import (
 // - 发送心跳
 // - 其他API调用
 type apiserverService struct {
-	ApiUrl    string       // API Server的URL地址
-	AuthToken string       // 认证令牌
-	client    *http.Client // HTTP客户端
+	ApiUrl string       // API Server的URL地址
+	ApiKey string       // 认证令牌
+	client *http.Client // HTTP客户端
 }
 
 // NewApiserverService 创建API Server通信服务实例
 //
 // 参数:
 //   - apiUrl: API Server的URL地址
-//   - authToken: 认证令牌
+//   - apiKey: 认证令牌
 //
 // 返回值:
 //   - core.Apiserver: API Server通信服务接口
-func NewApiserverService(apiUrl string, authToken string) core.Apiserver {
+func NewApiserverService(apiUrl string, apiKey string) core.Apiserver {
 	return &apiserverService{
-		ApiUrl:    apiUrl,
-		AuthToken: authToken,
+		ApiUrl: apiUrl,
+		ApiKey: apiKey,
 		client: &http.Client{
 			Timeout: 30 * time.Second, // 设置30秒超时
 		},
@@ -69,8 +69,8 @@ func (s *apiserverService) GetCategory(categoryCode string) (*core.Category, err
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
-	if s.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.AuthToken)
+	if s.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.ApiKey)
 	}
 
 	// 发送请求
@@ -136,8 +136,8 @@ func (s *apiserverService) GetTask(taskID string) (*core.Task, error) {
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
-	if s.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.AuthToken)
+	if s.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.ApiKey)
 	}
 
 	// 发送请求
@@ -215,8 +215,8 @@ func (s *apiserverService) AppendTaskLog(taskID string, content string) error {
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
-	if s.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.AuthToken)
+	if s.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.ApiKey)
 	}
 
 	// 发送请求
