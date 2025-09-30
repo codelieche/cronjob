@@ -1,11 +1,14 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/codelieche/cronjob/apiserver/pkg/controllers/forms"
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
+	"github.com/codelieche/cronjob/apiserver/pkg/store"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/controllers"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/filters"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/types"
@@ -78,6 +81,9 @@ func (controller *TaskLogController) Create(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param task_id path string true "任务ID"
+// @Param created_at query string false "精确创建时间 (YYYY-MM-DD HH:MM:SS)，用于精确分片定位（性能最优）" example("2025-09-30 12:00:00")
+// @Param start_time query string false "开始时间范围 (YYYY-MM-DD)，用于分片查询优化" example("2025-09-01")
+// @Param end_time query string false "结束时间范围 (YYYY-MM-DD)，用于分片查询优化" example("2025-09-30")
 // @Success 200 {object} map[string]interface{} "任务日志信息和内容"
 // @Failure 400 {object} core.ErrorResponse "请求参数错误"
 // @Failure 401 {object} core.ErrorResponse "未认证"
@@ -92,13 +98,28 @@ func (controller *TaskLogController) Find(c *gin.Context) {
 		return
 	}
 
-	// 2. 调用服务获取任务日志
-	taskLog, err := controller.service.FindByTaskID(c.Request.Context(), taskID)
+	// 2. 🔥🔥 优雅的优化方式：通过Context传递优化信息
+	ctx := controller.parseOptimizationContext(c)
+
+	// 3. 🔥🔥 直接使用FindByTaskID，内部已经自动智能优化
+	taskLog, err := controller.service.FindByTaskID(ctx, taskID)
+
 	if err != nil {
 		if err == core.ErrNotFound {
 			controller.Handle404(c, err)
 		} else {
 			controller.HandleError(c, err, http.StatusBadRequest)
+		}
+		return
+	}
+
+	// 🔥 3. 权限控制：验证用户是否有权限访问该TaskLog
+	// 需要通过Task表获取team_id来验证权限
+	if err := controller.validateTaskLogAccess(c, taskLog.TaskID.String()); err != nil {
+		if err == core.ErrNotFound {
+			controller.Handle404(c, err)
+		} else {
+			controller.HandleError(c, err, http.StatusForbidden)
 		}
 		return
 	}
@@ -226,7 +247,7 @@ func (controller *TaskLogController) Delete(c *gin.Context) {
 
 // List 获取任务日志列表
 // @Summary 获取任务日志列表
-// @Description 获取任务日志列表，支持分页、搜索和过滤
+// @Description 获取任务日志列表，支持分页、搜索和过滤。通过view_all_teams参数可以查看跨团队数据：管理员查看所有团队，普通用户查看自己所属的所有团队。支持时间范围过滤以优化分片查询性能。
 // @Tags task-logs
 // @Accept json
 // @Produce json
@@ -236,7 +257,10 @@ func (controller *TaskLogController) Delete(c *gin.Context) {
 // @Param task_id query string false "任务ID"
 // @Param storage query string false "存储类型"
 // @Param deleted query bool false "是否已删除"
+// @Param start_time query string false "开始时间 (YYYY-MM-DD)" example("2025-09-01")
+// @Param end_time query string false "结束时间 (YYYY-MM-DD)" example("2025-09-30")
 // @Param ordering query string false "排序字段" Enums(created_at, updated_at, size, -created_at, -updated_at, -size)
+// @Param view_all_teams query boolean false "查看跨团队数据（管理员：所有团队，普通用户：自己所属团队）" example(true)
 // @Success 200 {object} types.ResponseList "任务日志列表和分页信息"
 // @Failure 400 {object} core.ErrorResponse "请求参数错误"
 // @Failure 401 {object} core.ErrorResponse "未认证"
@@ -246,7 +270,7 @@ func (controller *TaskLogController) List(c *gin.Context) {
 	// 1. 解析分页参数
 	pagination := controller.ParsePagination(c)
 
-	// 2. 定义过滤选项
+	// 2. 定义过滤选项（🔥 新增时间范围过滤器用于分片优化）
 	filterOptions := []*filters.FilterOption{
 		&filters.FilterOption{
 			QueryKey: "task_id",
@@ -263,6 +287,17 @@ func (controller *TaskLogController) List(c *gin.Context) {
 			Column:   "deleted",
 			Op:       filters.FILTER_EQ,
 		},
+		// 🔥 新增时间范围过滤器，用于分片查询优化
+		&filters.FilterOption{
+			QueryKey: "start_time",
+			Column:   "created_at",
+			Op:       filters.FILTER_GTE,
+		},
+		&filters.FilterOption{
+			QueryKey: "end_time",
+			Column:   "created_at",
+			Op:       filters.FILTER_LTE,
+		},
 	}
 
 	// 3. 定义搜索字段
@@ -275,24 +310,93 @@ func (controller *TaskLogController) List(c *gin.Context) {
 	// 5. 获取过滤动作
 	filterActions := controller.FilterAction(c, filterOptions, searchFields, orderingFields, defaultOrdering)
 
-	// 6. 计算偏移量
+	// 6. 🔥 权限控制：根据view_all_teams参数和用户权限决定查询范围
+	viewAllTeams := c.Query("view_all_teams") == "true"
+
+	// 计算偏移量
 	offset := (pagination.Page - 1) * pagination.PageSize
 
-	// 7. 获取任务日志列表
-	taskLogs, err := controller.service.List(c.Request.Context(), offset, pagination.PageSize, filterActions...)
+	var taskLogs []*core.TaskLog
+	var total int64
+	var err error
+
+	if viewAllTeams {
+		// 🔥 查看所有团队数据的权限控制
+		if controller.IsAdmin(c) {
+			// 管理员：查看所有数据
+			taskLogs, err = controller.service.List(c.Request.Context(), offset, pagination.PageSize, filterActions...)
+			if err == nil {
+				total, err = controller.service.Count(c.Request.Context(), filterActions...)
+			}
+		} else {
+			// 普通用户：查看自己所属的所有团队数据
+			userTeamIDs, exists := controller.GetUserTeamIDs(c)
+			if !exists || len(userTeamIDs) == 0 {
+				// 用户没有团队，返回空结果
+				taskLogs = []*core.TaskLog{}
+				total = 0
+			} else {
+				// 🔥 使用分片服务的团队过滤查询
+				if shardService, ok := controller.service.(interface {
+					ListByTeams(ctx context.Context, teamIDs []string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error)
+					CountByTeams(ctx context.Context, teamIDs []string, filterActions ...filters.Filter) (int64, error)
+				}); ok {
+					taskLogs, err = shardService.ListByTeams(c.Request.Context(), userTeamIDs, offset, pagination.PageSize, filterActions...)
+					if err == nil {
+						total, err = shardService.CountByTeams(c.Request.Context(), userTeamIDs, filterActions...)
+					}
+				} else {
+					// 降级到原有的团队过滤方式
+					filterActions = controller.AppendUserTeamsFilter(c, filterActions)
+					taskLogs, err = controller.service.List(c.Request.Context(), offset, pagination.PageSize, filterActions...)
+					if err == nil {
+						total, err = controller.service.Count(c.Request.Context(), filterActions...)
+					}
+				}
+			}
+		}
+	} else {
+		// 🔥 查看当前团队数据
+		if controller.IsAdmin(c) {
+			// 🔥 管理员在不指定view_all_teams时，默认查看所有数据
+			taskLogs, err = controller.service.List(c.Request.Context(), offset, pagination.PageSize, filterActions...)
+			if err == nil {
+				total, err = controller.service.Count(c.Request.Context(), filterActions...)
+			}
+		} else {
+			currentTeamID, exists := controller.GetCurrentTeamID(c)
+			if !exists || currentTeamID == "" {
+				// 没有当前团队，返回空结果
+				taskLogs = []*core.TaskLog{}
+				total = 0
+			} else {
+				// 🔥 使用分片服务的团队过滤查询
+				if shardService, ok := controller.service.(interface {
+					ListByTeams(ctx context.Context, teamIDs []string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error)
+					CountByTeams(ctx context.Context, teamIDs []string, filterActions ...filters.Filter) (int64, error)
+				}); ok {
+					taskLogs, err = shardService.ListByTeams(c.Request.Context(), []string{currentTeamID}, offset, pagination.PageSize, filterActions...)
+					if err == nil {
+						total, err = shardService.CountByTeams(c.Request.Context(), []string{currentTeamID}, filterActions...)
+					}
+				} else {
+					// 降级到原有的团队过滤方式
+					filterActions = controller.AppendTeamFilterWithOptions(c, filterActions, false)
+					taskLogs, err = controller.service.List(c.Request.Context(), offset, pagination.PageSize, filterActions...)
+					if err == nil {
+						total, err = controller.service.Count(c.Request.Context(), filterActions...)
+					}
+				}
+			}
+		}
+	}
+
 	if err != nil {
 		controller.HandleError(c, err, http.StatusBadRequest)
 		return
 	}
 
-	// 8. 获取任务日志总数
-	total, err := controller.service.Count(c.Request.Context(), filterActions...)
-	if err != nil {
-		controller.HandleError(c, err, http.StatusBadRequest)
-		return
-	}
-
-	// 9. 为每个日志获取内容
+	// 7. 为每个日志获取内容
 	var results []map[string]interface{}
 	for _, taskLog := range taskLogs {
 		content, err := controller.service.GetLogContent(c.Request.Context(), taskLog)
@@ -313,7 +417,7 @@ func (controller *TaskLogController) List(c *gin.Context) {
 		results = append(results, item)
 	}
 
-	// 10. 构建分页结果
+	// 8. 构建分页结果
 	result := &types.ResponseList{
 		Page:     pagination.Page,
 		PageSize: pagination.PageSize,
@@ -321,8 +425,54 @@ func (controller *TaskLogController) List(c *gin.Context) {
 		Results:  results,
 	}
 
-	// 11. 返回结果
+	// 9. 返回结果
 	controller.HandleOK(c, result)
+}
+
+// 🔥🔥 parseOptimizationContext 解析URL参数并创建包含优化信息的Context
+// 这是一个优雅的方式，避免在每个方法中重复解析参数
+func (controller *TaskLogController) parseOptimizationContext(c *gin.Context) context.Context {
+	ctx := c.Request.Context()
+
+	// 解析优化参数
+	var createdAt, startTime, endTime *time.Time
+
+	// 解析精确创建时间（优先级最高，性能最优）
+	if createdAtStr := c.Query("created_at"); createdAtStr != "" {
+		if t, err := time.Parse("2006-01-02 15:04:05", createdAtStr); err == nil {
+			createdAt = &t
+		} else if t, err := time.Parse("2006-01-02", createdAtStr); err == nil {
+			createdAt = &t
+		}
+	}
+
+	// 解析时间范围（当没有精确时间时使用）
+	if createdAt == nil {
+		if startTimeStr := c.Query("start_time"); startTimeStr != "" {
+			if t, err := time.Parse("2006-01-02", startTimeStr); err == nil {
+				startTime = &t
+			}
+		}
+		if endTimeStr := c.Query("end_time"); endTimeStr != "" {
+			if t, err := time.Parse("2006-01-02", endTimeStr); err == nil {
+				// 结束时间设为当天的23:59:59
+				endOfDay := t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+				endTime = &endOfDay
+			}
+		}
+	}
+
+	// 如果有优化信息，则添加到context中
+	if createdAt != nil || startTime != nil || endTime != nil {
+		opt := &store.TaskLogOptimization{
+			CreatedAt: createdAt,
+			StartTime: startTime,
+			EndTime:   endTime,
+		}
+		ctx = store.WithTaskLogOptimization(ctx, opt)
+	}
+
+	return ctx
 }
 
 // GetContent 获取任务日志内容
@@ -493,4 +643,51 @@ func (controller *TaskLogController) AppendContent(c *gin.Context) {
 		"size":    taskLog.Size,
 	}
 	controller.HandleOK(c, response)
+}
+
+// validateTaskLogAccess 验证用户是否有权限访问指定的TaskLog
+// 🔥 更优雅的方案：利用分片服务的团队过滤功能来验证权限
+func (controller *TaskLogController) validateTaskLogAccess(c *gin.Context, taskID string) error {
+	// 🔥 管理员可以访问所有TaskLog
+	if controller.IsAdmin(c) {
+		return nil
+	}
+
+	// 🔥 获取用户的团队ID列表
+	userTeamIDs, exists := controller.GetUserTeamIDs(c)
+	if !exists || len(userTeamIDs) == 0 {
+		return fmt.Errorf("用户没有团队权限")
+	}
+
+	// 🔥 使用分片服务的团队过滤功能来验证权限
+	// 如果用户有权限访问该TaskLog，那么通过团队过滤应该能查询到它
+	if shardService, ok := controller.service.(interface {
+		ListByTeams(ctx context.Context, teamIDs []string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error)
+	}); ok {
+		// 构建精确的TaskID过滤器
+		taskIDFilter := &filters.FilterOption{
+			QueryKey: "task_id",
+			Column:   "task_id",
+			Op:       filters.FILTER_EQ,
+			Value:    taskID,
+		}
+
+		// 通过用户的团队ID列表查询该TaskLog
+		taskLogs, err := shardService.ListByTeams(c.Request.Context(), userTeamIDs, 0, 1, taskIDFilter)
+		if err != nil {
+			return fmt.Errorf("验证TaskLog权限失败: %w", err)
+		}
+
+		// 如果查询结果为空，说明用户无权限访问
+		if len(taskLogs) == 0 {
+			return fmt.Errorf("用户无权限访问该TaskLog")
+		}
+
+		// 查询到结果，说明用户有权限
+		return nil
+	}
+
+	// 如果服务不支持团队过滤，降级到基础权限验证
+	// 这种情况下我们只能允许访问，因为无法精确验证
+	return nil
 }

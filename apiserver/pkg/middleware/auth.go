@@ -9,6 +9,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -101,8 +102,11 @@ func AuthMiddlewareWithConfig(cfg *AuthMiddlewareConfig) gin.HandlerFunc {
 			return
 		}
 
+		// 🔥 获取 X-TEAM-ID
+		xTeamID := c.GetHeader("X-TEAM-ID")
+
 		// 执行认证
-		result := authService.Authenticate(c.Request.Context(), authHeader)
+		result := authService.Authenticate(c.Request.Context(), authHeader, xTeamID)
 
 		// 记录认证耗时
 		logger.Debug("认证完成",
@@ -241,9 +245,22 @@ func setUserContext(c *gin.Context, user *core.AuthenticatedUser) {
 	c.Set(core.ContextKeyUsername, user.Username)
 	c.Set(core.ContextKeyAuthType, user.AuthType)
 	c.Set(core.ContextKeyCurrentTeam, user.CurrentTeam)
+	c.Set(core.ContextKeyCurrentTeamID, user.CurrentTeamID)
 	c.Set(core.ContextKeyIsAuthenticated, user.IsActive)
 	c.Set(core.ContextKeyIsAdmin, user.IsAdmin)
 	c.Set(core.ContextKeyPhone, user.Phone)
+
+	// 🔥 设置权限相关字段
+	c.Set(core.ContextKeyPermissions, user.Permissions)
+	c.Set(core.ContextKeyRoles, user.Roles)
+	c.Set(core.ContextKeyProjects, user.Projects)
+
+	// 🔥 解析并设置用户的团队ID列表
+	if user.Teams != "" {
+		teamIDs := parseTeamIDs(user.Teams)
+		c.Set("user_team_ids", teamIDs)
+		logger.Debug("设置用户团队ID列表", zap.Strings("team_ids", teamIDs))
+	}
 }
 
 // handleAuthError 处理认证错误
@@ -355,4 +372,37 @@ func ClearAuthCache() {
 func GetAuthCacheStats() map[string]interface{} {
 	authService := getAuthService()
 	return authService.GetCacheStats()
+}
+
+// parseTeamIDs 解析团队ID列表
+// 🔥 核心优化：适配简化的团队ID列表格式
+// 从 JSON 字符串中提取团队ID列表
+// 简化前：[{"id":"uuid1"}, {"id":"uuid2"}] -> ["uuid1", "uuid2"]
+// 简化后：["uuid1", "uuid2"] -> ["uuid1", "uuid2"]
+func parseTeamIDs(teamsJSON string) []string {
+	if teamsJSON == "" {
+		return nil
+	}
+
+	// 🔥 尝试解析简化格式的团队ID列表（字符串数组）
+	var teamIDs []string
+	if err := json.Unmarshal([]byte(teamsJSON), &teamIDs); err == nil {
+		return teamIDs
+	}
+
+	// 🔥 向后兼容：尝试解析旧格式的团队列表（对象数组）
+	var teams []map[string]interface{}
+	if err := json.Unmarshal([]byte(teamsJSON), &teams); err != nil {
+		logger.Warn("解析团队列表失败", zap.Error(err), zap.String("teams_json", teamsJSON))
+		return nil
+	}
+
+	var legacyTeamIDs []string
+	for _, team := range teams {
+		if id, ok := team["id"].(string); ok && id != "" {
+			legacyTeamIDs = append(legacyTeamIDs, id)
+		}
+	}
+
+	return legacyTeamIDs
 }

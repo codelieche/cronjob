@@ -9,12 +9,12 @@ import (
 
 // CategoryCreateForm 分类创建表单
 type CategoryCreateForm struct {
-	Code        string `json:"code" form:"code" binding:"required"`
-	Name        string `json:"name" form:"name"`
-	Setup       string `json:"setup" form:"setup"`
-	Teardown    string `json:"teardown" form:"teardown"`
-	Check       string `json:"check" form:"check"`
-	Description string `json:"description" form:"description"`
+	Code        string `json:"code" form:"code" binding:"required" example:"backup"`
+	Name        string `json:"name" form:"name" example:"数据备份分类"`
+	Setup       string `json:"setup" form:"setup" example:"mkdir -p /tmp/backup"`
+	Teardown    string `json:"teardown" form:"teardown" example:"rm -rf /tmp/backup"`
+	Check       string `json:"check" form:"check" example:"test -d /backup"`
+	Description string `json:"description" form:"description" example:"用于数据库备份相关的任务分类"`
 }
 
 // Validate 验证表单

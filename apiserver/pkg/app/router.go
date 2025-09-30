@@ -13,6 +13,7 @@ import (
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/middleware"
 	"github.com/codelieche/cronjob/apiserver/pkg/services"
+	"github.com/codelieche/cronjob/apiserver/pkg/shard"
 	"github.com/codelieche/cronjob/apiserver/pkg/store"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
 	"github.com/gin-contrib/sessions"
@@ -202,8 +203,17 @@ func initRouter(app *gin.Engine) {
 
 	// ========== 任务日志管理模块 ==========
 	// 管理任务执行的详细日志，需要用户认证
-	taskLogStore := store.NewTaskLogStore(db)
-	taskLogService := services.NewTaskLogService(taskLogStore)
+	// 🔥 使用分片感知的TaskLog服务，支持按月分片存储
+	shardConfig := &shard.ShardConfig{
+		TablePrefix:    "task_logs",
+		ShardBy:        "created_at",
+		ShardUnit:      "month",
+		AutoCreateNext: true,
+		CheckInterval:  "24h",
+	}
+	shardManager := shard.NewShardManager(db, shardConfig)
+	taskLogShardStore := store.NewTaskLogShardStore(db, shardManager)
+	taskLogService := services.NewTaskLogShardService(taskLogShardStore)
 	taskLogController := controllers.NewTaskLogController(taskLogService)
 
 	// 任务日志管理接口需要用户认证
@@ -221,10 +231,10 @@ func initRouter(app *gin.Engine) {
 	}
 
 	// ========== WebSocket实时通信模块 ==========
-	// 提供与Worker节点的实时通信能力，不使用HTTP认证中间件
-	// WebSocket有自己的认证机制
+	// 提供与Worker节点的实时通信能力，现在使用分布式锁进行安全验证
+	// WebSocket连接需要先获取锁令牌，然后验证锁的有效性
 	websocketService := services.NewWebsocketService(taskStore, workerStore)
-	websocketController := controllers.NewWebsocketController(websocketService)
+	websocketController := controllers.NewWebsocketController(websocketService, lockerService)
 
 	// WebSocket连接接口，不使用认证中间件（有自己的认证机制）
 	wsRoutes := apis.Group("/ws")
@@ -236,10 +246,15 @@ func initRouter(app *gin.Engine) {
 	// 系统健康检查，不需要认证（公共接口）
 	healthController := controllers.NewHealthController(websocketService, taskService)
 
-	// 健康检查接口不需要认证
+	// 健康检查路由（无需认证）
+	app.GET("/health", healthController.Health)       // 详细健康检查
+	app.GET("/readiness", healthController.Readiness) // 就绪检查（K8s readiness probe）
+	app.GET("/liveness", healthController.Liveness)   // 存活检查（K8s liveness probe）
+
+	// 兼容原有的API路径
 	healthRoutes := apis.Group("/health")
 	{
-		healthRoutes.GET("/", healthController.Health) // 系统健康检查
+		healthRoutes.GET("/", healthController.Health) // 系统健康检查（兼容）
 	}
 
 	// ========== 监控指标模块 ==========

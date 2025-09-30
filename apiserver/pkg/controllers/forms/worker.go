@@ -11,11 +11,11 @@ import (
 
 // WorkerCreateForm 工作节点创建表单
 type WorkerCreateForm struct {
-	ID          string          `json:"id" form:"id"`
-	Name        string          `json:"name" form:"name" binding:"required"`
-	Description string          `json:"description" form:"description"`
-	IsActive    *bool           `json:"is_active" form:"is_active"`
-	Metadata    json.RawMessage `json:"metadata" form:"metadata"`
+	ID          string          `json:"id" form:"id" example:"123e4567-e89b-12d3-a456-426614174000"`
+	Name        string          `json:"name" form:"name" binding:"required" example:"worker-node-01"`
+	Description string          `json:"description" form:"description" example:"生产环境主要工作节点"`
+	IsActive    *bool           `json:"is_active" form:"is_active" example:"true"`
+	Metadata    json.RawMessage `json:"metadata" form:"metadata" example:"{\"cpu_cores\": 4, \"memory_gb\": 8, \"os\": \"linux\"}"`
 }
 
 // Validate 验证表单
@@ -88,10 +88,10 @@ func (form *WorkerCreateForm) ToWorker() *core.Worker {
 
 // WorkerInfoForm 工作节点信息表单（用于更新）
 type WorkerInfoForm struct {
-	Name        string          `json:"name" form:"name"`
-	Description string          `json:"description" form:"description"`
-	IsActive    *bool           `json:"is_active" form:"is_active"`
-	Metadata    json.RawMessage `json:"metadata" form:"metadata"`
+	Name        string          `json:"name" form:"name" example:"worker-node-01-updated"`
+	Description string          `json:"description" form:"description" example:"更新后的工作节点描述"`
+	IsActive    *bool           `json:"is_active" form:"is_active" example:"false"`
+	Metadata    json.RawMessage `json:"metadata" form:"metadata" example:"{\"cpu_cores\": 8, \"memory_gb\": 16, \"os\": \"linux\", \"version\": \"2.0\"}"`
 }
 
 // Validate 验证表单

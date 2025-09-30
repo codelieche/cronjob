@@ -9,6 +9,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// validateStorageType 验证存储类型的通用函数
+func validateStorageType(storage string) error {
+	validStorages := []string{core.TaskLogStorageDB, core.TaskLogStorageFile, core.TaskLogStorageS3}
+	for _, validStorage := range validStorages {
+		if storage == validStorage {
+			return nil
+		}
+	}
+	return fmt.Errorf("存储类型无效，支持的类型：%s", strings.Join(validStorages, ", "))
+}
+
 // TaskLogCreateForm 任务日志创建表单
 type TaskLogCreateForm struct {
 	TaskID  string `json:"task_id" form:"task_id" binding:"required"` // 任务ID
@@ -35,19 +46,8 @@ func (form *TaskLogCreateForm) Validate() error {
 	// 2. 验证存储类型
 	if form.Storage == "" {
 		form.Storage = config.Web.LogStorage // 默认使用数据库存储
-	} else {
-		validStorages := []string{core.TaskLogStorageDB, core.TaskLogStorageFile, core.TaskLogStorageS3}
-		isValid := false
-		for _, validStorage := range validStorages {
-			if form.Storage == validStorage {
-				isValid = true
-				break
-			}
-		}
-		if !isValid {
-			err = fmt.Errorf("存储类型无效，支持的类型：%s", strings.Join(validStorages, ", "))
-			return err
-		}
+	} else if err := validateStorageType(form.Storage); err != nil {
+		return err
 	}
 
 	// 3. 验证内容（仅db存储时需要）
@@ -87,16 +87,7 @@ func (form *TaskLogUpdateForm) Validate() error {
 
 	// 1. 验证存储类型（如果提供了）
 	if form.Storage != "" {
-		validStorages := []string{core.TaskLogStorageDB, core.TaskLogStorageFile, core.TaskLogStorageS3}
-		isValid := false
-		for _, validStorage := range validStorages {
-			if form.Storage == validStorage {
-				isValid = true
-				break
-			}
-		}
-		if !isValid {
-			err = fmt.Errorf("存储类型无效，支持的类型：%s", strings.Join(validStorages, ", "))
+		if err := validateStorageType(form.Storage); err != nil {
 			return err
 		}
 	}

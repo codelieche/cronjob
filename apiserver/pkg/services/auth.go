@@ -37,7 +37,7 @@ func (c *CacheEntry) IsExpired() bool {
 // AuthService 认证服务接口
 type AuthService interface {
 	// Authenticate 执行用户认证
-	Authenticate(ctx context.Context, authHeader string) *core.AuthResult
+	Authenticate(ctx context.Context, authHeader string, xTeamID string) *core.AuthResult
 
 	// ClearCache 清空认证缓存
 	ClearCache()
@@ -87,11 +87,11 @@ func NewAuthService(cfg *config.AuthConfig) AuthService {
 }
 
 // Authenticate 执行用户认证
-func (s *authService) Authenticate(ctx context.Context, authHeader string) *core.AuthResult {
+func (s *authService) Authenticate(ctx context.Context, authHeader string, xTeamID string) *core.AuthResult {
 	startTime := time.Now()
 
-	// 生成缓存键
-	cacheKey := s.generateCacheKey(authHeader)
+	// 生成缓存键（包含团队ID以区分不同团队的缓存）
+	cacheKey := s.generateCacheKey(authHeader, xTeamID)
 
 	// 尝试从缓存获取
 	if s.config.EnableCache {
@@ -99,7 +99,8 @@ func (s *authService) Authenticate(ctx context.Context, authHeader string) *core
 			if s.config.Debug {
 				logger.Debug("认证结果来自缓存",
 					zap.String("user_id", user.UserID),
-					zap.String("auth_type", user.AuthType))
+					zap.String("auth_type", user.AuthType),
+					zap.String("team_id", xTeamID))
 			}
 			return &core.AuthResult{
 				Success:   true,
@@ -111,7 +112,7 @@ func (s *authService) Authenticate(ctx context.Context, authHeader string) *core
 	}
 
 	// 执行实际的认证请求
-	result := s.authenticateWithRetry(ctx, authHeader)
+	result := s.authenticateWithRetry(ctx, authHeader, xTeamID)
 	result.Duration = time.Since(startTime)
 
 	// 成功时存入缓存
@@ -123,7 +124,7 @@ func (s *authService) Authenticate(ctx context.Context, authHeader string) *core
 }
 
 // authenticateWithRetry 带重试的认证请求
-func (s *authService) authenticateWithRetry(ctx context.Context, authHeader string) *core.AuthResult {
+func (s *authService) authenticateWithRetry(ctx context.Context, authHeader string, xTeamID string) *core.AuthResult {
 	var lastErr error
 
 	for i := 0; i <= s.config.MaxRetries; i++ {
@@ -143,11 +144,12 @@ func (s *authService) authenticateWithRetry(ctx context.Context, authHeader stri
 			if s.config.Debug {
 				logger.Debug("认证重试",
 					zap.Int("attempt", i),
+					zap.String("team_id", xTeamID),
 					zap.Error(lastErr))
 			}
 		}
 
-		result := s.authenticateOnce(ctx, authHeader)
+		result := s.authenticateOnce(ctx, authHeader, xTeamID)
 		if result.Success {
 			return result
 		}
@@ -169,7 +171,7 @@ func (s *authService) authenticateWithRetry(ctx context.Context, authHeader stri
 }
 
 // authenticateOnce 执行单次认证请求
-func (s *authService) authenticateOnce(ctx context.Context, authHeader string) *core.AuthResult {
+func (s *authService) authenticateOnce(ctx context.Context, authHeader string, xTeamID string) *core.AuthResult {
 	// 构建认证API URL
 	authURL := strings.TrimSuffix(s.config.ApiUrl, "/") + "/auth/"
 
@@ -188,6 +190,11 @@ func (s *authService) authenticateOnce(ctx context.Context, authHeader string) *
 	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "CronJob-ApiServer/1.0")
+
+	// 🔥 新增：如果提供了 X-TEAM-ID，则设置到请求头
+	if xTeamID != "" {
+		req.Header.Set("X-TEAM-ID", xTeamID)
+	}
 
 	// 如果配置了API Key，添加到请求头
 	if s.config.ApiKey != "" {
@@ -270,6 +277,7 @@ func (s *authService) parseAuthResponse(statusCode int, body []byte) *core.AuthR
 }
 
 // parseUserData 解析用户数据
+// 🔥 核心优化：适配简化的响应结构，减少解析复杂度
 func (s *authService) parseUserData(data interface{}) (*core.AuthenticatedUser, error) {
 	dataMap, ok := data.(map[string]interface{})
 	if !ok {
@@ -281,47 +289,95 @@ func (s *authService) parseUserData(data interface{}) (*core.AuthenticatedUser, 
 		return nil, fmt.Errorf("用户信息格式错误")
 	}
 
-	// 提取核心用户信息，使用类型断言并提供默认值
+	// 🔥 提取核心用户信息（简化结构，保留 phone 和 nickname）
 	userID, _ := userMap["id"].(string)
 	username, _ := userMap["username"].(string)
 	email, _ := userMap["email"].(string)
-	phone, _ := userMap["phone"].(string)
-	nickname, _ := userMap["nickname"].(string)
+	phone, _ := userMap["phone"].(string)       // 🔥 恢复 phone 字段解析
+	nickname, _ := userMap["nickname"].(string) // 🔥 恢复 nickname 字段解析
 	isActive, _ := userMap["is_active"].(bool)
 	isAdmin, _ := userMap["is_admin"].(bool)
 	authType, _ := userMap["auth_type"].(string)
-	currentTeam, _ := userMap["current_team"].(string)
 
-	// API Key名称（可选，仅用于日志记录）
-	apiKeyName, _ := userMap["api_key_name"].(string)
+	// 🔥 直接使用简化响应中的团队信息（已经由 usercenter 处理了 X-TEAM-ID 优先级）
+	currentTeamID, _ := dataMap["current_team_id"].(string)
+	currentTeamCode, _ := dataMap["current_team_code"].(string)
+
+	// 🔥 解析简化的用户团队ID列表
+	var teamsJSON string
+	if userTeams, exists := dataMap["user_teams"]; exists {
+		if teamsBytes, err := json.Marshal(userTeams); err == nil {
+			teamsJSON = string(teamsBytes)
+		}
+	}
+
+	// 🔥 解析权限、角色、项目列表
+	var permissions []string
+	if permsData, exists := dataMap["permissions"]; exists {
+		if permsArray, ok := permsData.([]interface{}); ok {
+			for _, perm := range permsArray {
+				if permStr, ok := perm.(string); ok {
+					permissions = append(permissions, permStr)
+				}
+			}
+		}
+	}
+
+	var roles []string
+	if rolesData, exists := dataMap["roles"]; exists {
+		if rolesArray, ok := rolesData.([]interface{}); ok {
+			for _, role := range rolesArray {
+				if roleStr, ok := role.(string); ok {
+					roles = append(roles, roleStr)
+				}
+			}
+		}
+	}
+
+	var projects []string
+	if projectsData, exists := dataMap["projects"]; exists {
+		if projectsArray, ok := projectsData.([]interface{}); ok {
+			for _, project := range projectsArray {
+				if projectStr, ok := project.(string); ok {
+					projects = append(projects, projectStr)
+				}
+			}
+		}
+	}
 
 	// 验证必需字段
 	if userID == "" || username == "" {
 		return nil, fmt.Errorf("用户信息不完整：缺少用户ID或用户名")
 	}
 
-	// 构建优化后的用户对象
+	// 🔥 构建简化后的用户对象
 	user := &core.AuthenticatedUser{
-		UserID:      userID,
-		Username:    username,
-		Email:       email,
-		Phone:       phone,
-		Nickname:    nickname,
-		IsActive:    isActive,
-		IsAdmin:     isAdmin,
-		AuthType:    authType,
-		CurrentTeam: currentTeam,
-		ApiKeyName:  apiKeyName,
-		CachedAt:    time.Now(),
+		UserID:        userID,
+		Username:      username,
+		Email:         email,
+		Phone:         phone,    // 🔥 使用解析的 phone 字段
+		Nickname:      nickname, // 🔥 使用解析的 nickname 字段
+		IsActive:      isActive,
+		IsAdmin:       isAdmin,
+		AuthType:      authType,
+		CurrentTeam:   currentTeamCode, // 🔥 使用团队代码
+		CurrentTeamID: currentTeamID,   // 🔥 使用当前操作的团队ID（X-TEAM-ID 优先）
+		Teams:         teamsJSON,       // 🔥 简化的团队ID列表
+		Permissions:   permissions,     // 🔥 用户权限列表
+		Roles:         roles,           // 🔥 用户角色列表
+		Projects:      projects,        // 🔥 用户项目列表
+		ApiKeyName:    "",              // 简化响应中不包含，设为空
+		CachedAt:      time.Now(),
 	}
 
 	return user, nil
 }
 
 // generateCacheKey 生成缓存键
-func (s *authService) generateCacheKey(authHeader string) string {
-	// 使用SHA256哈希生成缓存键，避免直接存储敏感信息，更安全
-	hash := sha256.Sum256([]byte(authHeader))
+func (s *authService) generateCacheKey(authHeader string, xTeamID string) string {
+	// 使用SHA256哈希生成缓存键，包含团队ID以区分不同团队的缓存，避免直接存储敏感信息，更安全
+	cacheData := authHeader + "|" + xTeamID
+	hash := sha256.Sum256([]byte(cacheData))
 	return fmt.Sprintf("auth_%x", hash)
 }
 

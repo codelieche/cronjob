@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -37,49 +38,105 @@ type WebsocketController struct {
 	messageCache map[string]string     // 消息缓存，用于存储每个客户端的不完整消息
 	cacheMutex   sync.Mutex            // 用于保护messageCache的互斥锁
 	authService  services.AuthService  // 认证服务，用于验证Worker的ApiKey
+	locker       core.Locker           // 分布式锁服务，用于WebSocket连接安全验证
 }
 
 // NewWebsocketController 创建WebsocketController实例
 // 入参：
 //   - service: WebSocket服务接口实现
+//   - locker: 分布式锁服务实例
 //
 // 返回值：
 //   - *WebsocketController: WebSocket控制器实例
-func NewWebsocketController(service core.WebsocketService) *WebsocketController {
+func NewWebsocketController(service core.WebsocketService, locker core.Locker) *WebsocketController {
 	return &WebsocketController{
 		service:      service,
 		messageCache: make(map[string]string),
 		authService:  services.GetAuthService(), // 获取认证服务实例
+		locker:       locker,                    // 分布式锁服务实例
 	}
 }
 
 // HandleConnect 处理WebSocket连接请求
 // @Summary WebSocket连接建立
-// @Description 将HTTP连接升级为WebSocket连接，用于实时通信和任务分发
+// @Description 将HTTP连接升级为WebSocket连接，用于实时通信和任务分发。需要提供有效的锁令牌进行安全验证。
 // @Tags websocket
 // @Accept json
 // @Produce json
+// @Param key query string true "锁的键名，格式：/ws/{worker-id}"
+// @Param value query string true "锁的值，用于验证锁的拥有者"
 // @Success 101 {string} string "Switching Protocols - WebSocket连接建立成功"
-// @Failure 400 {object} core.ErrorResponse "升级WebSocket连接失败"
-// @Router /ws/ [get]
+// @Failure 400 {object} core.ErrorResponse "参数错误或锁验证失败"
+// @Failure 403 {object} core.ErrorResponse "锁验证失败，拒绝连接"
+// @Failure 500 {object} core.ErrorResponse "升级WebSocket连接失败"
+// @Router /ws/task/ [get]
 func (wc *WebsocketController) HandleConnect(c *gin.Context) {
-	// 升级HTTP连接到WebSocket连接
+	// 1. 获取锁验证参数
+	key := c.Query("key")
+	value := c.Query("value")
+
+	// 2. 验证锁参数是否存在
+	if key == "" || value == "" {
+		logger.Warn("WebSocket连接缺少锁验证参数",
+			zap.String("remote_addr", c.Request.RemoteAddr),
+			zap.String("user_agent", c.Request.UserAgent()))
+		wc.HandleError(c, fmt.Errorf("缺少锁验证参数：key和value是必需的"), http.StatusBadRequest)
+		return
+	}
+
+	// 3. 验证锁格式（应该是 /ws/{worker-id} 格式）
+	if !strings.HasPrefix(key, "/ws/") {
+		logger.Warn("WebSocket连接锁键名格式错误",
+			zap.String("key", key),
+			zap.String("remote_addr", c.Request.RemoteAddr))
+		wc.HandleError(c, fmt.Errorf("锁键名格式错误，应为 /ws/{worker-id} 格式"), http.StatusBadRequest)
+		return
+	}
+
+	// 4. 验证并释放锁（一次性使用）
+	err := wc.locker.ReleaseByKeyAndValue(c.Request.Context(), key, value)
+	if err != nil {
+		logger.Warn("WebSocket连接锁验证失败",
+			zap.String("key", key),
+			zap.String("value", value),
+			zap.String("remote_addr", c.Request.RemoteAddr),
+			zap.Error(err))
+		wc.HandleError(c, fmt.Errorf("锁验证失败：%v", err), http.StatusForbidden)
+		return
+	}
+
+	// 5. 锁验证成功，记录日志
+	workerID := strings.TrimPrefix(key, "/ws/")
+	logger.Info("WebSocket连接锁验证成功",
+		zap.String("worker_id", workerID),
+		zap.String("key", key),
+		zap.String("remote_addr", c.Request.RemoteAddr))
+
+	// 6. 升级HTTP连接到WebSocket连接
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		logger.Error("升级WebSocket连接失败", zap.Error(err))
+		logger.Error("升级WebSocket连接失败",
+			zap.String("worker_id", workerID),
+			zap.Error(err))
 		wc.HandleError(c, err, http.StatusInternalServerError)
 		return
 	}
 
-	// 创建客户端ID并实例化客户端
+	// 7. 创建客户端ID并实例化客户端
 	clientID := uuid.New().String()
 	client := services.NewClient(clientID, conn)
 
-	// 获取客户端管理器并添加客户端
+	// 8. 获取客户端管理器并添加客户端
 	clientManager := wc.service.GetClientManager()
 	clientManager.Add(client)
 
-	// 异步发送待执行任务和启动消息读取循环
+	// 9. 记录连接成功日志
+	logger.Info("WebSocket连接建立成功",
+		zap.String("worker_id", workerID),
+		zap.String("client_id", clientID),
+		zap.String("remote_addr", c.Request.RemoteAddr))
+
+	// 10. 异步发送待执行任务和启动消息读取循环
 	go wc.sendPendingTasksToClient(c.Request.Context(), client)
 	go wc.readPump(clientID, conn, clientManager)
 }
@@ -278,7 +335,7 @@ func (wc *WebsocketController) handleRegistWorkerEvent(ctx context.Context, clie
 	}
 
 	// 2. 验证ApiKey有效性
-	authResult := wc.authService.Authenticate(ctx, event.ApiKey)
+	authResult := wc.authService.Authenticate(ctx, event.ApiKey, event.TeamID)
 	if !authResult.Success {
 		logger.Warn("Worker注册认证失败",
 			zap.String("client_id", clientID),
@@ -414,7 +471,7 @@ func (wc *WebsocketController) handleTaskUpdateEvent(ctx context.Context, event 
 	}
 
 	// 2. 验证ApiKey有效性
-	authResult := wc.authService.Authenticate(ctx, event.ApiKey)
+	authResult := wc.authService.Authenticate(ctx, event.ApiKey, event.TeamID)
 	if !authResult.Success {
 		logger.Warn("任务更新认证失败",
 			zap.String("task_id", event.TaskID),

@@ -1,6 +1,9 @@
 package core
 
 import (
+	"database/sql"
+	"time"
+
 	"github.com/codelieche/cronjob/apiserver/pkg/config"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
 	"go.uber.org/zap"
@@ -69,10 +72,45 @@ func connectDatabase() (*gorm.DB, error) {
 	// 配置连接池
 	sqlDB, err := gormDB.DB()
 	if err == nil {
-		// 设置连接池参数
-		sqlDB.SetMaxIdleConns(10)  // 最大空闲连接数
-		sqlDB.SetMaxOpenConns(100) // 最大打开连接数
+		configureConnectionPool(sqlDB)
+		logger.Info("数据库连接池配置完成",
+			zap.Int("max_idle_conns", 20),
+			zap.Int("max_open_conns", 100),
+			zap.Duration("conn_max_lifetime", time.Hour),
+			zap.Duration("conn_max_idle_time", 30*time.Minute))
 	}
 
 	return gormDB, nil
+}
+
+// configureConnectionPool 配置数据库连接池参数
+func configureConnectionPool(sqlDB *sql.DB) {
+	// 设置最大空闲连接数
+	// 空闲连接池中连接的最大数量
+	sqlDB.SetMaxIdleConns(20)
+
+	// 设置最大打开连接数
+	// 打开数据库连接的最大数量
+	sqlDB.SetMaxOpenConns(100)
+
+	// 设置连接最大生存时间
+	// 连接可重用的最长时间，超过此时间连接将被关闭
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	// 设置连接最大空闲时间
+	// 连接在连接池中保持空闲的最长时间，超过此时间空闲连接将被关闭
+	sqlDB.SetConnMaxIdleTime(30 * time.Minute)
+}
+
+// CloseDB 关闭数据库连接
+func CloseDB() error {
+	if db != nil {
+		sqlDB, err := db.DB()
+		if err != nil {
+			return err
+		}
+		logger.Info("正在关闭数据库连接...")
+		return sqlDB.Close()
+	}
+	return nil
 }

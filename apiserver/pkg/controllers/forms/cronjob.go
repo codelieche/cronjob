@@ -10,17 +10,18 @@ import (
 
 // CronJobCreateForm 定时任务创建表单
 type CronJobCreateForm struct {
-	ID          string                `json:"id" form:"id"`
-	Project     string                `json:"project" form:"project"`
-	Category    string                `json:"category" form:"category"`
-	Name        string                `json:"name" form:"name" binding:"required"`
-	Time        string                `json:"time" form:"time" binding:"required"`
-	Command     string                `json:"command" form:"command" binding:"required"`
-	Args        string                `json:"args" form:"args"`
-	Description string                `json:"description" form:"description"`
-	IsActive    bool                  `json:"is_active" form:"is_active"`
-	SaveLog     bool                  `json:"save_log" form:"save_log"`
-	Timeout     int                   `json:"timeout" form:"timeout"`
+	ID          string                `json:"id" form:"id" example:""`
+	TeamID      string                `json:"team_id" form:"team_id" example:"123e4567-e89b-12d3-a456-426614174000"`
+	Project     string                `json:"project" form:"project" example:"web-backend"`
+	Category    string                `json:"category" form:"category" example:"backup"`
+	Name        string                `json:"name" form:"name" binding:"required" example:"数据库备份任务"`
+	Time        string                `json:"time" form:"time" binding:"required" example:"0 0 2 * * * *"`
+	Command     string                `json:"command" form:"command" binding:"required" example:"backup_database.sh"`
+	Args        string                `json:"args" form:"args" example:"--full --compress"`
+	Description string                `json:"description" form:"description" example:"每天凌晨2点执行数据库全量备份"`
+	IsActive    bool                  `json:"is_active" form:"is_active" example:"true"`
+	SaveLog     bool                  `json:"save_log" form:"save_log" example:"true"`
+	Timeout     int                   `json:"timeout" form:"timeout" example:"300"`
 	Metadata    *core.CronJobMetadata `json:"metadata" form:"metadata"`
 }
 
@@ -95,6 +96,14 @@ func (form *CronJobCreateForm) Validate() error {
 		return err
 	}
 
+	// 验证TeamID格式
+	if form.TeamID != "" {
+		if _, err := uuid.Parse(form.TeamID); err != nil {
+			err = fmt.Errorf("TeamID格式无效")
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -130,11 +139,20 @@ func (form *CronJobCreateForm) ToCronJob() *core.CronJob {
 	isActive := form.IsActive
 	saveLog := form.SaveLog
 
+	// 处理TeamID
+	var teamID *uuid.UUID
+	if form.TeamID != "" {
+		if parsedTeamID, err := uuid.Parse(form.TeamID); err == nil {
+			teamID = &parsedTeamID
+		}
+	}
+
 	// 设置时间字段为当前时间，避免MySQL零值错误
 	// now := time.Now()
 
 	cronJob := &core.CronJob{
 		ID:           id,
+		TeamID:       teamID,
 		Project:      project,
 		Category:     category,
 		Name:         form.Name,
@@ -163,6 +181,7 @@ func (form *CronJobCreateForm) ToCronJob() *core.CronJob {
 
 // CronJobInfoForm 定时任务信息表单（用于更新）
 type CronJobInfoForm struct {
+	TeamID      string                `json:"team_id" form:"team_id"`
 	Project     string                `json:"project" form:"project"`
 	Category    string                `json:"category" form:"category"`
 	Name        string                `json:"name" form:"name"`
@@ -227,6 +246,13 @@ func (form *CronJobInfoForm) Validate() error {
 
 // UpdateCronJob 根据表单更新定时任务信息
 func (form *CronJobInfoForm) UpdateCronJob(CronJob *core.CronJob) {
+	// 处理TeamID更新
+	if form.TeamID != "" {
+		if parsedTeamID, err := uuid.Parse(form.TeamID); err == nil {
+			CronJob.TeamID = &parsedTeamID
+		}
+	}
+
 	if form.Project != "" {
 		CronJob.Project = form.Project
 	}

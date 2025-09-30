@@ -43,6 +43,7 @@ type CronJobMetadata struct {
 type CronJob struct {
 	types.BaseModel
 	ID           uuid.UUID       `gorm:"size:256;primaryKey" json:"id"`                  // 定时任务唯一标识
+	TeamID       *uuid.UUID      `gorm:"size:256;index" json:"team_id"`                  // 团队ID，用于多租户隔离
 	Project      string          `gorm:"size:128;index;default:default" json:"project"`  // 所属项目，用于任务分组管理，默认为"default"
 	Category     string          `gorm:"size:128;index;not null" json:"category"`        // 任务分类编码，用于任务类型管理，不能为空
 	Name         string          `gorm:"size:128" json:"name"`                           // 任务名称，便于识别和管理

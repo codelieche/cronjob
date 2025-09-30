@@ -11,6 +11,7 @@ import (
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/monitoring"
 	"github.com/codelieche/cronjob/apiserver/pkg/services"
+	"github.com/codelieche/cronjob/apiserver/pkg/shard"
 	"github.com/codelieche/cronjob/apiserver/pkg/store"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
 	"go.uber.org/zap"
@@ -78,6 +79,27 @@ func dispatch() {
 	dbCollector := monitoring.NewDatabaseMetricsCollector(60 * time.Second)
 	go dbCollector.Start(context.Background())
 	logger.Info("数据库指标收集器已启动")
+
+	// 🔥 启动TaskLog分片管理服务
+	// 注意：分片管理器在router.go中已创建，这里只启动调度器
+	// 创建分片管理器（用于调度器）
+	shardConfig := &shard.ShardConfig{
+		TablePrefix:    "task_logs",
+		ShardBy:        "created_at",
+		ShardUnit:      "month",
+		AutoCreateNext: true,
+		CheckInterval:  "24h", // 每天检查一次
+	}
+	shardManager := shard.NewShardManager(db, shardConfig)
+
+	// 创建分片调度器
+	shardScheduler := shard.NewShardScheduler(shardManager)
+	go func() {
+		if err := shardScheduler.Start(); err != nil {
+			logger.Error("启动分片调度器失败", zap.Error(err))
+		}
+	}()
+	logger.Info("TaskLog分片管理服务已启动")
 
 	logger.Info("所有后台调度服务启动完成")
 }

@@ -20,8 +20,15 @@ type AuthenticatedUser struct {
 	AuthType string `json:"auth_type"` // 认证类型（jwt或apikey）
 
 	// 可选字段
-	CurrentTeam string `json:"current_team,omitempty"` // 当前团队
-	ApiKeyName  string `json:"api_key_name,omitempty"` // API Key名称（仅用于日志记录）
+	CurrentTeam   string `json:"current_team,omitempty"`    // 当前团队
+	CurrentTeamID string `json:"current_team_id,omitempty"` // 当前团队ID
+	Teams         string `json:"teams,omitempty"`           // 用户的团队列表（JSON字符串）
+	ApiKeyName    string `json:"api_key_name,omitempty"`    // API Key名称（仅用于日志记录）
+
+	// 权限相关字段
+	Permissions []string `json:"permissions,omitempty"` // 用户权限列表
+	Roles       []string `json:"roles,omitempty"`       // 用户角色列表
+	Projects    []string `json:"projects,omitempty"`    // 用户项目列表
 
 	// 缓存相关
 	CachedAt time.Time `json:"cached_at,omitempty"` // 缓存时间
@@ -74,7 +81,11 @@ const (
 	ContextKeyUsername        = "username"         // 用户名
 	ContextKeyAuthType        = "auth_type"        // 认证类型
 	ContextKeyCurrentTeam     = "current_team"     // 当前团队
+	ContextKeyCurrentTeamID   = "current_team_id"  // 当前团队ID
 	ContextKeyIsAuthenticated = "is_authenticated" // 是否已认证
 	ContextKeyIsAdmin         = "is_admin"         // 是否管理员
 	ContextKeyPhone           = "phone"            // 用户手机号
+	ContextKeyPermissions     = "permissions"      // 用户权限列表
+	ContextKeyRoles           = "roles"            // 用户角色列表
+	ContextKeyProjects        = "projects"         // 用户项目列表
 )

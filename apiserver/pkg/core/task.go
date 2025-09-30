@@ -56,6 +56,7 @@ type TaskMetadata struct {
 // 这是CronJob的具体执行实例，每次调度都会创建一个新的Task
 type Task struct {
 	ID           uuid.UUID       `gorm:"size:256;primaryKey" json:"id"`                               // 任务唯一标识
+	TeamID       *uuid.UUID      `gorm:"size:256;index" json:"team_id"`                               // 团队ID，用于多租户隔离
 	Project      string          `gorm:"size:128;index:idx_project;default:default" json:"project"`   // 所属项目，用于任务分组管理
 	Category     string          `gorm:"size:128;index:idx_category;default:default" json:"category"` // 任务分类，用于任务类型管理
 	CronJob      *uuid.UUID      `gorm:"size:256;index:idx_cronjob;column:cronjob;" json:"cronjob"`   // 关联的定时任务ID，独立任务为nil

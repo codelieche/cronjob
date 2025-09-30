@@ -118,6 +118,7 @@ func (d *DispatchService) Dispatch(ctx context.Context, cronJob *core.CronJob) e
 		isStandalone := false
 		task := &core.Task{
 			ID:           uuid.New(),
+			TeamID:       cronJob.TeamID, // 继承CronJob的TeamID
 			Project:      cronJob.Project,
 			Category:     cronJob.Category,
 			CronJob:      &cronJob.ID,

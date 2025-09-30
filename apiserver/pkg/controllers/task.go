@@ -285,7 +285,7 @@ func (controller *TaskController) Delete(c *gin.Context) {
 
 // List 获取任务列表
 // @Summary 获取任务列表
-// @Description 获取任务执行记录列表，支持分页和过滤
+// @Description 获取任务执行记录列表，支持分页和过滤。如果提供X-TEAM-ID，则只返回该团队的任务。通过view_all_teams参数可以查看跨团队数据：管理员查看所有团队，普通用户查看自己所属的所有团队
 // @Tags tasks
 // @Accept json
 // @Produce json
@@ -297,11 +297,14 @@ func (controller *TaskController) Delete(c *gin.Context) {
 // @Param status query string false "任务状态过滤"
 // @Param cronjob query string false "定时任务ID过滤"
 // @Param search query string false "搜索关键词"
+// @Param view_all_teams query boolean false "查看跨团队数据（管理员：所有团队，普通用户：自己所属团队）" example(true)
 // @Success 200 {object} types.ResponseList "分页的任务列表"
 // @Failure 400 {object} core.ErrorResponse "请求参数错误"
 // @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "团队不存在"
 // @Router /task/ [get]
 // @Security BearerAuth
+// @Security TeamAuth
 func (controller *TaskController) List(c *gin.Context) {
 	// 1. 解析分页参数
 	pagination := controller.ParsePagination(c)
@@ -378,6 +381,11 @@ func (controller *TaskController) List(c *gin.Context) {
 			Column:   "created_at",
 			Op:       filters.FILTER_LTE,
 		},
+		&filters.FilterOption{
+			QueryKey: "team_id",
+			Column:   "team_id",
+			Op:       filters.FILTER_EQ,
+		},
 	}
 
 	// 3. 定义搜索字段
@@ -389,6 +397,9 @@ func (controller *TaskController) List(c *gin.Context) {
 
 	// 5. 获取过滤动作
 	filterActions := controller.FilterAction(c, filterOptions, searchFields, orderingFields, defaultOrdering)
+
+	// 🔥 添加团队过滤器（支持管理员查看所有团队数据）
+	filterActions = controller.AppendTeamFilterWithOptions(c, filterActions, true)
 
 	// 6. 计算偏移量
 	offset := (pagination.Page - 1) * pagination.PageSize

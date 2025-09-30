@@ -1,5 +1,7 @@
 package config
 
+const SystemCode = "cronjob_apiserver"
+
 // DispatchLockerKeyFormat 计划任务调度的key
 const DispatchLockerKeyFormat = "cronjob:dispatch:%s"
 

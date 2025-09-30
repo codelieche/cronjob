@@ -11,16 +11,18 @@ import (
 // 过滤器操作类型常量定义
 // 使用iota自动递增，定义了常用的数据库查询操作符
 const (
-	FILTER_EQ        = iota // 等于 (=)
-	FILTER_NEQ              // 不等于 (!=)
-	FILTER_CONTAINS         // 包含 (LIKE '%value%')
-	FILTER_ICONTAINS        // 不区分大小写包含 (ILIKE '%value%')
-	FILTER_GT               // 大于 (>)
-	FILTER_GTE              // 大于等于 (>=)
-	FILTER_LT               // 小于 (<)
-	FILTER_LTE              // 小于等于 (<=)
-	FILTER_LIKE             // 模糊匹配 (LIKE)
-	FILTER_IN               // 在列表中 (IN)
+	FILTER_EQ          = iota // 等于 (=)
+	FILTER_NEQ                // 不等于 (!=)
+	FILTER_CONTAINS           // 包含 (LIKE '%value%')
+	FILTER_ICONTAINS          // 不区分大小写包含 (ILIKE '%value%')
+	FILTER_GT                 // 大于 (>)
+	FILTER_GTE                // 大于等于 (>=)
+	FILTER_LT                 // 小于 (<)
+	FILTER_LTE                // 小于等于 (<=)
+	FILTER_LIKE               // 模糊匹配 (LIKE)
+	FILTER_IN                 // 在列表中 (IN)
+	FILTER_IS_NULL            // 是空值 (IS NULL)
+	FILTER_IS_NOT_NULL        // 不是空值 (IS NOT NULL)
 )
 
 // Filter 接口定义了所有过滤器必须实现的方法
@@ -71,6 +73,12 @@ var ClauseExpressionMap = map[int]NewClauseExpressionFunc{
 			values = append(values, reflectValue.Index(i).Interface())
 		}
 		return &clause.IN{Column: column, Values: values}
+	},
+	FILTER_IS_NULL: func(column string, value interface{}) clause.Expression {
+		return &clause.Eq{Column: column, Value: nil}
+	},
+	FILTER_IS_NOT_NULL: func(column string, value interface{}) clause.Expression {
+		return &clause.Neq{Column: column, Value: nil}
 	},
 }
 

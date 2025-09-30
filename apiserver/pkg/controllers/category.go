@@ -25,7 +25,7 @@ func NewCategoryController(service core.CategoryService) *CategoryController {
 
 // Create 创建分类
 // @Summary 创建任务分类
-// @Description 创建新的任务分类
+// @Description 创建新的任务分类。如果提供X-TEAM-ID，分类将归属于该团队
 // @Tags categories
 // @Accept json
 // @Produce json
@@ -33,6 +33,8 @@ func NewCategoryController(service core.CategoryService) *CategoryController {
 // @Success 201 {object} core.Category "创建成功的分类信息"
 // @Failure 400 {object} core.ErrorResponse "请求参数错误"
 // @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 403 {object} core.ErrorResponse "团队权限不足"
+// @Failure 404 {object} core.ErrorResponse "团队不存在"
 // @Failure 409 {object} core.ErrorResponse "分类已存在"
 // @Router /category/ [post]
 // @Security BearerAuth
@@ -202,7 +204,7 @@ func (controller *CategoryController) Delete(c *gin.Context) {
 
 // List 获取分类列表
 // @Summary 获取任务分类列表
-// @Description 根据查询条件获取分类列表，支持分页、搜索和过滤
+// @Description 根据查询条件获取分类列表，支持分页、搜索和过滤。如果提供X-TEAM-ID，则只返回该团队的分类
 // @Tags categories
 // @Accept json
 // @Produce json
@@ -219,6 +221,8 @@ func (controller *CategoryController) Delete(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "分类列表和分页信息"
 // @Failure 400 {object} core.ErrorResponse "请求参数错误"
 // @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 403 {object} core.ErrorResponse "团队权限不足"
+// @Failure 404 {object} core.ErrorResponse "团队不存在"
 // @Router /category/ [get]
 // @Security BearerAuth
 func (controller *CategoryController) List(c *gin.Context) {

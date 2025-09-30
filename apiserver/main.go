@@ -28,13 +28,20 @@
 
 // @BasePath  /api/v1
 
-// @securityDefinitions.apikey  BearerAuth
-// @in                         header
-// @name                       Authorization
-// @description                JWT token, format: Bearer {token}
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT token, format: Bearer {token}
+
+// @securityDefinitions.apikey XTeamID
+// @in header
+// @name TeamAuth
+// @description Team ID for team-scoped operations (optional)
 package main
 
 import (
+	"time"
+
 	"github.com/codelieche/cronjob/apiserver/pkg/app"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
 )
@@ -47,6 +54,14 @@ import (
 // 4. 启动WebSocket服务
 func main() {
 	logger.Info("计划任务系统 API Server 启动中...")
+
+	// 使用带重试机制的注册
+	if err := app.RegisterWithRetry(3, 2*time.Second); err != nil {
+		logger.Fatalf("权限注册失败: %v", err)
+	} else {
+		logger.Info("权限注册完成")
+	}
+
 	app.Run()
 	logger.Info("计划任务系统 API Server 已停止")
 }
