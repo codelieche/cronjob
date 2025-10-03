@@ -11,6 +11,7 @@ import (
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/tools"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/types"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // CronJobController 定时任务控制器
@@ -58,6 +59,17 @@ func (controller *CronJobController) Create(c *gin.Context) {
 
 	// 3. 准备创建对象
 	CronJob := form.ToCronJob()
+
+	// 🔥 如果没有传递team_id，则使用当前用户的team_id
+	if CronJob.TeamID == nil {
+		if teamID, exists := c.Get(core.ContextKeyCurrentTeamID); exists {
+			if teamIDStr, ok := teamID.(string); ok && teamIDStr != "" {
+				if parsedTeamID, err := uuid.Parse(teamIDStr); err == nil {
+					CronJob.TeamID = &parsedTeamID
+				}
+			}
+		}
+	}
 
 	// 4. 调用服务创建定时任务
 	createdCronJob, err := controller.service.Create(c.Request.Context(), CronJob)
@@ -497,4 +509,74 @@ func (controller *CronJobController) Patch(c *gin.Context) {
 
 	// 6. 返回成功响应
 	controller.HandleOK(c, updatedCronJob)
+}
+
+// Execute 手动执行定时任务
+// @Summary 手动执行定时任务
+// @Description 立即创建一个待执行的任务（pending状态），不等待定时调度。Worker会自动获取并执行该任务。适用于测试、调试或紧急执行场景
+// @Tags cronjobs
+// @Accept json
+// @Produce json
+// @Param id path string true "定时任务ID"
+// @Success 200 {object} core.Task "创建的任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 403 {object} core.ErrorResponse "团队权限不足"
+// @Failure 404 {object} core.ErrorResponse "定时任务不存在"
+// @Failure 500 {object} core.ErrorResponse "服务器错误"
+// @Router /cronjob/{id}/execute/ [post]
+// @Security BearerAuth
+// @Security TeamAuth
+func (controller *CronJobController) Execute(c *gin.Context) {
+	// 1. 获取定时任务ID
+	id := c.Param("id")
+	if id == "" {
+		controller.HandleError(c, core.ErrBadRequest, http.StatusBadRequest)
+		return
+	}
+
+	// 2. 验证定时任务是否存在并获取信息
+	cronJob, err := controller.service.FindByID(c.Request.Context(), id)
+	if err != nil {
+		if err == core.ErrNotFound {
+			controller.Handle404(c, err)
+		} else {
+			controller.HandleError(c, err, http.StatusBadRequest)
+		}
+		return
+	}
+
+	// 3. 验证团队权限
+	// 如果请求中有 X-TEAM-ID，需要验证与 CronJob 的 team_id 是否匹配
+	if teamID, exists := c.Get("team_id"); exists {
+		requestTeamID, ok := teamID.(uuid.UUID)
+		if !ok {
+			controller.HandleError(c, core.ErrBadRequest, http.StatusBadRequest)
+			return
+		}
+
+		// 验证权限：CronJob 的 TeamID 必须与请求的 TeamID 匹配
+		if cronJob.TeamID != nil && *cronJob.TeamID != requestTeamID {
+			controller.HandleError(c, core.ErrForbidden, http.StatusForbidden)
+			return
+		}
+	}
+
+	// 4. 获取当前用户名（用于任务名称和审计）
+	username := "unknown"
+	if user, exists := c.Get(core.ContextKeyUsername); exists {
+		if userName, ok := user.(string); ok && userName != "" {
+			username = userName
+		}
+	}
+
+	// 5. 调用服务层执行CronJob
+	task, err := controller.service.ExecuteCronJob(c.Request.Context(), id, username)
+	if err != nil {
+		controller.HandleError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	// 6. 返回创建的任务信息
+	controller.HandleOK(c, task)
 }

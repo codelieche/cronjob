@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"time"
 
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/filters"
@@ -186,4 +187,81 @@ func (s *WorkerService) GetOrCreate(ctx context.Context, worker *core.Worker) (*
 		logger.Error("get or create worker error", zap.Error(err))
 	}
 	return result, err
+}
+
+// CheckAndUpdateInactiveWorkers 检查并更新失活的worker
+// 如果worker的last_active超过指定时间（默认5分钟），将其is_active设置为false
+func (s *WorkerService) CheckAndUpdateInactiveWorkers(ctx context.Context, inactiveDuration time.Duration) (int, error) {
+	// 计算截止时间：当前时间 - inactiveDuration
+	cutoffTime := time.Now().Add(-inactiveDuration)
+
+	// 查询所有is_active=true且last_active < cutoffTime的worker
+	filterActions := []filters.Filter{
+		&filters.FilterOption{
+			Column: "is_active",
+			Value:  1, // true
+			Op:     filters.FILTER_EQ,
+		},
+		&filters.FilterOption{
+			Column: "last_active",
+			Value:  cutoffTime.Format("2006-01-02 15:04:05"),
+			Op:     filters.FILTER_LT,
+		},
+	}
+
+	// 获取需要更新的worker列表
+	workers, err := s.store.List(ctx, 0, 1000, filterActions...)
+	if err != nil {
+		logger.Error("查询失活worker失败", zap.Error(err))
+		return 0, err
+	}
+
+	// 更新每个失活worker的状态
+	updatedCount := 0
+	isActive := false
+	for _, worker := range workers {
+		worker.IsActive = &isActive
+		_, err := s.store.Update(ctx, worker)
+		if err != nil {
+			logger.Error("更新worker状态失败",
+				zap.Error(err),
+				zap.String("worker_id", worker.ID.String()),
+				zap.String("worker_name", worker.Name))
+		} else {
+			updatedCount++
+			logger.Info("Worker已标记为失活",
+				zap.String("worker_id", worker.ID.String()),
+				zap.String("worker_name", worker.Name),
+				zap.Time("last_active", *worker.LastActive))
+		}
+	}
+
+	return updatedCount, nil
+}
+
+// CheckWorkerStatusLoop 循环检查worker状态的后台任务
+// 定期检查worker的last_active，将超时的worker标记为失活
+func (s *WorkerService) CheckWorkerStatusLoop(ctx context.Context, checkInterval time.Duration, inactiveDuration time.Duration) {
+	logger.Info("开始运行Worker状态检查循环",
+		zap.Duration("check_interval", checkInterval),
+		zap.Duration("inactive_duration", inactiveDuration))
+
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("Worker状态检查循环被取消")
+			return
+		case <-ticker.C:
+			// 执行检查并更新
+			updatedCount, err := s.CheckAndUpdateInactiveWorkers(ctx, inactiveDuration)
+			if err != nil {
+				logger.Error("检查失活worker时发生错误", zap.Error(err))
+			} else if updatedCount > 0 {
+				logger.Info("已更新失活worker状态", zap.Int("count", updatedCount))
+			}
+		}
+	}
 }

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/filters"
@@ -126,7 +127,15 @@ func (s *CronJobStore) Update(ctx context.Context, cronJob *core.CronJob) (*core
 		}
 	}()
 
-	if err := tx.Model(cronJob).Updates(cronJob).Error; err != nil {
+	// 🔥 使用 Select() 强制更新所有字段，包括零值字段（如 max_retry=0, is_active=false）
+	// 明确指定要更新的字段列表
+	updateFields := []string{
+		"project", "category", "name", "time", "command", "args", "description",
+		"is_active", "save_log", "timeout", "metadata",
+		"max_retry", "retryable", // 🔥 包含重试配置字段
+	}
+
+	if err := tx.Model(cronJob).Select(updateFields).Updates(cronJob).Error; err != nil {
 		tx.Rollback()
 		return nil, err
 	} else {
@@ -292,12 +301,43 @@ func (s *CronJobStore) Patch(ctx context.Context, id uuid.UUID, updates map[stri
 		}
 	}()
 
-	// 使用map动态更新任务字段
-	if err := tx.Model(cronJob).Updates(updates).Error; err != nil {
+	// 🔥 使用 Select() 明确指定要更新的字段，避免 GORM 忽略零值（如 false, 0）
+	// 提取 updates 中的所有字段名
+	var fields []string
+	for field := range updates {
+		fields = append(fields, field)
+	}
+
+	// 使用 Select() 指定更新字段，然后用 Updates() 批量更新
+	if err := tx.Model(cronJob).Select(fields).Updates(updates).Error; err != nil {
 		tx.Rollback()
 		return err
 	} else {
 		tx.Commit()
 		return nil
 	}
+}
+
+// BatchUpdateNullLastPlan 批量更新is_active=true且last_plan为NULL的CronJob
+// 用于初始化新建CronJob的last_plan字段，避免无法调度
+//
+// 参数:
+//   - ctx: 上下文
+//   - lastPlan: 要设置的last_plan时间
+//
+// 返回值:
+//   - affectedRows: 更新的行数
+//   - error: 操作错误
+func (s *CronJobStore) BatchUpdateNullLastPlan(ctx context.Context, lastPlan time.Time) (int64, error) {
+	result := s.db.Model(&core.CronJob{}).
+		Where("is_active = ?", true).
+		Where("last_plan IS NULL").
+		Where("deleted_at IS NULL").
+		Update("last_plan", lastPlan)
+
+	if result.Error != nil {
+		return 0, result.Error
+	}
+
+	return result.RowsAffected, nil
 }

@@ -16,13 +16,15 @@ import (
 // TaskController 任务控制器
 type TaskController struct {
 	controllers.BaseController
-	service core.TaskService
+	service         core.TaskService
+	dispatchService core.DispatchService // 用于手动重试
 }
 
 // NewTaskController 创建TaskController实例
-func NewTaskController(service core.TaskService) *TaskController {
+func NewTaskController(service core.TaskService, dispatchService core.DispatchService) *TaskController {
 	return &TaskController{
-		service: service,
+		service:         service,
+		dispatchService: dispatchService,
 	}
 }
 
@@ -578,4 +580,43 @@ func (controller *TaskController) Patch(c *gin.Context) {
 
 	// 6. 返回成功响应
 	controller.HandleOK(c, updatedTask)
+}
+
+// Retry 手动重试任务
+// @Summary 手动重试失败的任务
+// @Description 立即创建一个新的重试任务（pending状态），用于手动触发失败任务的重试
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Success 200 {object} core.Task "创建的重试任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误或任务不满足重试条件"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Failure 500 {object} core.ErrorResponse "服务器错误"
+// @Router /task/{id}/retry/ [post]
+// @Security BearerAuth
+func (controller *TaskController) Retry(c *gin.Context) {
+	// 1. 获取任务ID
+	id := c.Param("id")
+	if id == "" {
+		controller.HandleError(c, core.ErrBadRequest, http.StatusBadRequest)
+		return
+	}
+
+	// 2. 验证任务ID格式
+	if _, err := uuid.Parse(id); err != nil {
+		controller.HandleError(c, core.ErrBadRequest, http.StatusBadRequest)
+		return
+	}
+
+	// 3. 调用dispatchService重试任务
+	retryTask, err := controller.dispatchService.RetryTask(c.Request.Context(), id)
+	if err != nil {
+		controller.HandleError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	// 4. 返回成功响应
+	controller.HandleOK(c, retryTask)
 }

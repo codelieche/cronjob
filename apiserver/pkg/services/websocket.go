@@ -199,6 +199,18 @@ func (cm *ClientManagerImpl) GetWorkers() map[string]*core.Worker {
 	return cm.workers
 }
 
+// GetWorkerByClientID 根据clientID获取Worker信息
+// 参数:
+//   - clientID: 客户端唯一标识
+//
+// 返回值:
+//   - *core.Worker: Worker对象，如果不存在则返回nil
+func (cm *ClientManagerImpl) GetWorkerByClientID(clientID string) *core.Worker {
+	cm.mutexWorker.RLock()
+	defer cm.mutexWorker.RUnlock()
+	return cm.workers[clientID]
+}
+
 // Broadcast 广播任务事件给所有连接的客户端
 // 参数:
 //   - event: 要广播的任务事件对象
@@ -461,65 +473,62 @@ func (w *WebsocketService) GetClientManager() core.WebsocketClientManager {
 
 // consumePendingTasksQueue 消费待执行任务队列
 // 这个goroutine会持续从待执行队列中获取任务，并广播给所有连接的客户端
+//
+// 🔥 P5优化：简化消费逻辑，移除冗余的"重新放回队列"
+// 设计原理：
+// - checkPendingTasks每3秒会重新查询DB中status=pending的任务
+// - 只要任务未被执行（status=pending），就会被重新发现并加入队列
+// - 因此无需在消费时重新放回队列，避免队列循环堆积
 func (w *WebsocketService) consumePendingTasksQueue() {
 	logger.Debug("启动待执行任务队列消费者")
 
-	for {
-		logger.Info("开始消费待执行任务队列")
-		time.Sleep(time.Second)
-
-		for task := range GetPendingTasksQueue() {
-			clientCount := w.clientManager.Count()
-			if clientCount > 0 {
-				// 有客户端连接，广播任务
-				event := &core.TaskEvent{
-					Action: string(core.TaskActionRun),
-					Tasks:  []*core.Task{task},
-				}
-				w.clientManager.Broadcast(event)
-			} else {
-				// 没有客户端，检查任务是否已超时
-				now := time.Now()
-				if task.TimeoutAt.After(now) {
-					// 任务未超时，重新放回队列
-					select {
-					case pendingTasksQueue <- task:
-						logger.Debug("任务重新放回待执行队列", zap.String("task_id", task.ID.String()))
-					default:
-						logger.Warn("待执行队列已满，无法重新放回任务", zap.String("task_id", task.ID.String()))
-					}
-				}
+	for task := range GetPendingTasksQueue() {
+		clientCount := w.clientManager.Count()
+		if clientCount > 0 {
+			// 有Worker连接，广播任务
+			event := &core.TaskEvent{
+				Action: string(core.TaskActionRun),
+				Tasks:  []*core.Task{task},
 			}
+			w.clientManager.Broadcast(event)
+			logger.Debug("任务已广播给Worker",
+				zap.String("task_id", task.ID.String()),
+				zap.Int("worker_count", clientCount))
+		} else {
+			// 🔥 没有Worker连接时，直接跳过
+			// checkPendingTasks会在下次轮询（3秒后）重新查询并加入队列
+			logger.Warn("没有Worker连接，任务将在下次轮询时重新发送",
+				zap.String("task_id", task.ID.String()),
+				zap.String("task_name", task.Name))
 		}
-		time.Sleep(time.Second)
 	}
 }
 
 // consumeStopTasksQueue 消费停止任务队列
 // 这个goroutine会持续从停止队列中获取任务，并广播给所有连接的客户端
+//
+// 🔥 P5优化：简化消费逻辑
+// 停止任务由Controller直接发起，不依赖定期轮询，因此无需重新放回队列
 func (w *WebsocketService) consumeStopTasksQueue() {
 	logger.Info("启动停止任务队列消费者")
 	for task := range GetStopTasksQueue() {
 		clientCount := w.clientManager.Count()
 		if clientCount > 0 {
-			// 有客户端连接，广播停止任务
+			// 有Worker连接，广播停止任务
 			event := &core.TaskEvent{
 				Action: string(core.TaskActionStop),
 				Tasks:  []*core.Task{task},
 			}
 			w.clientManager.Broadcast(event)
+			logger.Debug("停止任务已广播给Worker",
+				zap.String("task_id", task.ID.String()),
+				zap.Int("worker_count", clientCount))
 		} else {
-			// 没有客户端，检查任务是否已超时
-			now := time.Now()
-			if task.TimeoutAt.After(now) {
-				// 任务未超时，重新放回队列
-				select {
-				case stopTasksQueue <- task:
-					logger.Debug("任务重新放回停止队列", zap.String("task_id", task.ID.String()))
-				default:
-					logger.Warn("停止队列已满，无法重新放回任务", zap.String("task_id", task.ID.String()))
-				}
-			}
+			// 🔥 没有Worker连接时，记录警告
+			// 停止任务是一次性操作，无法重试
+			logger.Warn("没有Worker连接，停止任务无法发送",
+				zap.String("task_id", task.ID.String()),
+				zap.String("task_name", task.Name))
 		}
 	}
 }

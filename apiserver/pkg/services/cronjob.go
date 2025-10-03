@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/filters"
@@ -13,13 +15,20 @@ import (
 // NewCronJobService 创建CronJobService实例
 func NewCronJobService(store core.CronJobStore) core.CronJobService {
 	return &CronJobService{
-		store: store,
+		store:       store,
+		taskService: nil, // 延迟初始化，避免循环依赖
 	}
 }
 
 // CronJobService 定时任务服务实现
 type CronJobService struct {
-	store core.CronJobStore
+	store       core.CronJobStore
+	taskService core.TaskService // 用于创建任务
+}
+
+// SetTaskService 设置任务服务（依赖注入）
+func (s *CronJobService) SetTaskService(taskService core.TaskService) {
+	s.taskService = taskService
 }
 
 // FindByID 根据ID获取定时任务
@@ -256,6 +265,9 @@ func (s *CronJobService) Patch(ctx context.Context, id string, updates map[strin
 		"last_status":   true,
 		"last_dispatch": true,
 		"timeout":       true,
+		// 🔥 重试配置字段
+		"max_retry": true,
+		"retryable": true,
 	}
 
 	// 过滤出有效的更新字段
@@ -286,4 +298,117 @@ func (s *CronJobService) Patch(ctx context.Context, id string, updates map[strin
 		logger.Error("patch cronjob error", zap.Error(err), zap.String("id", id))
 	}
 	return err
+}
+
+// InitializeNullLastPlan 初始化所有is_active=true且last_plan为NULL的CronJob
+// 用于处理新建CronJob的last_plan初始化问题
+//
+// 返回值:
+//   - affectedRows: 更新的行数
+//   - error: 操作错误
+func (s *CronJobService) InitializeNullLastPlan(ctx context.Context) (int64, error) {
+	now := time.Now()
+	affectedRows, err := s.store.BatchUpdateNullLastPlan(ctx, now)
+	if err != nil {
+		logger.Error("批量初始化CronJob的last_plan失败", zap.Error(err))
+		return 0, err
+	}
+
+	if affectedRows > 0 {
+		logger.Info("批量初始化CronJob的last_plan成功",
+			zap.Int64("affected_rows", affectedRows),
+			zap.Time("last_plan", now))
+	}
+
+	return affectedRows, nil
+}
+
+// ExecuteCronJob 立即执行定时任务（手动触发）
+// 根据CronJob配置创建一个pending状态的Task，不等待定时调度
+// username: 触发任务的用户名，用于审计追踪
+func (s *CronJobService) ExecuteCronJob(ctx context.Context, id string, username string) (*core.Task, error) {
+	// 1. 解析并验证ID
+	uuidID, err := uuid.Parse(id)
+	if err != nil {
+		logger.Error("parse cronjob id error", zap.Error(err), zap.String("id", id))
+		return nil, core.ErrBadRequest
+	}
+
+	// 2. 获取CronJob信息
+	cronJob, err := s.store.FindByID(ctx, uuidID)
+	if err != nil {
+		logger.Error("find cronjob by id error", zap.Error(err), zap.String("id", id))
+		return nil, err
+	}
+
+	// 3. 检查TaskService是否已注入
+	if s.taskService == nil {
+		logger.Error("task service not initialized")
+		return nil, fmt.Errorf("任务服务未初始化")
+	}
+
+	// 4. 构建Task对象
+	now := time.Now()
+	// 任务名称格式：{cronjob_name}-{username}-execute-{timestamp}
+	// 如果没有提供用户名，使用 "unknown" 占位
+	if username == "" {
+		username = "unknown"
+	}
+	taskName := fmt.Sprintf("%s-%s-execute-%s", cronJob.Name, username, now.Format("20060102-150405"))
+
+	// 计算超时时间
+	var timeoutAt time.Time
+	if cronJob.Timeout > 0 {
+		timeoutAt = now.Add(time.Duration(cronJob.Timeout) * time.Second)
+	} else {
+		// 默认超时时间为1小时
+		timeoutAt = now.Add(1 * time.Hour)
+	}
+
+	task := &core.Task{
+		ID:           uuid.New(),
+		TeamID:       cronJob.TeamID,
+		Project:      cronJob.Project,
+		Category:     cronJob.Category,
+		CronJob:      &cronJob.ID,
+		Name:         taskName,
+		Command:      cronJob.Command,
+		Args:         cronJob.Args,
+		Description:  fmt.Sprintf("手动触发执行: %s", cronJob.Description),
+		TimePlan:     now,
+		TimeoutAt:    timeoutAt,
+		Status:       core.TaskStatusPending,
+		SaveLog:      cronJob.SaveLog,
+		Timeout:      cronJob.Timeout,
+		Metadata:     cronJob.Metadata,
+		IsStandalone: boolPtr(false), // 关联CronJob
+		// 🔥 从CronJob继承重试配置
+		MaxRetry:   cronJob.MaxRetry,
+		Retryable:  cronJob.Retryable,
+		RetryCount: 0, // 新任务重试次数为0
+	}
+
+	// 5. 创建Task
+	createdTask, err := s.taskService.Create(ctx, task)
+	if err != nil {
+		logger.Error("create task error",
+			zap.Error(err),
+			zap.String("cronjob_id", id),
+			zap.String("task_name", taskName))
+		return nil, err
+	}
+
+	logger.Info("cronjob manually executed",
+		zap.String("cronjob_id", id),
+		zap.String("cronjob_name", cronJob.Name),
+		zap.String("task_id", createdTask.ID.String()),
+		zap.String("task_name", taskName),
+		zap.String("triggered_by", username))
+
+	return createdTask, nil
+}
+
+// boolPtr 返回bool指针
+func boolPtr(b bool) *bool {
+	return &b
 }

@@ -78,16 +78,16 @@ func (o Ordering) Filter(db *gorm.DB) *gorm.DB {
 					if ordering == "" {
 						// 第一个字段
 						if order == "-" {
-							ordering = fmt.Sprintf("%s desc", fieldName)
+							ordering = fmt.Sprintf("`%s` desc", fieldName)
 						} else {
-							ordering = fieldName
+							ordering = fmt.Sprintf("`%s`", fieldName)
 						}
 					} else {
 						// 后续字段，用逗号连接
 						if order == "-" {
-							ordering = fmt.Sprintf("%s, %s desc", ordering, fieldName)
+							ordering = fmt.Sprintf("%s, `%s` desc", ordering, fieldName)
 						} else {
-							ordering = fmt.Sprintf("%s, %s", ordering, fieldName)
+							ordering = fmt.Sprintf("%s, `%s`", ordering, fieldName)
 						}
 					}
 				}

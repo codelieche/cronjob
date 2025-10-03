@@ -193,6 +193,9 @@ type CronJobInfoForm struct {
 	SaveLog     bool                  `json:"save_log" form:"save_log"`
 	Timeout     int                   `json:"timeout" form:"timeout"`
 	Metadata    *core.CronJobMetadata `json:"metadata" form:"metadata"`
+	// 🔥 重试配置
+	MaxRetry  *int  `json:"max_retry" form:"max_retry"` // 使用指针类型以区分0和未设置
+	Retryable *bool `json:"retryable" form:"retryable"` // 使用指针类型以区分false和未设置
 }
 
 // Validate 验证表单
@@ -283,6 +286,14 @@ func (form *CronJobInfoForm) UpdateCronJob(CronJob *core.CronJob) {
 	CronJob.IsActive = &form.IsActive
 	CronJob.SaveLog = &form.SaveLog
 	CronJob.Timeout = form.Timeout
+
+	// 🔥 更新重试配置（如果表单中提供了）
+	if form.MaxRetry != nil {
+		CronJob.MaxRetry = *form.MaxRetry
+	}
+	if form.Retryable != nil {
+		CronJob.Retryable = form.Retryable
+	}
 
 	// 处理元数据更新
 	if form.Metadata != nil {

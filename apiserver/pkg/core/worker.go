@@ -106,4 +106,10 @@ type WorkerService interface {
 
 	// GetOrCreate 获取或者创建工作节点
 	GetOrCreate(ctx context.Context, obj *Worker) (*Worker, error)
+
+	// CheckAndUpdateInactiveWorkers 检查并更新失活的worker
+	CheckAndUpdateInactiveWorkers(ctx context.Context, inactiveDuration time.Duration) (int, error)
+
+	// CheckWorkerStatusLoop 循环检查worker状态的后台任务
+	CheckWorkerStatusLoop(ctx context.Context, checkInterval time.Duration, inactiveDuration time.Duration)
 }

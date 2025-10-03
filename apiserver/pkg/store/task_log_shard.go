@@ -792,7 +792,7 @@ func (s *taskLogShardStore) countShardTableWithTeamFilter(ctx context.Context, t
 	// 使用JOIN查询计数
 	query := s.db.WithContext(ctx).
 		Table(fmt.Sprintf("%s tl", tableName)).
-		Joins("INNER JOIN task t ON tl.task_id = t.id").
+		Joins("INNER JOIN tasks t ON tl.task_id = t.id").
 		Where("t.team_id IN ?", teamIDs)
 
 	// 应用其他过滤条件

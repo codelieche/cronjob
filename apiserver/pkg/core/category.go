@@ -27,12 +27,12 @@ func (Category) TableName() string {
 }
 
 // BeforeCreate 分类创建前
-func (c *Category) BeforeCreate() error {
+func (c *Category) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
 // BeforeUpdate 分类更新前
-func (c *Category) BeforeUpdate() error {
+func (c *Category) BeforeUpdate(tx *gorm.DB) error {
 	return nil
 }
 

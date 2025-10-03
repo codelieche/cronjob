@@ -268,3 +268,144 @@ func (s *apiserverService) AppendTaskLog(taskID string, content string) error {
 
 	return nil
 }
+
+// AcquireLock 获取分布式锁
+//
+// 参数:
+//   - key: 锁的键名
+//   - expire: 过期时间（秒）
+//
+// 返回值:
+//   - lockKey: 锁的键名
+//   - lockValue: 锁的值
+//   - error: 获取过程中的错误
+func (s *apiserverService) AcquireLock(key string, expire int) (string, string, error) {
+	// 构建请求URL
+	url := fmt.Sprintf("%s/lock/acquire?key=%s&expire=%d", s.ApiUrl, key, expire)
+
+	// 创建HTTP请求
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("创建HTTP请求失败: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json")
+	if s.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.ApiKey)
+	}
+
+	// 发送请求
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("发送HTTP请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("读取响应体失败: %w", err)
+	}
+
+	// 检查HTTP状态码
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("HTTP请求失败，状态码: %d, 响应: %s", resp.StatusCode, string(body))
+	}
+
+	// 解析响应JSON
+	var apiResp core.ApiserverResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", "", fmt.Errorf("解析响应JSON失败: %w", err)
+	}
+
+	// 检查API返回的code
+	if apiResp.Code != 0 {
+		return "", "", fmt.Errorf("API返回错误，code: %d, message: %s", apiResp.Code, apiResp.Message)
+	}
+
+	// 将data字段解析为map，直接提取key和value
+	lockData, err := json.Marshal(apiResp.Data)
+	if err != nil {
+		return "", "", fmt.Errorf("序列化data字段失败: %w", err)
+	}
+
+	var lockResult map[string]interface{}
+	if err := json.Unmarshal(lockData, &lockResult); err != nil {
+		return "", "", fmt.Errorf("解析锁数据失败: %w", err)
+	}
+
+	// 检查是否成功获取锁
+	if success, ok := lockResult["success"].(bool); !ok || !success {
+		message := "未知错误"
+		if msg, ok := lockResult["message"].(string); ok {
+			message = msg
+		}
+		return "", "", fmt.Errorf("获取锁失败: %s", message)
+	}
+
+	// 提取key和value
+	lockKey, keyOk := lockResult["key"].(string)
+	lockValue, valueOk := lockResult["value"].(string)
+
+	if !keyOk || !valueOk || lockKey == "" || lockValue == "" {
+		return "", "", fmt.Errorf("获取的锁信息不完整: key=%v, value=%v", lockResult["key"], lockResult["value"])
+	}
+
+	return lockKey, lockValue, nil
+}
+
+// PingWorker 发送Worker心跳，更新is_active和last_active
+//
+// 参数:
+//   - workerID: Worker节点ID
+//
+// 返回值:
+//   - error: 发送过程中的错误
+func (s *apiserverService) PingWorker(workerID string) error {
+	// 构建请求URL
+	url := fmt.Sprintf("%s/worker/%s/ping/", s.ApiUrl, workerID)
+
+	// 创建HTTP请求
+	req, err := http.NewRequest("PUT", url, nil)
+	if err != nil {
+		return fmt.Errorf("创建HTTP请求失败: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json")
+	if s.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.ApiKey)
+	}
+
+	// 发送请求
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("发送HTTP请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("读取响应体失败: %w", err)
+	}
+
+	// 检查HTTP状态码
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP请求失败，状态码: %d, 响应: %s", resp.StatusCode, string(body))
+	}
+
+	// 解析响应JSON
+	var apiResp core.ApiserverResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return fmt.Errorf("解析响应JSON失败: %w", err)
+	}
+
+	// 检查API返回的code
+	if apiResp.Code != 0 {
+		return fmt.Errorf("API返回错误，code: %d, message: %s", apiResp.Code, apiResp.Message)
+	}
+
+	return nil
+}

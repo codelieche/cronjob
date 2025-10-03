@@ -160,10 +160,58 @@ func (wc *WebsocketController) readPump(clientID string, conn *websocket.Conn, c
 
 	// 配置WebSocket连接参数
 	conn.SetReadLimit(10240) // 设置读取消息的大小限制
-	// 设置pong消息处理，延长读取超时
-	conn.SetPongHandler(func(string) error {
-		logger.Info("收到pong消息，重置读取超时", zap.String("client_id", clientID))
-		// conn.SetReadDeadline(time.Now().Add(90 * time.Second)) // 增加超时时间到90秒
+
+	// 🔥 P5优化：WebSocket ping处理同时更新Worker状态
+	// 设置ping消息处理，自动返回pong + 更新Worker的last_active
+	// 性能提升：移除每30秒的HTTP ping请求（减少100%冗余HTTP调用）
+	//
+	// 注意：Worker发送Ping，ApiServer应该用SetPingHandler处理！
+	// SetPongHandler是用来处理收到的Pong响应，而不是Ping请求
+	conn.SetPingHandler(func(appData string) error {
+		logger.Debug("收到ping消息，更新Worker状态", zap.String("client_id", clientID))
+
+		// 🔥 从clientManager获取Worker信息
+		clientManagerImpl, ok := clientManager.(*services.ClientManagerImpl)
+		if ok {
+			if worker := clientManagerImpl.GetWorkerByClientID(clientID); worker != nil {
+				// 更新Worker的is_active和last_active
+				now := time.Now()
+				isActive := true
+				worker.IsActive = &isActive
+				worker.LastActive = &now
+
+				logger.Debug("ping处理器：准备更新Worker状态",
+					zap.String("worker_id", worker.ID.String()),
+					zap.String("worker_name", worker.Name))
+
+				// 异步更新数据库，不阻塞ping处理
+				go func(w *core.Worker) {
+					ctx := context.Background()
+					if _, err := wc.service.UpdateWorker(ctx, w); err != nil {
+						logger.Warn("更新Worker状态失败",
+							zap.Error(err),
+							zap.String("worker_id", w.ID.String()),
+							zap.String("client_id", clientID))
+					} else {
+						logger.Debug("ping处理器：Worker状态更新成功",
+							zap.String("worker_id", w.ID.String()),
+							zap.Time("last_active", now))
+					}
+				}(worker)
+			} else {
+				logger.Warn("ping处理器：未找到Worker",
+					zap.String("client_id", clientID))
+			}
+		}
+
+		// 🔥 必须手动发送Pong响应（SetPingHandler不会自动发送）
+		err := conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+		if err != nil {
+			logger.Warn("发送pong响应失败", zap.Error(err), zap.String("client_id", clientID))
+		}
+
+		// 重置读取超时（60秒，足够接收下一个ping）
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 

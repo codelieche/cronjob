@@ -116,6 +116,12 @@ func (m *BaseModel) BeforeDelete(tx *gorm.DB) (err error) {
 	trueValue := true
 	m.Deleted = &trueValue
 
+	// 使用事务更新数据库中的deleted字段
+	// 这样确保软删除时deleted字段被正确设置
+	if err := tx.Model(m).Update("deleted", m.Deleted).Error; err != nil {
+		return err
+	}
+
 	return nil
 }
 

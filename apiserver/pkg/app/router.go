@@ -43,7 +43,10 @@ import (
 //
 // 参数:
 //   - app: Gin引擎实例，用于注册路由
-func initRouter(app *gin.Engine) {
+//
+// 返回值:
+//   - *services.QueueMetrics: 队列健康度指标管理器（需要在后台启动）
+func initRouter(app *gin.Engine) *services.QueueMetrics {
 	// 根路径 - 系统状态检查
 	app.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -64,13 +67,13 @@ func initRouter(app *gin.Engine) {
 	db, err := core.GetDB()
 	if err != nil {
 		logger.Panic("数据库连接失败", zap.Error(err))
-		return
+		return nil
 	} else {
 		// 执行数据库自动迁移
 		// 确保所有表结构都是最新的
 		if err := core.AutoMigrate(db); err != nil {
 			logger.Panic("数据库自动迁移失败", zap.Error(err))
-			return
+			return nil
 		}
 		logger.Info("数据库连接和迁移完成")
 	}
@@ -120,7 +123,7 @@ func initRouter(app *gin.Engine) {
 		workerRoutes.GET("/:id/", workerController.Find)      // 根据ID获取工作节点信息
 		workerRoutes.PUT("/:id/", workerController.Update)    // 更新工作节点信息
 		workerRoutes.DELETE("/:id/", workerController.Delete) // 注销工作节点
-		workerRoutes.GET("/:id/ping/", workerController.Ping) // 工作节点心跳接口
+		workerRoutes.PUT("/:id/ping/", workerController.Ping) // 工作节点心跳接口（修正为PUT）
 	}
 
 	// ========== 分类管理模块 ==========
@@ -156,6 +159,7 @@ func initRouter(app *gin.Engine) {
 		cronjobRoutes.PUT("/:id/", cronjobController.Update)                                       // 更新定时任务信息
 		cronjobRoutes.DELETE("/:id/", cronjobController.Delete)                                    // 删除定时任务
 		cronjobRoutes.PUT("/:id/toggle-active/", cronjobController.ToggleActive)                   // 切换任务激活状态
+		cronjobRoutes.POST("/:id/execute/", cronjobController.Execute)                             // 手动执行定时任务
 		cronjobRoutes.POST("/validate-expression/", cronjobController.ValidateExpression)          // 验证cron表达式
 		cronjobRoutes.GET("/project/:project/name/:name/", cronjobController.FindByProjectAndName) // 根据项目和名称获取任务
 		cronjobRoutes.PATCH("/:id/", cronjobController.Patch)                                      // 动态更新部分字段
@@ -185,7 +189,17 @@ func initRouter(app *gin.Engine) {
 	// 记录每次任务执行的详细信息，需要用户认证
 	taskStore := store.NewTaskStore(db)
 	taskService := services.NewTaskService(taskStore)
-	taskController := controllers.NewTaskController(taskService)
+
+	// 🔥 创建dispatchService用于任务调度和重试（注意：在taskController之前创建）
+	dispatchService := services.NewDispatchService(cronjobStore, taskStore, lockerService)
+
+	taskController := controllers.NewTaskController(taskService, dispatchService) // 注入dispatchService用于重试功能
+
+	// 🔥 将 taskService 注入到 cronjobService 中，用于手动执行任务功能
+	// 注意：必须在 taskService 创建后才能注入，避免 nil pointer
+	if cs, ok := cronjobService.(*services.CronJobService); ok {
+		cs.SetTaskService(taskService)
+	}
 
 	// 任务记录管理接口需要用户认证
 	taskRoutes := apis.Group("/task")
@@ -199,7 +213,33 @@ func initRouter(app *gin.Engine) {
 		taskRoutes.PUT("/:id/update-status/", taskController.UpdateStatus) // 更新任务执行状态
 		taskRoutes.PUT("/:id/update-output/", taskController.UpdateOutput) // 更新任务执行输出
 		taskRoutes.PATCH("/:id/", taskController.Patch)                    // 动态更新任务记录的部分字段
+		taskRoutes.POST("/:id/retry/", taskController.Retry)               // 🔥 手动重试失败的任务
 	}
+
+	// ========== 统计分析模块 ==========
+	// 提供深度数据分析和趋势统计，专注于任务执行效率和系统稳定性
+	// 🔥 P2架构优化：使用分层架构（Controller -> Service -> Store -> Database）
+	// 🔥 P4架构优化：队列健康度使用内存缓存（后台30秒更新）
+	statsStore := store.NewStatsStore(db)
+	statsService := services.NewStatsService(statsStore)
+
+	// 🔥 创建队列健康度指标管理器（内存缓存 + 后台更新）
+	// 需要在 dispatch() 中启动后台更新任务
+	var queueMetrics *services.QueueMetrics
+	queueMetrics = services.NewQueueMetrics(taskService)
+
+	statsAnalysisController := controllers.NewStatsAnalysisController(taskService, statsService, queueMetrics)
+	apis.GET("/task/analysis/", authGroup.Standard, statsAnalysisController.GetAnalysis) // 获取统计分析
+
+	// ========== 统计数据聚合模块 ==========
+	// 提供手动触发统计数据聚合的 API，用于服务挂掉后的数据补偿
+	// 🔥 使用分布式锁防止并发执行，需要管理员权限
+	// 🔥 架构层次：Controller -> Service -> Store -> Database
+	statsAggregatorStore := store.NewStatsAggregatorStore(db)
+	statsAggregator := services.NewStatsAggregator(statsAggregatorStore)
+	statsAggregatorController := controllers.NewStatsAggregatorController(statsAggregator, lockerService)
+	apis.POST("/stats/aggregate/daily", authGroup.Admin, statsAggregatorController.TriggerDailyAggregation)           // 手动触发每日聚合
+	apis.POST("/stats/aggregate/historical", authGroup.Admin, statsAggregatorController.TriggerHistoricalAggregation) // 手动触发历史数据聚合
 
 	// ========== 任务日志管理模块 ==========
 	// 管理任务执行的详细日志，需要用户认证
@@ -214,7 +254,7 @@ func initRouter(app *gin.Engine) {
 	shardManager := shard.NewShardManager(db, shardConfig)
 	taskLogShardStore := store.NewTaskLogShardStore(db, shardManager)
 	taskLogService := services.NewTaskLogShardService(taskLogShardStore)
-	taskLogController := controllers.NewTaskLogController(taskLogService)
+	taskLogController := controllers.NewTaskLogController(taskLogService, taskService) // 🔥 P2优化：注入taskService用于自动获取created_at
 
 	// 任务日志管理接口需要用户认证
 	taskLogRoutes := apis.Group("/tasklog")
@@ -292,4 +332,7 @@ func initRouter(app *gin.Engine) {
 		zap.String("认证服务地址", config.Auth.ApiUrl),
 		zap.Bool("认证缓存启用", config.Auth.EnableCache),
 		zap.Duration("认证超时", config.Auth.Timeout))
+
+	// 🔥 返回队列健康度指标管理器（需要在 dispatch() 中启动）
+	return queueMetrics
 }

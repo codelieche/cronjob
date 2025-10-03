@@ -13,4 +13,10 @@ type DispatchService interface {
 	Stop(ctx context.Context, task *Task) error
 	// GetTasks 获取任务列表
 	GetPendingTasks(ctx context.Context) ([]*Task, error)
+
+	// 🔥 任务自动重试功能
+	// CheckFailedTasksLoop 检查失败任务并自动重试：使用goroutine运行
+	CheckFailedTasksLoop(ctx context.Context) error
+	// RetryTask 手动重试任务
+	RetryTask(ctx context.Context, taskID string) (*Task, error)
 }

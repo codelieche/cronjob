@@ -21,11 +21,18 @@ func AutoMigrate(db *gorm.DB) error {
 		// 执行自动迁移
 		// AutoMigrate会检查模型结构体与数据库表的差异，并自动创建缺失的表和字段
 		if err := db.AutoMigrate(
+			// 核心业务表
 			&Worker{},
 			&Category{},
 			&CronJob{},
 			&Task{},
 			&TaskLog{},
+
+			// 🔥 统计数据表（用于性能优化）
+			&TaskStatsDaily{},    // 任务每日统计
+			&CronjobStatsDaily{}, // CronJob每日统计
+			&WorkerStatsDaily{},  // Worker每日统计
+			&TaskStatsHourly{},   // 任务每小时统计（可选）
 		); err != nil {
 			// 如果迁移过程中出现错误，返回错误信息
 			return err

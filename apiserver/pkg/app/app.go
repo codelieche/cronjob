@@ -14,6 +14,7 @@ import (
 
 	"github.com/codelieche/cronjob/apiserver/pkg/config"
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
+	"github.com/codelieche/cronjob/apiserver/pkg/middleware"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -23,12 +24,18 @@ import (
 //
 // 返回配置好的Gin引擎，包括：
 // - 默认中间件（日志、恢复等）
+// - CORS跨域中间件
 // - 基础配置
 //
 // 返回值:
 //   - *gin.Engine: 配置好的Gin引擎实例
 func newApp() *gin.Engine {
 	app := gin.Default()
+
+	// 🔥 添加CORS中间件，解决跨域问题
+	// 这个中间件必须在所有路由之前注册
+	app.Use(middleware.CORSMiddleware())
+
 	return app
 }
 
@@ -53,7 +60,15 @@ func Run() {
 
 	// 初始化所有API路由
 	// 包括：用户管理、工作节点、分类、定时任务、任务记录、分布式锁、WebSocket等
-	initRouter(app)
+	// 🔥 返回队列健康度指标管理器
+	queueMetrics := initRouter(app)
+
+	// 🔥 启动队列健康度指标后台更新器（P4架构优化）
+	// 每30秒查询一次数据库，更新内存缓存
+	// 零数据库查询API，<1ms响应时间
+	if queueMetrics != nil {
+		queueMetrics.Start()
+	}
 
 	// 启动后台服务
 	// 包括：定时任务调度循环、任务超时检查循环、WebSocket队列消费、分片表维护等

@@ -63,20 +63,33 @@ func NewWebsocketService(taskService core.TaskEventHandler) core.WebsocketServic
 
 // Connect 连接到apiserver的WebSocket
 func (ws *WebsocketServiceImpl) Connect() error {
-	// 构建WebSocket URL
+	// 1. 先获取WebSocket连接锁
+	lockKey := fmt.Sprintf("/ws/%s", config.WorkerInstance.ID.String())
+	key, value, err := ws.apiserver.AcquireLock(lockKey, 60) // 60秒过期时间
+	if err != nil {
+		return fmt.Errorf("获取WebSocket连接锁失败: %v", err)
+	}
+
+	logger.Info("成功获取WebSocket连接锁",
+		zap.String("key", key),
+		zap.String("value", value))
+
+	// 2. 构建带锁参数的WebSocket URL
 	wsUrl := strings.Replace(ws.config.ServerURL, "http://", "ws://", 1)
 	wsUrl = strings.Replace(wsUrl, "https://", "wss://", 1)
-	wsUrl = wsUrl + "/ws/task/"
+	wsUrl = fmt.Sprintf("%s/ws/task/?key=%s&value=%s", wsUrl,
+		url.QueryEscape(key),
+		url.QueryEscape(value))
 
 	logger.Info("正在连接WebSocket", zap.String("url", wsUrl))
 
-	// 解析URL
+	// 4. 解析URL
 	u, err := url.Parse(wsUrl)
 	if err != nil {
 		return fmt.Errorf("解析WebSocket URL失败: %v", err)
 	}
 
-	// 建立WebSocket连接
+	// 5. 建立WebSocket连接
 	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("连接WebSocket失败: %v", err)
@@ -324,6 +337,10 @@ func (ws *WebsocketServiceImpl) pingPump() {
 					}
 				}
 				ws.writeMutex.Unlock()
+
+				// 🔥 P5优化：移除HTTP ping调用，改由ApiServer在pong处理中更新Worker状态
+				// 性能提升：减少100%冗余HTTP请求（每30秒一次）
+				// ApiServer会在收到pong时自动更新Worker的is_active和last_active
 			}
 			logger.Info("ping消息发送成功")
 		}
