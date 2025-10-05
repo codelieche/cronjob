@@ -287,6 +287,7 @@ func (form *TaskInfoForm) Validate() error {
 			core.TaskStatusError:    true,
 			core.TaskStatusTimeout:  true,
 			core.TaskStatusCanceled: true,
+			core.TaskStatusStopped:  true, // 🔥 新增stopped状态
 			core.TaskStatusRetrying: true,
 		}
 
@@ -417,5 +418,16 @@ func (form *TaskInfoForm) UpdateTask(task *core.Task) error {
 		}
 	}
 
+	return nil
+}
+
+// StopTaskRequest 停止任务请求参数
+type StopTaskRequest struct {
+	Force bool `json:"force" form:"force"` // false=优雅停止(SIGTERM), true=强制终止(SIGKILL)
+}
+
+// Validate 验证表单
+func (form *StopTaskRequest) Validate() error {
+	// force参数是布尔值，不需要特殊验证
 	return nil
 }

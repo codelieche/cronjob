@@ -580,3 +580,86 @@ func (w *WebsocketService) GetPendingTasks(ctx context.Context) ([]*core.Task, e
 	logger.Info("成功获取待处理任务列表", zap.Int("count", len(tasks)))
 	return tasks, nil
 }
+
+// SendTaskAction 向指定Worker发送任务操作指令
+// 这是任务Stop/Kill功能的核心方法，用于同步直接发送WebSocket消息
+//
+// 参数:
+//   - workerID: 目标Worker的唯一标识
+//   - action: 任务操作类型（stop/kill/timeout/retry等）
+//   - task: 要操作的任务对象
+//
+// 返回值:
+//   - error: 发送失败时返回错误（Worker离线或发送失败）
+//
+// 使用示例:
+//
+//	err := ws.SendTaskAction(workerID, core.TaskActionStop, task)
+//	if err != nil {
+//	    // Worker离线或发送失败
+//	}
+func (w *WebsocketService) SendTaskAction(workerID string, action core.TaskAction, task *core.Task) error {
+	// 1. 🔥 先通过workerID找到对应的clientID
+	// 注意：workers映射的key是clientID，value是Worker对象
+	w.clientManager.mutexWorker.RLock()
+	var clientID string
+	for cID, worker := range w.clientManager.workers {
+		if worker != nil && worker.ID.String() == workerID {
+			clientID = cID
+			break
+		}
+	}
+	w.clientManager.mutexWorker.RUnlock()
+
+	// 2. 检查是否找到对应的clientID
+	if clientID == "" {
+		logger.Warn("Worker离线或不存在",
+			zap.String("worker_id", workerID),
+			zap.String("task_id", task.ID.String()),
+			zap.String("action", string(action)))
+		return core.ErrNotFound // 使用标准错误，Controller层会处理为503
+	}
+
+	// 3. 从clientManager获取WebSocket客户端
+	w.clientManager.mutex.RLock()
+	client, exists := w.clientManager.clients[clientID]
+	w.clientManager.mutex.RUnlock()
+
+	// 4. 检查客户端是否存在
+	if !exists {
+		logger.Warn("WebSocket客户端不存在",
+			zap.String("worker_id", workerID),
+			zap.String("client_id", clientID),
+			zap.String("task_id", task.ID.String()),
+			zap.String("action", string(action)))
+		return core.ErrNotFound
+	}
+
+	// 5. 构建TaskEvent消息
+	event := &core.TaskEvent{
+		Action: string(action),
+		Tasks:  []*core.Task{task},
+	}
+
+	// 6. 通过WebSocket发送消息
+	if err := client.Send(event); err != nil {
+		logger.Error("发送任务操作指令失败",
+			zap.String("worker_id", workerID),
+			zap.String("client_id", clientID),
+			zap.String("action", string(action)),
+			zap.String("task_id", task.ID.String()),
+			zap.String("task_name", task.Name),
+			zap.Error(err))
+		return err
+	}
+
+	// 7. 记录成功日志
+	logger.Info("任务操作指令已发送",
+		zap.String("worker_id", workerID),
+		zap.String("client_id", clientID),
+		zap.String("action", string(action)),
+		zap.String("task_id", task.ID.String()),
+		zap.String("task_name", task.Name))
+
+	return nil
+}

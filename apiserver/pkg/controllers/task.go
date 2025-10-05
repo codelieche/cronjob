@@ -1,7 +1,9 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/codelieche/cronjob/apiserver/pkg/controllers/forms"
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
@@ -16,15 +18,17 @@ import (
 // TaskController 任务控制器
 type TaskController struct {
 	controllers.BaseController
-	service         core.TaskService
-	dispatchService core.DispatchService // 用于手动重试
+	service          core.TaskService
+	dispatchService  core.DispatchService  // 用于手动重试
+	websocketService core.WebsocketService // 用于发送stop/kill指令
 }
 
 // NewTaskController 创建TaskController实例
-func NewTaskController(service core.TaskService, dispatchService core.DispatchService) *TaskController {
+func NewTaskController(service core.TaskService, dispatchService core.DispatchService, websocketService core.WebsocketService) *TaskController {
 	return &TaskController{
-		service:         service,
-		dispatchService: dispatchService,
+		service:          service,
+		dispatchService:  dispatchService,
+		websocketService: websocketService,
 	}
 }
 
@@ -663,4 +667,91 @@ func (controller *TaskController) Cancel(c *gin.Context) {
 
 	// 4. 返回成功响应
 	controller.HandleOK(c, canceledTask)
+}
+
+// StopTask 停止任务（支持优雅停止和强制终止）
+// @Summary 停止任务
+// @Description 停止正在运行的任务，通过force参数控制停止方式
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Param force query bool false "是否强制终止 (false=SIGTERM优雅停止, true=SIGKILL强制终止)"
+// @Param body body forms.StopTaskRequest false "请求体参数（可选，与query参数二选一）"
+// @Success 200 {object} map[string]interface{} "停止指令已发送"
+// @Failure 400 {object} core.ErrorResponse "任务状态不是running或worker_id为空"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Failure 503 {object} core.ErrorResponse "Worker离线，无法发送指令"
+// @Router /task/{id}/stop [post]
+// @Security BearerAuth
+func (controller *TaskController) StopTask(c *gin.Context) {
+	// 1. 获取任务ID
+	taskID := c.Param("id")
+	if taskID == "" {
+		controller.HandleError(c, core.ErrBadRequest, http.StatusBadRequest)
+		return
+	}
+
+	// 2. 解析force参数（支持query参数和body参数）
+	var req forms.StopTaskRequest
+
+	// 优先读取query参数
+	if forceStr := c.Query("force"); forceStr != "" {
+		req.Force = forceStr == "true" || forceStr == "1"
+	} else {
+		// 尝试从body读取（忽略错误，默认force=false）
+		_ = c.ShouldBindJSON(&req)
+	}
+
+	// 3. 查询任务
+	task, err := controller.service.FindByID(c.Request.Context(), taskID)
+	if err != nil {
+		if err == core.ErrNotFound {
+			controller.Handle404(c, err)
+		} else {
+			controller.HandleError(c, err, http.StatusBadRequest)
+		}
+		return
+	}
+
+	// 4. 验证任务状态（只有running状态的任务可以停止）
+	if task.Status != core.TaskStatusRunning {
+		err := fmt.Errorf("任务状态不是running，当前状态: %s", task.Status)
+		controller.HandleError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	// 5. 验证worker_id（必须有值）
+	if task.WorkerID == nil || task.WorkerID.String() == "" {
+		err := fmt.Errorf("任务的worker_id为空，无法发送停止指令")
+		controller.HandleError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	// 6. 根据force参数决定action类型
+	action := core.TaskActionStop
+	actionText := "停止"
+	if req.Force {
+		action = core.TaskActionKill
+		actionText = "强制终止"
+	}
+
+	// 7. 直接调用WebSocket服务发送指令
+	workerID := task.WorkerID.String()
+	if err := controller.websocketService.SendTaskAction(workerID, action, task); err != nil {
+		// 发送失败（Worker离线或其他错误）
+		errMsg := fmt.Errorf("发送%s指令失败: %s", actionText, err.Error())
+		controller.HandleError(c, errMsg, http.StatusServiceUnavailable)
+		return
+	}
+
+	// 8. 返回成功
+	controller.HandleOK(c, map[string]interface{}{
+		"message":   "任务" + actionText + "指令已发送",
+		"task_id":   task.ID.String(),
+		"worker_id": workerID,
+		"action":    string(action),
+		"force":     req.Force,
+		"sent_at":   time.Now().Format("2006-01-02 15:04:05"),
+	})
 }

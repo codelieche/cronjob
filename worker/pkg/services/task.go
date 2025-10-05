@@ -357,6 +357,8 @@ func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 		taskStatus = core.TaskStatusTimeout
 	case core.StatusCanceled:
 		taskStatus = core.TaskStatusCanceled
+	case core.StatusStopped:
+		taskStatus = core.TaskStatusStopped
 	case core.StatusError:
 		taskStatus = core.TaskStatusError
 	default:
@@ -497,7 +499,7 @@ func (ts *TaskServiceImpl) StopTasks(tasks []*core.Task) {
 
 			// 发送任务已停止结果
 			result := map[string]interface{}{
-				"status":   core.TaskStatusCanceled,
+				"status":   core.TaskStatusStopped,
 				"time_end": time.Now().Format("2006-01-02 15:04:05"),
 			}
 			ts.updateCallback.SendTaskUpdate(taskID, result)
@@ -534,7 +536,7 @@ func (ts *TaskServiceImpl) KillTasks(tasks []*core.Task) {
 
 			// 发送任务已终止结果
 			result := map[string]interface{}{
-				"status":   core.TaskStatusCanceled,
+				"status":   core.TaskStatusStopped,
 				"time_end": time.Now().Format("2006-01-02 15:04:05"),
 			}
 			ts.updateCallback.SendTaskUpdate(taskID, result)

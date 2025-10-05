@@ -162,6 +162,7 @@ func (s *TaskService) UpdateStatus(ctx context.Context, id string, status string
 		core.TaskStatusError:    true,
 		core.TaskStatusTimeout:  true,
 		core.TaskStatusCanceled: true,
+		core.TaskStatusStopped:  true, // 🔥 新增stopped状态
 		core.TaskStatusRetrying: true,
 	}
 

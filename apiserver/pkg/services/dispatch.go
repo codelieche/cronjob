@@ -88,18 +88,19 @@ func (d *DispatchService) Dispatch(ctx context.Context, cronJob *core.CronJob) e
 		return err
 	}
 
-	// 查询数据库中是否有非Pending的任务，且Task.TimeoutAt小于等于lastPlan
+	// 查询数据库中是否有活跃状态的任务，且Task.TimeoutAt >= lastPlan
 	filterActions := []filters.Filter{
 		&filters.FilterOption{
 			Column: "cronjob",
 			Value:  cronJob.ID.String(),
 			Op:     filters.FILTER_EQ,
 		},
-		// &filters.FilterOption{
-		// 	Column: "status",
-		// 	Value:  core.TaskStatusPending,
-		// 	Op:     filters.FILTER_NEQ,
-		// },
+		// 🔥 只查询活跃状态的任务（pending、running），避免被已停止/取消的任务影响
+		&filters.FilterOption{
+			Column: "status",
+			Value:  []string{core.TaskStatusPending, core.TaskStatusRunning},
+			Op:     filters.FILTER_IN,
+		},
 		&filters.FilterOption{
 			Column: "timeout_at",
 			Value:  lastPlan.Format("2006-01-02 15:04:05"),

@@ -194,7 +194,10 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	// 🔥 创建dispatchService用于任务调度和重试（注意：在taskController之前创建）
 	dispatchService := services.NewDispatchService(cronjobStore, taskStore, lockerService)
 
-	taskController := controllers.NewTaskController(taskService, dispatchService) // 注入dispatchService用于重试功能
+	// 🔥 创建websocketService用于任务Stop/Kill功能（注意：在taskController之前创建）
+	websocketService := services.NewWebsocketService(taskStore, workerStore)
+
+	taskController := controllers.NewTaskController(taskService, dispatchService, websocketService) // 注入websocketService用于Stop/Kill功能
 
 	// 🔥 将 taskService 注入到 cronjobService 中，用于手动执行任务功能
 	// 注意：必须在 taskService 创建后才能注入，避免 nil pointer
@@ -216,6 +219,7 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 		taskRoutes.PATCH("/:id/", taskController.Patch)                    // 动态更新任务记录的部分字段
 		taskRoutes.POST("/:id/retry/", taskController.Retry)               // 🔥 手动重试失败的任务
 		taskRoutes.POST("/:id/cancel/", taskController.Cancel)             // 🔥 取消待执行任务
+		taskRoutes.POST("/:id/stop/", taskController.StopTask)             // 🔥 停止/强制终止正在运行的任务（通过force参数控制）
 	}
 
 	// ========== 统计分析模块 ==========
@@ -275,7 +279,7 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	// ========== WebSocket实时通信模块 ==========
 	// 提供与Worker节点的实时通信能力，现在使用分布式锁进行安全验证
 	// WebSocket连接需要先获取锁令牌，然后验证锁的有效性
-	websocketService := services.NewWebsocketService(taskStore, workerStore)
+	// 注意：websocketService已在Task模块创建（第198行），此处直接使用
 	websocketController := controllers.NewWebsocketController(websocketService, lockerService)
 
 	// WebSocket连接接口，不使用认证中间件（有自己的认证机制）

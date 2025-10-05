@@ -61,6 +61,9 @@ type WebsocketService interface {
 	// Task相关方法
 	GetTaskByID(ctx context.Context, id string) (*Task, error)                             // 根据ID获取Task
 	UpdateTaskFields(ctx context.Context, id string, updates map[string]interface{}) error // 更新Task的特定字段
+
+	// 任务操作指令发送
+	SendTaskAction(workerID string, action TaskAction, task *Task) error // 向指定Worker发送任务操作指令（stop/kill/timeout/retry）
 }
 
 // ========== 客户端到服务端的事件相关定义 ==========

@@ -23,7 +23,8 @@ const (
 	TaskStatusFailed   = "failed"   // 执行失败 - 任务执行完成但失败
 	TaskStatusError    = "error"    // 执行错误 - 任务执行过程中发生错误
 	TaskStatusTimeout  = "timeout"  // 执行超时 - 任务执行时间超过设定值
-	TaskStatusCanceled = "canceled" // 已取消 - 任务被手动取消
+	TaskStatusCanceled = "canceled" // 已取消 - 任务被手动取消（通常用于pending状态）
+	TaskStatusStopped  = "stopped"  // 🔥 已停止 - 任务被用户主动停止（running状态被stop/kill）
 	TaskStatusRetrying = "retrying" // 重试中 - 任务正在重试执行
 )
 

@@ -15,7 +15,8 @@ const (
 	TaskStatusFailed   = "failed"   // 执行失败
 	TaskStatusError    = "error"    // 执行错误
 	TaskStatusTimeout  = "timeout"  // 执行超时
-	TaskStatusCanceled = "canceled" // 已取消
+	TaskStatusCanceled = "canceled" // 已取消（通常用于pending状态）
+	TaskStatusStopped  = "stopped"  // 🔥 已停止（running状态被stop/kill）
 	TaskStatusRetrying = "retrying" // 重试中
 )
 

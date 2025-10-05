@@ -57,7 +57,8 @@ const (
 	StatusSuccess  Status = "success"  // 执行成功（任务完成且返回成功状态码）
 	StatusFailed   Status = "failed"   // 执行失败（任务完成但返回失败状态码）
 	StatusTimeout  Status = "timeout"  // 执行超时（任务因超时而终止）
-	StatusCanceled Status = "canceled" // 已取消（任务被手动停止或取消）
+	StatusCanceled Status = "canceled" // 已取消（任务被手动取消，通常用于pending状态）
+	StatusStopped  Status = "stopped"  // 🔥 已停止（任务被用户主动停止，running状态被stop/kill）
 	StatusError    Status = "error"    // 执行错误（任务执行过程中发生异常）
 )
 

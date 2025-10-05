@@ -15,7 +15,9 @@ import (
 
 	"github.com/codelieche/cronjob/worker/pkg/config"
 	"github.com/codelieche/cronjob/worker/pkg/core"
+	"github.com/codelieche/cronjob/worker/pkg/utils/logger"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // CommandRunner 命令执行器
@@ -24,13 +26,14 @@ import (
 // 使用 bash -c 执行完整的命令字符串，支持复杂的shell命令
 // 包括管道、重定向、逻辑操作符等
 type CommandRunner struct {
-	task    *core.Task    // 完整的任务对象，包含所有配置信息
-	command string        // 最终执行的完整命令字符串（从task.command和task.args解析组合）
-	timeout time.Duration // 执行超时时间（从task中提取，便于理解和操作）
-	status  core.Status   // 当前状态
-	result  *core.Result  // 执行结果
-	cmd     *exec.Cmd     // 执行命令对象
-	mutex   sync.RWMutex  // 读写锁
+	task           *core.Task    // 完整的任务对象，包含所有配置信息
+	command        string        // 最终执行的完整命令字符串（从task.command和task.args解析组合）
+	timeout        time.Duration // 执行超时时间（从task中提取，便于理解和操作）
+	status         core.Status   // 当前状态
+	result         *core.Result  // 执行结果
+	cmd            *exec.Cmd     // 执行命令对象
+	mutex          sync.RWMutex  // 读写锁
+	stopSignalType string        // 🔥 用户停止信号类型（""=未停止, "SIGTERM"=优雅停止, "SIGKILL"=强制终止）
 }
 
 // NewCommandRunner 创建新的CommandRunner实例
@@ -53,8 +56,22 @@ func (r *CommandRunner) ParseArgs(task *core.Task) error {
 		return fmt.Errorf("任务ID未设置")
 	}
 
-	// 提取超时时间
-	r.timeout = time.Duration(task.Timeout) * time.Second
+	// 🔥 提取超时时间，增加安全默认值
+	if task.Timeout > 0 {
+		// 使用用户指定的超时时间
+		r.timeout = time.Duration(task.Timeout) * time.Second
+	} else {
+		// 🔥 Timeout=0时，使用安全默认值（24小时）
+		// 原因：
+		// 1. 防止任务无限期运行，耗尽系统资源
+		// 2. 24小时对于绝大多数CronJob任务已经足够
+		// 3. 如果用户确实需要更长时间，应该显式设置Timeout
+		r.timeout = 24 * time.Hour
+
+		logger.Debug("任务未设置执行超时时间，使用安全默认值",
+			zap.String("task_id", task.ID.String()),
+			zap.Duration("default_timeout", r.timeout))
+	}
 
 	// 专业地解析和构建完整的命令字符串
 	fullCommand, err := r.buildFullCommand(task.Command, task.Args)
@@ -211,6 +228,11 @@ func (r *CommandRunner) Execute(ctx context.Context, logChan chan<- string) (*co
 	// 创建执行命令 - 使用 bash -c 执行完整命令字符串
 	r.cmd = exec.CommandContext(execCtx, "bash", "-c", r.command)
 
+	// 🔥 设置进程组，确保信号能传递到所有子进程
+	r.cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true, // 创建新的进程组
+	}
+
 	// 设置工作目录
 	workingDir, err := r.setupWorkingDirectory()
 	if err != nil {
@@ -261,11 +283,16 @@ func (r *CommandRunner) Execute(ctx context.Context, logChan chan<- string) (*co
 
 	// 处理执行结果
 	if err != nil {
-		// 在锁内处理错误状态
-		if err == context.DeadlineExceeded {
+		// 🔥 优先检查是否被用户停止（避免被识别为error触发重试）
+		if r.stopSignalType != "" {
+			r.status = core.StatusStopped
+			r.result.Status = core.StatusStopped
+			r.result.Error = fmt.Sprintf("任务被用户停止 (发送%s信号)\n", r.stopSignalType)
+		} else if err == context.DeadlineExceeded {
+			// 在锁内处理错误状态
 			r.status = core.StatusTimeout
 			r.result.Status = core.StatusTimeout
-			r.result.Error = fmt.Sprintf("任务执行超时 (超时时间: %v)", r.timeout)
+			r.result.Error = fmt.Sprintf("任务执行超时 (超时时间: %v)\n", r.timeout)
 		} else if err == context.Canceled {
 			r.status = core.StatusCanceled
 			r.result.Status = core.StatusCanceled
@@ -278,12 +305,12 @@ func (r *CommandRunner) Execute(ctx context.Context, logChan chan<- string) (*co
 					// 超时导致的信号杀死
 					r.status = core.StatusTimeout
 					r.result.Status = core.StatusTimeout
-					r.result.Error = fmt.Sprintf("任务执行超时 (超时时间: %v)", r.timeout)
+					r.result.Error = fmt.Sprintf("任务执行超时 (超时时间: %v)\n", r.timeout)
 				} else {
 					// 其他信号杀死（包括SIGKILL）
 					r.status = core.StatusCanceled
 					r.result.Status = core.StatusCanceled
-					r.result.Error = "任务被强制终止 (SIGKILL信号)"
+					r.result.Error = "任务被强制终止 (SIGKILL信号)\n"
 				}
 			} else {
 				r.status = core.StatusFailed
@@ -296,8 +323,18 @@ func (r *CommandRunner) Execute(ctx context.Context, logChan chan<- string) (*co
 			logChan <- r.result.Error
 		}
 	} else {
+		// 任务正常完成
 		r.status = core.StatusSuccess
 		r.result.Status = core.StatusSuccess
+
+		// 🔥 如果用户尝试停止但任务已经完成，在日志中说明
+		if r.stopSignalType != "" {
+			note := fmt.Sprintf("\n[注意] 用户尝试发送%s信号停止任务，但任务已正常完成", r.stopSignalType)
+			r.result.ExecuteLog += note
+			if logChan != nil {
+				logChan <- note
+			}
+		}
 	}
 
 	r.mutex.Unlock()
@@ -340,48 +377,40 @@ func (r *CommandRunner) Execute(ctx context.Context, logChan chan<- string) (*co
 // Stop 停止任务执行
 func (r *CommandRunner) Stop() error {
 	r.mutex.Lock()
+	defer r.mutex.Unlock()
 
 	if r.cmd != nil && r.cmd.Process != nil {
 		// 检查进程是否还在运行
 		if r.cmd.ProcessState != nil && r.cmd.ProcessState.Exited() {
 			// 进程已经退出，不需要发送信号
-			r.mutex.Unlock()
 			return nil
 		}
 
-		// 发送SIGTERM信号
-		if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			r.mutex.Unlock()
-			return fmt.Errorf("发送SIGTERM信号失败: %w", err)
-		}
+		// 🔥 记录用户停止信号类型（确保不会被识别为error触发重试）
+		r.stopSignalType = "SIGTERM"
 
-		// 等待进程退出
-		done := make(chan error, 1)
-		go func() {
-			done <- r.cmd.Wait()
-		}()
-
-		r.mutex.Unlock()
-
-		// 等待最多2秒
-		select {
-		case <-done:
-			// 进程已退出，更新状态
-			r.mutex.Lock()
-			if r.status == core.StatusRunning {
-				r.status = core.StatusCanceled
-				if r.result != nil {
-					r.result.Status = core.StatusCanceled
-					r.result.Error = "任务被停止 (SIGTERM信号)"
+		// 🔥 发送SIGTERM信号到进程组（确保子进程也能收到信号）
+		// 注意：不要调用cmd.Wait()，因为Execute()中的cmd.Run()会处理它
+		// cmd.Wait()只能被调用一次，重复调用会导致死锁
+		pgid, err := syscall.Getpgid(r.cmd.Process.Pid)
+		if err == nil {
+			// 向进程组发送SIGTERM信号
+			if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil {
+				// 如果向进程组发送失败，尝试向单个进程发送
+				if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+					return fmt.Errorf("发送SIGTERM信号失败: %w", err)
 				}
 			}
-			r.mutex.Unlock()
-		case <-time.After(120 * time.Second):
-			// 超时，强制终止
-			return r.Kill()
+		} else {
+			// 如果获取进程组失败，直接向进程发送信号
+			if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+				return fmt.Errorf("发送SIGTERM信号失败: %w", err)
+			}
 		}
-	} else {
-		r.mutex.Unlock()
+
+		logger.Info("已发送SIGTERM信号",
+			zap.String("task_id", r.task.ID.String()),
+			zap.Int("pid", r.cmd.Process.Pid))
 	}
 
 	return nil
@@ -393,19 +422,29 @@ func (r *CommandRunner) Kill() error {
 	defer r.mutex.Unlock()
 
 	if r.cmd != nil && r.cmd.Process != nil {
-		// 发送SIGKILL信号
-		if err := r.cmd.Process.Signal(syscall.SIGKILL); err != nil {
-			return fmt.Errorf("发送SIGKILL信号失败: %w", err)
-		}
+		// 🔥 记录用户停止信号类型（确保不会被识别为error触发重试）
+		r.stopSignalType = "SIGKILL"
 
-		// 更新状态
-		if r.status == core.StatusRunning {
-			r.status = core.StatusCanceled
-			if r.result != nil {
-				r.result.Status = core.StatusCanceled
-				r.result.Error = "任务被强制终止 (SIGKILL信号)"
+		// 🔥 发送SIGKILL信号到进程组（确保子进程也能被终止）
+		pgid, err := syscall.Getpgid(r.cmd.Process.Pid)
+		if err == nil {
+			// 向进程组发送SIGKILL信号
+			if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
+				// 如果向进程组发送失败，尝试向单个进程发送
+				if err := r.cmd.Process.Signal(syscall.SIGKILL); err != nil {
+					return fmt.Errorf("发送SIGKILL信号失败: %w", err)
+				}
+			}
+		} else {
+			// 如果获取进程组失败，直接向进程发送信号
+			if err := r.cmd.Process.Signal(syscall.SIGKILL); err != nil {
+				return fmt.Errorf("发送SIGKILL信号失败: %w", err)
 			}
 		}
+
+		logger.Info("已发送SIGKILL信号",
+			zap.String("task_id", r.task.ID.String()),
+			zap.Int("pid", r.cmd.Process.Pid))
 	}
 
 	return nil
