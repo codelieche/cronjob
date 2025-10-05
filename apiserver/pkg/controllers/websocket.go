@@ -596,6 +596,32 @@ func (wc *WebsocketController) handleTaskUpdateEvent(ctx context.Context, event 
 					} else if status != core.TaskStatusPending {
 						// 任务完成或失败，设置结束时间
 						updates["time_end"] = now
+
+						// 🔥 如果任务失败，设置重试相关字段
+						// 注意：不包括 timeout（timeout 任务在新的调度周期会产生新任务，不需要重试）
+						if status == core.TaskStatusFailed || status == core.TaskStatusError {
+							// 🔥 设置失败原因分类
+							failureReason := classifyFailureReason(status, taskData)
+							updates["failure_reason"] = failureReason
+
+							// 🔥 如果任务可重试且未达到最大重试次数，设置下次重试时间为NOW（立即可重试）
+							if task.Retryable != nil && *task.Retryable && task.RetryCount < task.MaxRetry {
+								// 🔥 设置为 NOW，表示立即可检查重试
+								// 不再使用指数退避延迟，checkFailedTasks 会立即处理
+								updates["next_retry_time"] = now
+								logger.Debug("设置任务重试时间（立即可重试）",
+									zap.String("task_id", task.ID.String()),
+									zap.Time("next_retry_time", now),
+									zap.Int("retry_count", task.RetryCount),
+									zap.Int("max_retry", task.MaxRetry))
+							}
+						}
+
+						// 🔥 单独处理 timeout 状态（只设置失败原因，不设置重试）
+						if status == core.TaskStatusTimeout {
+							failureReason := classifyFailureReason(status, taskData)
+							updates["failure_reason"] = failureReason
+						}
 					}
 				}
 			}
@@ -688,4 +714,72 @@ func (wc *WebsocketController) sendPendingTasksToClient(ctx context.Context, cli
 	logger.Info("已发送待执行任务给客户端",
 		zap.String("client_id", client.ID()),
 		zap.Int("total_tasks", len(pendingTasks)))
+}
+
+// classifyFailureReason 分类失败原因
+//
+// 根据任务状态和错误信息，将失败原因分类为标准的错误类型
+// 这样可以更好地统计和分析任务失败模式
+//
+// 参数:
+//   - status: 任务状态（failed/error/timeout）
+//   - taskData: 任务数据，可能包含error、output等信息
+//
+// 返回:
+//   - string: 失败原因分类（timeout/command_error/worker_error/network_error/unknown_error）
+func classifyFailureReason(status string, taskData map[string]interface{}) string {
+	// 1. 如果是timeout状态，直接返回timeout
+	if status == core.TaskStatusTimeout {
+		return "timeout"
+	}
+
+	// 2. 尝试从taskData中获取错误信息
+	var errorMsg string
+	if errVal, ok := taskData["error"]; ok {
+		if errStr, ok := errVal.(string); ok {
+			errorMsg = strings.ToLower(errStr)
+		}
+	}
+	if errorMsg == "" {
+		if outputVal, ok := taskData["output"]; ok {
+			if outputStr, ok := outputVal.(string); ok {
+				errorMsg = strings.ToLower(outputStr)
+			}
+		}
+	}
+
+	// 3. 根据错误信息关键字分类
+	if errorMsg != "" {
+		// 网络相关错误
+		if strings.Contains(errorMsg, "connection") ||
+			strings.Contains(errorMsg, "network") ||
+			strings.Contains(errorMsg, "timeout") ||
+			strings.Contains(errorMsg, "dial") {
+			return "network_error"
+		}
+
+		// Worker相关错误
+		if strings.Contains(errorMsg, "worker") ||
+			strings.Contains(errorMsg, "killed") ||
+			strings.Contains(errorMsg, "signal") {
+			return "worker_error"
+		}
+
+		// 命令执行错误（exit code非0）
+		if strings.Contains(errorMsg, "exit status") ||
+			strings.Contains(errorMsg, "command") ||
+			strings.Contains(errorMsg, "exec") {
+			return "command_error"
+		}
+	}
+
+	// 4. 根据状态返回默认分类
+	if status == core.TaskStatusError {
+		return "worker_error"
+	} else if status == core.TaskStatusFailed {
+		return "command_error"
+	}
+
+	// 5. 未知错误
+	return "unknown_error"
 }

@@ -298,3 +298,58 @@ func (controller *CategoryController) List(c *gin.Context) {
 		"page_size": pagination.PageSize,
 	})
 }
+
+// All 获取所有分类（不分页）
+// @Summary 获取所有分类
+// @Description 获取所有未删除的分类，不分页，适用于分类选择器等场景。如果提供X-TEAM-ID，则只返回该团队的分类
+// @Tags categories
+// @Accept json
+// @Produce json
+// @Param deleted query int false "是否已删除(1=已删除,0=未删除)" default(0)
+// @Success 200 {object} map[string]interface{} "分类列表"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 403 {object} core.ErrorResponse "团队权限不足"
+// @Failure 404 {object} core.ErrorResponse "团队不存在"
+// @Router /category/all/ [get]
+// @Security BearerAuth
+func (controller *CategoryController) All(c *gin.Context) {
+	// 解析deleted参数：1=已删除，0=未删除，默认为0
+	deletedStr := c.DefaultQuery("deleted", "0")
+	deleted := 0
+	if deletedStr == "1" || deletedStr == "true" {
+		deleted = 1
+	}
+
+	// 定义过滤选项（只过滤deleted）
+	filterOptions := []*filters.FilterOption{
+		{
+			Column: "deleted",
+			Op:     filters.FILTER_EQ,
+			Value:  deleted,
+		},
+	}
+
+	// 定义搜索字段（空，不需要搜索）
+	searchFields := []string{}
+
+	// 定义排序字段
+	orderingFields := []string{"code", "name", "created_at", "updated_at"}
+	defaultOrdering := "code" // 按code排序
+
+	// 获取过滤动作（使用BaseController的FilterAction方法）
+	filterActions := controller.FilterAction(c, filterOptions, searchFields, orderingFields, defaultOrdering)
+
+	// 获取所有分类（设置较大的limit，实际使用中分类数量不会太多）
+	categories, err := controller.service.List(c.Request.Context(), 0, 10000, filterActions...)
+	if err != nil {
+		controller.HandleError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	// 返回分类列表
+	controller.HandleOK(c, map[string]interface{}{
+		"count":   len(categories),
+		"results": categories,
+	})
+}

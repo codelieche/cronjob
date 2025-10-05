@@ -138,6 +138,7 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	{
 		categoryRoutes.POST("/", categoryController.Create)       // 创建分类
 		categoryRoutes.GET("/", categoryController.List)          // 获取分类列表
+		categoryRoutes.GET("/all/", categoryController.All)       // 获取所有分类（不分页）
 		categoryRoutes.GET("/:id/", categoryController.Find)      // 根据ID获取分类
 		categoryRoutes.PUT("/:id/", categoryController.Update)    // 更新分类信息
 		categoryRoutes.DELETE("/:id/", categoryController.Delete) // 删除分类
@@ -188,7 +189,7 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	// ========== 任务执行记录模块 ==========
 	// 记录每次任务执行的详细信息，需要用户认证
 	taskStore := store.NewTaskStore(db)
-	taskService := services.NewTaskService(taskStore)
+	taskService := services.NewTaskService(taskStore, lockerService) // 🔥 注入lockerService用于取消功能
 
 	// 🔥 创建dispatchService用于任务调度和重试（注意：在taskController之前创建）
 	dispatchService := services.NewDispatchService(cronjobStore, taskStore, lockerService)
@@ -214,6 +215,7 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 		taskRoutes.PUT("/:id/update-output/", taskController.UpdateOutput) // 更新任务执行输出
 		taskRoutes.PATCH("/:id/", taskController.Patch)                    // 动态更新任务记录的部分字段
 		taskRoutes.POST("/:id/retry/", taskController.Retry)               // 🔥 手动重试失败的任务
+		taskRoutes.POST("/:id/cancel/", taskController.Cancel)             // 🔥 取消待执行任务
 	}
 
 	// ========== 统计分析模块 ==========

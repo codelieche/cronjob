@@ -2,7 +2,10 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	"github.com/codelieche/cronjob/apiserver/pkg/config"
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/filters"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
@@ -11,15 +14,17 @@ import (
 )
 
 // NewTaskService 创建TaskService实例
-func NewTaskService(store core.TaskStore) core.TaskService {
+func NewTaskService(store core.TaskStore, locker core.Locker) core.TaskService {
 	return &TaskService{
-		store: store,
+		store:  store,
+		locker: locker,
 	}
 }
 
 // TaskService 任务服务实现
 type TaskService struct {
-	store core.TaskStore
+	store  core.TaskStore
+	locker core.Locker
 }
 
 // FindByID 根据ID获取任务
@@ -239,4 +244,84 @@ func (s *TaskService) Patch(ctx context.Context, id string, updates map[string]i
 		logger.Error("patch task error", zap.Error(err), zap.String("id", id))
 	}
 	return err
+}
+
+// Cancel 取消待执行任务
+//
+// 🔒 使用分布式锁确保并发安全，防止与任务分发、超时检查等操作冲突
+//
+// 取消条件：
+//  1. 任务状态必须是 pending
+//  2. 成功获取任务锁
+//
+// 取消操作：
+//  1. 更新任务状态为 canceled
+//  2. 设置任务结束时间为当前时间
+//
+// 参数:
+//   - ctx: 上下文对象
+//   - id: 任务ID
+//
+// 返回:
+//   - *core.Task: 取消后的任务信息
+//   - error: 错误信息
+func (s *TaskService) Cancel(ctx context.Context, id string) (*core.Task, error) {
+	// 1. 解析UUID
+	uuidID, err := uuid.Parse(id)
+	if err != nil {
+		logger.Error("解析任务ID失败", zap.Error(err), zap.String("id", id))
+		return nil, core.ErrBadRequest
+	}
+
+	// 2. 🔒 获取任务锁（确保并发安全）
+	lockKey := fmt.Sprintf(config.TaskLockerKeyFormat, uuidID.String())
+	lockd, err := s.locker.Acquire(ctx, lockKey, 10*time.Second)
+	if err != nil {
+		logger.Warn("获取任务锁失败，无法取消任务",
+			zap.String("task_id", uuidID.String()),
+			zap.Error(err))
+		return nil, fmt.Errorf("获取任务锁失败: %w", err)
+	}
+	defer lockd.Release(ctx)
+
+	// 3. 重新查询任务（确保状态一致）
+	task, err := s.store.FindByID(ctx, uuidID)
+	if err != nil {
+		if err == core.ErrNotFound {
+			logger.Error("任务不存在", zap.String("id", id))
+			return nil, core.ErrNotFound
+		}
+		logger.Error("查询任务失败", zap.Error(err), zap.String("id", id))
+		return nil, err
+	}
+
+	// 4. 验证任务状态（只能取消 pending 状态的任务）
+	if task.Status != core.TaskStatusPending {
+		logger.Warn("只能取消pending状态的任务",
+			zap.String("task_id", uuidID.String()),
+			zap.String("task_name", task.Name),
+			zap.String("current_status", task.Status))
+		return nil, fmt.Errorf("任务状态为 %s，只能取消pending状态的任务", task.Status)
+	}
+
+	// 5. 更新任务状态
+	now := time.Now()
+	task.Status = core.TaskStatusCanceled
+	task.TimeEnd = &now
+
+	// 6. 保存更新
+	updatedTask, err := s.store.Update(ctx, task)
+	if err != nil {
+		logger.Error("更新任务失败",
+			zap.Error(err),
+			zap.String("task_id", uuidID.String()))
+		return nil, err
+	}
+
+	logger.Info("任务已取消",
+		zap.String("task_id", uuidID.String()),
+		zap.String("task_name", task.Name),
+		zap.Time("cancel_time", now))
+
+	return updatedTask, nil
 }

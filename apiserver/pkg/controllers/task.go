@@ -330,7 +330,7 @@ func (controller *TaskController) List(c *gin.Context) {
 		},
 		&filters.FilterOption{
 			QueryKey: "cronjob",
-			Column:   "cron_job",
+			Column:   "cronjob",
 			Op:       filters.FILTER_EQ,
 		},
 		&filters.FilterOption{
@@ -619,4 +619,48 @@ func (controller *TaskController) Retry(c *gin.Context) {
 
 	// 4. 返回成功响应
 	controller.HandleOK(c, retryTask)
+}
+
+// Cancel 取消待执行任务
+// @Summary 取消待执行的任务
+// @Description 取消pending状态的任务，使用分布式锁确保并发安全
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "任务ID"
+// @Success 200 {object} core.Task "取消后的任务信息"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误或任务状态不允许取消"
+// @Failure 401 {object} core.ErrorResponse "未认证"
+// @Failure 404 {object} core.ErrorResponse "任务不存在"
+// @Failure 500 {object} core.ErrorResponse "服务器错误"
+// @Router /task/{id}/cancel/ [post]
+// @Security BearerAuth
+func (controller *TaskController) Cancel(c *gin.Context) {
+	// 1. 获取任务ID
+	id := c.Param("id")
+	if id == "" {
+		controller.HandleError(c, core.ErrBadRequest, http.StatusBadRequest)
+		return
+	}
+
+	// 2. 验证任务ID格式
+	if _, err := uuid.Parse(id); err != nil {
+		controller.HandleError(c, core.ErrBadRequest, http.StatusBadRequest)
+		return
+	}
+
+	// 3. 调用service取消任务
+	canceledTask, err := controller.service.Cancel(c.Request.Context(), id)
+	if err != nil {
+		// 根据错误类型返回不同的状态码
+		if err == core.ErrNotFound {
+			controller.Handle404(c, err)
+		} else {
+			controller.HandleError(c, err, http.StatusBadRequest)
+		}
+		return
+	}
+
+	// 4. 返回成功响应
+	controller.HandleOK(c, canceledTask)
 }

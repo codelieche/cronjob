@@ -232,6 +232,16 @@ func (s *TaskLogShardService) CountByTeams(ctx context.Context, teamIDs []string
 	return s.shardStore.CountByTeams(ctx, teamIDs, filterActions...)
 }
 
+// 🔥 ListByTeamsAndCronjob 根据团队和CronJob查询TaskLog
+func (s *TaskLogShardService) ListByTeamsAndCronjob(ctx context.Context, teamIDs []string, cronjobID string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error) {
+	return s.shardStore.ListByTeamsAndCronjob(ctx, teamIDs, cronjobID, offset, limit, filterActions...)
+}
+
+// CountByTeamsAndCronjob 根据团队和CronJob计数TaskLog
+func (s *TaskLogShardService) CountByTeamsAndCronjob(ctx context.Context, teamIDs []string, cronjobID string, filterActions ...filters.Filter) (int64, error) {
+	return s.shardStore.CountByTeamsAndCronjob(ctx, teamIDs, cronjobID, filterActions...)
+}
+
 // GetLogContent 获取日志内容（根据存储类型读取）
 func (s *TaskLogShardService) GetLogContent(ctx context.Context, log *core.TaskLog) (string, error) {
 	switch log.Storage {

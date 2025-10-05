@@ -1,51 +1,21 @@
 package core
 
 import (
-	"math"
 	"time"
-
-	"github.com/codelieche/cronjob/apiserver/pkg/config"
 )
-
-// CalculateNextRetryTime 计算下次重试时间（使用配置）
-//
-// 使用指数退避算法计算下次重试时间：
-// - 第1次重试：baseDelay = 1分钟
-// - 第2次重试：baseDelay * multiplier^1 = 2分钟
-// - 第3次重试：baseDelay * multiplier^2 = 4分钟
-// - 第4次重试：baseDelay * multiplier^3 = 8分钟
-// - ...
-// - 最大延迟：maxDelay = 60分钟
-//
-// 参数:
-//   - retryCount: 当前重试次数（0表示第一次失败，1表示第一次重试失败）
-//   - failureTime: 失败时间（通常是当前时间）
-//
-// 返回:
-//   - time.Time: 下次重试的时间点
-//
-// 示例:
-//
-//	nextRetryTime := CalculateNextRetryTime(0, time.Now()) // 第1次重试，1分钟后
-//	nextRetryTime := CalculateNextRetryTime(1, time.Now()) // 第2次重试，2分钟后
-func CalculateNextRetryTime(retryCount int, failureTime time.Time) time.Time {
-	// 指数退避：delay = baseDelay * (multiplier ^ retryCount)
-	delay := float64(config.Retry.BaseDelay) * math.Pow(config.Retry.Multiplier, float64(retryCount))
-
-	// 限制最大延迟
-	if delay > float64(config.Retry.MaxDelay) {
-		delay = float64(config.Retry.MaxDelay)
-	}
-
-	return failureTime.Add(time.Duration(delay))
-}
 
 // ShouldRetry 判断任务是否应该重试
 //
 // 判断逻辑：
 // 1. 任务必须标记为可重试（retryable = true）
 // 2. 重试次数未达到最大限制（retry_count < max_retry）
-// 3. 任务状态为失败状态（failed/error/timeout）
+// 3. 任务状态为失败状态（failed/error，不包括 timeout）
+// 4. 任务未超过 TimeoutAt 宽限期
+//
+// 注意：timeout 任务不重试，因为：
+//   - timeout 说明任务执行时间太长
+//   - 新的调度周期会产生新任务
+//   - 上一个周期的任务已经不重要了
 //
 // 参数:
 //   - task: 任务对象
@@ -63,14 +33,29 @@ func ShouldRetry(task *Task) bool {
 		return false
 	}
 
-	// 3. 检查任务状态
+	// 3. 检查任务状态（只重试 failed 和 error，不重试 timeout）
 	failedStatuses := map[string]bool{
-		TaskStatusFailed:  true,
-		TaskStatusError:   true,
-		TaskStatusTimeout: true,
+		TaskStatusFailed: true,
+		TaskStatusError:  true,
+		// 🔥 不包括 TaskStatusTimeout（新调度周期会产生新任务）
 	}
 
-	return failedStatuses[task.Status]
+	if !failedStatuses[task.Status] {
+		return false
+	}
+
+	// 🔥 4. 检查任务是否已经超时太久（防止无意义的重试）
+	// 如果任务的超时时间点已经过去太久（超过30分钟），就不再重试
+	if !task.TimeoutAt.IsZero() {
+		now := time.Now()
+		// 给予30分钟的宽限期（可以根据实际情况调整）
+		maxGracePeriod := 30 * time.Minute
+		if now.Sub(task.TimeoutAt) > maxGracePeriod {
+			return false
+		}
+	}
+
+	return true
 }
 
 // IsRetryReady 判断任务是否已到重试时间

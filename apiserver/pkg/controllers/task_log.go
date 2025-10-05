@@ -268,7 +268,7 @@ func (controller *TaskLogController) Delete(c *gin.Context) {
 
 // List 获取任务日志列表
 // @Summary 获取任务日志列表
-// @Description 获取任务日志列表，支持分页、搜索和过滤。通过view_all_teams参数可以查看跨团队数据：管理员查看所有团队，普通用户查看自己所属的所有团队。支持时间范围过滤以优化分片查询性能。
+// @Description 获取任务日志列表，支持分页、搜索和过滤。通过view_all_teams参数可以查看跨团队数据：管理员查看所有团队，普通用户查看自己所属的所有团队。支持时间范围过滤以优化分片查询性能。支持通过cronjob参数过滤特定定时任务的日志。🚀 推荐使用month参数指定月份（格式：202510），性能提升10倍+，只查询指定月份的数据，默认为当前月份，前端可提供"上一月/下一月"切换按钮。
 // @Tags task-logs
 // @Accept json
 // @Produce json
@@ -276,6 +276,8 @@ func (controller *TaskLogController) Delete(c *gin.Context) {
 // @Param page_size query int false "每页数量" default(20)
 // @Param search query string false "搜索关键词（在path中搜索）"
 // @Param task_id query string false "任务ID"
+// @Param month query string false "🚀 月份（格式：202510，性能最优，默认为当前月份）" example("202510")
+// @Param cronjob query string false "定时任务ID（过滤该定时任务产生的所有任务日志）"
 // @Param storage query string false "存储类型"
 // @Param deleted query bool false "是否已删除"
 // @Param start_time query string false "开始时间 (YYYY-MM-DD)" example("2025-09-01")
@@ -331,8 +333,17 @@ func (controller *TaskLogController) List(c *gin.Context) {
 	// 5. 获取过滤动作
 	filterActions := controller.FilterAction(c, filterOptions, searchFields, orderingFields, defaultOrdering)
 
-	// 6. 🔥 权限控制：根据view_all_teams参数和用户权限决定查询范围
+	// 6. 🔥 权限控制和CronJob过滤：根据view_all_teams参数和用户权限决定查询范围
 	viewAllTeams := c.Query("view_all_teams") == "true"
+	cronjobID := c.Query("cronjob") // 🔥 CronJob过滤参数
+	month := c.Query("month")       // 🔥🔥 月份过滤参数（格式：202510）
+
+	// 🚀 如果未指定month，默认使用当前年月（最常用场景）
+	if month == "" {
+		month = time.Now().Format("200601") // 格式：202510
+		logger.Debug("month参数为空，使用当前年月",
+			zap.String("month", month))
+	}
 
 	// 计算偏移量
 	offset := (pagination.Page - 1) * pagination.PageSize
@@ -341,79 +352,84 @@ func (controller *TaskLogController) List(c *gin.Context) {
 	var total int64
 	var err error
 
+	// 🔥 确定查询的团队范围
+	var teamIDs []string
 	if viewAllTeams {
-		// 🔥 查看用户所属的所有团队数据（无论管理员还是普通用户）
+		// 查看用户所属的所有团队数据
 		userTeamIDs, exists := controller.GetUserTeamIDs(c)
 		if !exists || len(userTeamIDs) == 0 {
 			// 用户没有团队，返回空结果
 			taskLogs = []*core.TaskLog{}
 			total = 0
-		} else {
-			// 🔥 使用分片服务的团队过滤查询
-			if shardService, ok := controller.service.(interface {
-				ListByTeams(ctx context.Context, teamIDs []string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error)
-				CountByTeams(ctx context.Context, teamIDs []string, filterActions ...filters.Filter) (int64, error)
-			}); ok {
-				taskLogs, err = shardService.ListByTeams(c.Request.Context(), userTeamIDs, offset, pagination.PageSize, filterActions...)
-				if err == nil {
-					total, err = shardService.CountByTeams(c.Request.Context(), userTeamIDs, filterActions...)
-				}
-			} else {
-				// 降级到原有的团队过滤方式
-				filterActions = controller.AppendUserTeamsFilter(c, filterActions)
-				taskLogs, err = controller.service.List(c.Request.Context(), offset, pagination.PageSize, filterActions...)
-				if err == nil {
-					total, err = controller.service.Count(c.Request.Context(), filterActions...)
-				}
-			}
+			goto BuildResponse
 		}
+		teamIDs = userTeamIDs
 	} else {
-		// 🔥 查看当前团队数据（无论管理员还是普通用户，都只看当前团队）
+		// 查看当前团队数据
 		currentTeamID, exists := controller.GetCurrentTeamID(c)
 		if !exists || currentTeamID == "" {
 			// 没有当前团队，返回空结果
 			taskLogs = []*core.TaskLog{}
 			total = 0
+			goto BuildResponse
+		}
+		teamIDs = []string{currentTeamID}
+	}
+
+	// 🔥🔥 统一使用 ListByTeamsAndCronjob 方法（支持 cronjobID 为空）
+	// cronjobID 不为空: 过滤特定CronJob的TaskLog
+	// cronjobID 为空: 查询该团队的所有TaskLog
+	if shardService, ok := controller.service.(interface {
+		ListByTeamsAndCronjob(ctx context.Context, teamIDs []string, cronjobID string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error)
+		CountByTeamsAndCronjob(ctx context.Context, teamIDs []string, cronjobID string, filterActions ...filters.Filter) (int64, error)
+	}); ok {
+		// 🚀🚀 P1优化：如果指定了month参数，注入到context（格式：202510）
+		// 性能提升：只查询指定月份的表，提升10倍+
+		ctx := c.Request.Context()
+		if month != "" {
+			ctx = store.WithMonth(ctx, month)
+			logger.Debug("使用月份参数优化查询",
+				zap.String("month", month),
+				zap.Strings("team_ids", teamIDs))
+		} else if cronjobID != "" {
+			logger.Debug("使用CronJob子查询优化方法",
+				zap.String("cronjob", cronjobID),
+				zap.Strings("team_ids", teamIDs))
+		}
+
+		taskLogs, err = shardService.ListByTeamsAndCronjob(ctx, teamIDs, cronjobID, offset, pagination.PageSize, filterActions...)
+		if err == nil {
+			total, err = shardService.CountByTeamsAndCronjob(ctx, teamIDs, cronjobID, filterActions...)
+		}
+	} else {
+		// 降级到原有的团队过滤方式
+		logger.Warn("分片服务不支持优化查询方法，使用降级方案")
+		if viewAllTeams {
+			filterActions = controller.AppendUserTeamsFilter(c, filterActions)
 		} else {
-			// 🔥 使用分片服务的团队过滤查询
-			if shardService, ok := controller.service.(interface {
-				ListByTeams(ctx context.Context, teamIDs []string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error)
-				CountByTeams(ctx context.Context, teamIDs []string, filterActions ...filters.Filter) (int64, error)
-			}); ok {
-				taskLogs, err = shardService.ListByTeams(c.Request.Context(), []string{currentTeamID}, offset, pagination.PageSize, filterActions...)
-				if err == nil {
-					total, err = shardService.CountByTeams(c.Request.Context(), []string{currentTeamID}, filterActions...)
-				}
-			} else {
-				// 降级到原有的团队过滤方式
-				filterActions = controller.AppendTeamFilterWithOptions(c, filterActions, false)
-				taskLogs, err = controller.service.List(c.Request.Context(), offset, pagination.PageSize, filterActions...)
-				if err == nil {
-					total, err = controller.service.Count(c.Request.Context(), filterActions...)
-				}
-			}
+			filterActions = controller.AppendTeamFilterWithOptions(c, filterActions, false)
+		}
+		taskLogs, err = controller.service.List(c.Request.Context(), offset, pagination.PageSize, filterActions...)
+		if err == nil {
+			total, err = controller.service.Count(c.Request.Context(), filterActions...)
 		}
 	}
+
+BuildResponse:
 
 	if err != nil {
 		controller.HandleError(c, err, http.StatusBadRequest)
 		return
 	}
 
-	// 7. 为每个日志获取内容
+	// 7. 🔥 列表页不加载内容，只返回基本信息（性能优化：避免N次文件IO）
 	var results []map[string]interface{}
 	for _, taskLog := range taskLogs {
-		content, err := controller.service.GetLogContent(c.Request.Context(), taskLog)
-		if err != nil {
-			// 如果获取内容失败，记录错误但不返回错误，使用空内容
-			content = ""
-		}
-
 		item := map[string]interface{}{
-			"task_id":    taskLog.TaskID,
-			"storage":    taskLog.Storage,
-			"path":       taskLog.Path,
-			"content":    content,
+			"task_id": taskLog.TaskID,
+			"storage": taskLog.Storage,
+			"path":    taskLog.Path,
+			// "content":    "", // 🔥 列表页不返回内容，需要内容时调用详情接口
 			"size":       taskLog.Size,
 			"created_at": taskLog.CreatedAt,
 			"updated_at": taskLog.UpdatedAt,

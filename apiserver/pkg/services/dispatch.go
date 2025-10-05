@@ -9,6 +9,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -489,10 +490,8 @@ func (d *DispatchService) CheckFailedTasksLoop(ctx context.Context) error {
 		return nil
 	}
 
-	logger.Info("启动失败任务检查循环",
-		zap.Duration("check_interval", config.Retry.CheckInterval),
-		zap.Duration("base_delay", config.Retry.BaseDelay),
-		zap.Duration("max_delay", config.Retry.MaxDelay))
+	logger.Info("启动失败任务检查循环（立即重试策略）",
+		zap.Duration("check_interval", config.Retry.CheckInterval))
 
 	ticker := time.NewTicker(config.Retry.CheckInterval)
 	defer ticker.Stop()
@@ -512,36 +511,47 @@ func (d *DispatchService) CheckFailedTasksLoop(ctx context.Context) error {
 }
 
 // checkFailedTasks 检查失败任务并触发重试
+//
+// 🔥 设计思路：
+//  1. 只有 is_retry=false 的原始任务可以被重试（重试任务不可再重试）
+//  2. 不重试 timeout 任务（新调度周期会产生新任务）
+//  3. 创建重试任务时：将原任务的 next_retry_time 设置为 NULL（正在重试中）
+//  4. 重试任务失败时：将原任务的 next_retry_time 设置为 NOW（等待下次检查）
+//  5. 重试任务成功时：将原任务的 retryable 设置为 false（停止重试）
+//
+// 🔒 全局锁：
+//   - 在多副本环境中，只有一个副本可以处理重试逻辑
+//   - 获取不到锁则跳过（说明其他副本正在处理）
+//   - 防止同一个失败任务被多次重试
+//
+// 📌 查询条件：
+//   - status IN (failed, error) - 不包括timeout
+//   - is_retry = false - 不是重试任务
+//   - retryable = true - 可重试
+//   - next_retry_time IS NOT NULL AND <= now - 已到重试时间
+//   - retry_count < max_retry - 未达到最大重试次数
+//   - max_retry > 0 - 配置了重试
 func (d *DispatchService) checkFailedTasks(ctx context.Context) {
+	// 🔒 尝试获取全局锁（多副本环境下只有一个副本可以处理重试）
+	lockKey := "cronjob:retry:check-failed-tasks"
+	lockd, err := d.locker.Acquire(ctx, lockKey, 30*time.Second)
+	if err != nil {
+		logger.Debug("获取重试检查全局锁失败，跳过（其他副本正在处理）",
+			zap.String("lock_key", lockKey),
+			zap.Error(err))
+		return
+	}
+	defer lockd.Release(ctx)
+
+	logger.Debug("已获取重试检查全局锁，开始处理",
+		zap.String("lock_key", lockKey))
+
 	now := time.Now()
 
-	// 构建过滤器：查询可重试的失败任务
-	// 条件：status IN (failed, error, timeout) AND retryable = true AND next_retry_time <= now AND retry_count < max_retry
-	filterActions := []filters.Filter{
-		// 状态为失败
-		&filters.FilterOption{
-			Column: "status",
-			Value:  []string{core.TaskStatusFailed, core.TaskStatusError, core.TaskStatusTimeout},
-			Op:     filters.FILTER_IN,
-		},
-		// 可重试
-		&filters.FilterOption{
-			Column: "retryable",
-			Value:  true,
-			Op:     filters.FILTER_EQ,
-		},
-		// 已到重试时间
-		&filters.FilterOption{
-			Column: "next_retry_time",
-			Value:  now,
-			Op:     filters.FILTER_LTE,
-		},
-	}
-
-	// 查询符合条件的任务（限制1000条）
-	tasks, err := d.taskStore.List(ctx, 0, 1000, filterActions...)
+	// 🔥 使用专门的查询方法，职责清晰
+	tasks, err := d.taskStore.GetNeedRetryTasks(ctx, 1000)
 	if err != nil {
-		logger.Error("查询失败任务列表失败", zap.Error(err))
+		logger.Error("查询需要重试的任务失败", zap.Error(err))
 		return
 	}
 
@@ -557,15 +567,19 @@ func (d *DispatchService) checkFailedTasks(ctx context.Context) {
 	// 逐个处理任务
 	successCount := 0
 	failCount := 0
+	skipCount := 0
 
 	for _, task := range tasks {
-		// 检查重试次数
-		if task.RetryCount >= task.MaxRetry {
-			logger.Debug("任务重试次数已达上限，跳过",
+		// 🔥 使用 ShouldRetry 进行更严格的检查（包括超时检查）
+		if !core.ShouldRetry(task) {
+			logger.Debug("任务不应该重试，跳过",
 				zap.String("task_id", task.ID.String()),
 				zap.String("task_name", task.Name),
 				zap.Int("retry_count", task.RetryCount),
-				zap.Int("max_retry", task.MaxRetry))
+				zap.Int("max_retry", task.MaxRetry),
+				zap.String("status", task.Status),
+				zap.Time("timeout_at", task.TimeoutAt))
+			skipCount++
 			continue
 		}
 
@@ -581,11 +595,12 @@ func (d *DispatchService) checkFailedTasks(ctx context.Context) {
 		}
 	}
 
-	if successCount > 0 || failCount > 0 {
+	if successCount > 0 || failCount > 0 || skipCount > 0 {
 		logger.Info("失败任务检查完成",
 			zap.Int("total", len(tasks)),
 			zap.Int("success", successCount),
-			zap.Int("fail", failCount))
+			zap.Int("fail", failCount),
+			zap.Int("skip", skipCount))
 	}
 }
 
@@ -604,7 +619,9 @@ func (d *DispatchService) checkFailedTasks(ctx context.Context) {
 // 返回:
 //   - error: 错误信息
 func (d *DispatchService) retryTask(ctx context.Context, task *core.Task) error {
-	// 获取任务锁（防止重复重试）
+	// 🔒 获取单个任务锁（双重保险）
+	// 虽然已有全局锁保证只有一个副本在处理重试检查，
+	// 但单个任务锁可以防止同一任务被并发重试（额外的安全措施）
 	lockKey := fmt.Sprintf("task:retry:%s", task.ID.String())
 	lockd, err := d.locker.Acquire(ctx, lockKey, 30*time.Second)
 	if err != nil {
@@ -623,11 +640,26 @@ func (d *DispatchService) retryTask(ctx context.Context, task *core.Task) error 
 
 	// 再次检查是否应该重试（防止并发问题）
 	if !core.ShouldRetry(currentTask) {
+		// 🔥 判断具体原因，提供更详细的日志
+		reason := "unknown"
+		if currentTask.Retryable == nil || !*currentTask.Retryable {
+			reason = "retryable=false"
+		} else if currentTask.RetryCount >= currentTask.MaxRetry {
+			reason = "max_retry_reached"
+		} else if !currentTask.TimeoutAt.IsZero() {
+			now := time.Now()
+			if now.Sub(currentTask.TimeoutAt) > 30*time.Minute {
+				reason = "timeout_exceeded_grace_period"
+			}
+		}
+
 		logger.Debug("任务不应该重试，跳过",
 			zap.String("task_id", task.ID.String()),
+			zap.String("reason", reason),
 			zap.String("status", currentTask.Status),
 			zap.Int("retry_count", currentTask.RetryCount),
-			zap.Int("max_retry", currentTask.MaxRetry))
+			zap.Int("max_retry", currentTask.MaxRetry),
+			zap.Time("timeout_at", currentTask.TimeoutAt))
 		return nil
 	}
 
@@ -636,8 +668,31 @@ func (d *DispatchService) retryTask(ctx context.Context, task *core.Task) error 
 	newTaskID := uuid.New()
 	newRetryCount := currentTask.RetryCount + 1
 
-	// 计算下次重试时间（为下次可能的重试做准备）
-	nextRetryTime := core.CalculateNextRetryTime(newRetryCount, now)
+	// 🔥 重试任务不应该再被重试，直接设置 retryable=false
+	retryable := false
+	isRetry := true
+
+	// 🔥 在Metadata中设置parent_task字段
+	var metadata map[string]interface{}
+	if len(currentTask.Metadata) > 0 {
+		// 解析现有Metadata
+		if err := json.Unmarshal(currentTask.Metadata, &metadata); err != nil {
+			logger.Warn("解析任务Metadata失败，创建新的", zap.Error(err))
+			metadata = make(map[string]interface{})
+		}
+	} else {
+		metadata = make(map[string]interface{})
+	}
+
+	// 🔥 设置parent_task字段
+	metadata["parent_task"] = currentTask.ID.String()
+
+	// 重新序列化Metadata
+	metadataBytes, err := json.Marshal(metadata)
+	if err != nil {
+		logger.Error("序列化Metadata失败", zap.Error(err))
+		return err
+	}
 
 	newTask := &core.Task{
 		ID:            newTaskID,
@@ -650,15 +705,16 @@ func (d *DispatchService) retryTask(ctx context.Context, task *core.Task) error 
 		Args:          currentTask.Args,
 		Description:   fmt.Sprintf("重试任务 (第%d次重试)", newRetryCount),
 		TimePlan:      now,
-		TimeoutAt:     now.Add(time.Duration(currentTask.Timeout) * time.Second),
+		TimeoutAt:     currentTask.TimeoutAt, // 🔥 继承原任务的 TimeoutAt（重要！）
 		Status:        core.TaskStatusPending,
 		SaveLog:       currentTask.SaveLog,
-		RetryCount:    newRetryCount,         // 🔥 递增重试计数
-		MaxRetry:      currentTask.MaxRetry,  // 🔥 复制最大重试次数
-		Retryable:     currentTask.Retryable, // 🔥 复制是否可重试
-		NextRetryTime: &nextRetryTime,        // 🔥 设置下次重试时间
+		RetryCount:    newRetryCount,        // 🔥 递增重试计数
+		MaxRetry:      currentTask.MaxRetry, // 🔥 复制最大重试次数
+		Retryable:     &retryable,           // 🔥 重试任务不可再重试
+		NextRetryTime: nil,                  // 🔥 不需要设置下次重试时间
+		IsRetry:       &isRetry,             // 🔥 标记为重试任务
 		Timeout:       currentTask.Timeout,
-		Metadata:      currentTask.Metadata,
+		Metadata:      metadataBytes, // 🔥 包含parent_task的Metadata
 		IsStandalone:  currentTask.IsStandalone,
 	}
 
@@ -667,6 +723,78 @@ func (d *DispatchService) retryTask(ctx context.Context, task *core.Task) error 
 	if err != nil {
 		logger.Error("创建重试任务失败", zap.Error(err))
 		return err
+	}
+
+	// 🔥 更新原任务的 retry_count、next_retry_time 和 metadata
+	// 注意：不设置 retryable=false，保持可重试状态，直到重试成功
+
+	// 解析原任务的Metadata
+	var originalMetadata map[string]interface{}
+	if len(currentTask.Metadata) > 0 {
+		if err := json.Unmarshal(currentTask.Metadata, &originalMetadata); err != nil {
+			logger.Warn("解析原任务Metadata失败，创建新的", zap.Error(err))
+			originalMetadata = make(map[string]interface{})
+		}
+	} else {
+		originalMetadata = make(map[string]interface{})
+	}
+
+	// 🔥 将重试任务ID添加到retry_tasks数组中
+	var retryTasks []string
+	if existing, ok := originalMetadata["retry_tasks"].([]interface{}); ok {
+		// 转换已有的retry_tasks
+		for _, t := range existing {
+			if taskID, ok := t.(string); ok {
+				retryTasks = append(retryTasks, taskID)
+			}
+		}
+	}
+	// 添加新的重试任务ID
+	retryTasks = append(retryTasks, newTaskID.String())
+	originalMetadata["retry_tasks"] = retryTasks
+
+	// 重新序列化Metadata
+	updatedMetadata, err := json.Marshal(originalMetadata)
+	if err != nil {
+		logger.Error("序列化原任务Metadata失败", zap.Error(err))
+		// 继续执行，不影响其他字段更新
+	}
+
+	// 🔥 更新原任务状态
+	// 1. 递增 retry_count
+	// 2. 将 next_retry_time 设置为 NULL（表示正在重试中）
+	// 3. 如果达到最大重试次数，设置 retryable=false
+	updates := map[string]interface{}{
+		"retry_count":     newRetryCount, // 更新重试计数
+		"next_retry_time": nil,           // 🔥 置空，表示正在重试中
+	}
+
+	// 如果达到最大重试次数，设置 retryable=false
+	if newRetryCount >= currentTask.MaxRetry {
+		falseValue := false
+		updates["retryable"] = &falseValue
+		logger.Info("已达到最大重试次数，此次重试为最后一次",
+			zap.String("task_id", currentTask.ID.String()),
+			zap.Int("retry_count", newRetryCount),
+			zap.Int("max_retry", currentTask.MaxRetry))
+	}
+
+	// 只有Metadata更新成功才添加到updates中
+	if updatedMetadata != nil {
+		updates["metadata"] = updatedMetadata
+	}
+
+	if err := d.taskStore.Patch(ctx, currentTask.ID, updates); err != nil {
+		logger.Warn("更新原任务重试状态失败",
+			zap.Error(err),
+			zap.String("task_id", currentTask.ID.String()))
+		// 不返回错误，因为重试任务已经创建成功
+	} else {
+		logger.Debug("已更新原任务，next_retry_time置空（正在重试中）",
+			zap.String("original_task_id", currentTask.ID.String()),
+			zap.String("retry_task_id", newTaskID.String()),
+			zap.Int("retry_count", newRetryCount),
+			zap.Strings("retry_tasks", retryTasks))
 	}
 
 	logger.Info("重试任务已创建",

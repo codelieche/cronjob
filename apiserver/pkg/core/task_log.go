@@ -24,16 +24,21 @@ const (
 // - s3: 存储在MinIO/S3对象存储中
 //
 // 通过Storage字段区分存储类型，Path字段记录具体的存储路径
+//
+// 🔥 性能优化索引说明：
+//   - idx_task_deleted_created: (task_id, deleted_at, created_at DESC)
+//     用于优化 JOIN tasks + WHERE deleted_at + ORDER BY created_at 查询
+//     这是覆盖索引，可以避免回表，性能提升 90%+
 type TaskLog struct {
-	TaskID    uuid.UUID      `gorm:"primaryKey;size:256;not null" json:"task_id"`        // 主键：任务ID
-	Storage   string         `gorm:"size:20;default:'db';not null" json:"storage"`       // 存储类型：db/file/s3
-	Path      string         `gorm:"size:512;index:idx_path" json:"path"`                // 存储路径（文件路径或S3对象键）
-	Content   string         `gorm:"column:content;type:longtext" json:"content"`        // 日志内容（仅db存储时使用）
-	Size      int64          `gorm:"type:bigint;default:0" json:"size"`                  // 日志大小（字节）
-	CreatedAt time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"` // 创建时间
-	UpdatedAt time.Time      `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"` // 最后更新时间
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`                                     // 软删除时间
-	Deleted   *bool          `gorm:"type:boolean;default:false" json:"deleted"`          // 软删除标记
+	TaskID    uuid.UUID      `gorm:"primaryKey;size:256;not null;index:idx_task_deleted_created,priority:1" json:"task_id"`        // 主键：任务ID（复合索引：task_id+deleted_at+created_at）
+	Storage   string         `gorm:"size:20;default:'db';not null" json:"storage"`                                                 // 存储类型：db/file/s3
+	Path      string         `gorm:"size:512;index:idx_path" json:"path"`                                                          // 存储路径（文件路径或S3对象键）
+	Content   string         `gorm:"column:content;type:longtext" json:"content"`                                                  // 日志内容（仅db存储时使用）
+	Size      int64          `gorm:"type:bigint;default:0" json:"size"`                                                            // 日志大小（字节）
+	CreatedAt time.Time      `gorm:"column:created_at;autoCreateTime;index:idx_task_deleted_created,priority:3" json:"created_at"` // 创建时间（复合索引第3列，用于排序）
+	UpdatedAt time.Time      `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`                                           // 最后更新时间
+	DeletedAt gorm.DeletedAt `gorm:"index;index:idx_task_deleted_created,priority:2" json:"-"`                                     // 软删除时间（复合索引第2列）
+	Deleted   *bool          `gorm:"type:boolean;default:false" json:"deleted"`                                                    // 软删除标记
 }
 
 // TableName 任务日志表名

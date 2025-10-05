@@ -2,12 +2,15 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/filters"
+	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -318,6 +321,129 @@ func (s *TaskStore) Patch(ctx context.Context, id uuid.UUID, updates map[string]
 		}
 	}
 
+	// 🔥 处理重试任务的状态更新
+	if status, ok := updates["status"].(string); ok {
+		// 检查是否是重试任务
+		if task.IsRetry != nil && *task.IsRetry {
+			// 从Metadata中获取parent_task
+			var metadata map[string]interface{}
+			if len(task.Metadata) > 0 {
+				if err := json.Unmarshal(task.Metadata, &metadata); err == nil {
+					if parentTaskID, ok := metadata["parent_task"].(string); ok && parentTaskID != "" {
+						parentUUID, err := uuid.Parse(parentTaskID)
+						if err == nil {
+							// 根据重试任务的状态更新原任务
+							if status == core.TaskStatusSuccess {
+								// 🔥 重试成功 → 原任务设置 retryable=false（停止重试）
+								falseValue := false
+								parentUpdates := map[string]interface{}{
+									"retryable": &falseValue,
+								}
+								if err := tx.Table("tasks").Select("retryable").
+									Where("id = ?", parentUUID).Updates(parentUpdates).Error; err != nil {
+									logger.Warn("更新原任务失败", zap.Error(err))
+								} else {
+									logger.Info("重试任务成功，已停止原任务重试",
+										zap.String("parent_task_id", parentTaskID),
+										zap.String("retry_task_id", task.ID.String()))
+								}
+							} else if status == core.TaskStatusFailed || status == core.TaskStatusError {
+								// 🔥 重试任务失败 → 检查原任务是否还有重试机会
+								// 注意：不包括 timeout，因为 timeout 不应触发重试（新周期会产生新任务）
+
+								// 查询原任务，获取 retry_count 和 max_retry
+								var parentTask core.Task
+								if err := tx.Where("id = ?", parentUUID).First(&parentTask).Error; err == nil {
+									now := time.Now()
+
+									// 🔥 检查是否还有重试机会
+									if parentTask.RetryCount < parentTask.MaxRetry {
+										// 还有重试机会，设置 next_retry_time 为 NOW
+										parentUpdates := map[string]interface{}{
+											"next_retry_time": now,
+										}
+										if err := tx.Table("tasks").Where("id = ?", parentUUID).
+											Updates(parentUpdates).Error; err != nil {
+											logger.Warn("更新原任务next_retry_time失败", zap.Error(err))
+										} else {
+											logger.Info("重试任务失败，已将原任务next_retry_time设置为NOW（继续重试）",
+												zap.String("parent_task_id", parentTaskID),
+												zap.String("retry_task_id", task.ID.String()),
+												zap.String("retry_status", status),
+												zap.Int("retry_count", parentTask.RetryCount),
+												zap.Int("max_retry", parentTask.MaxRetry),
+												zap.Time("next_retry_time", now))
+										}
+									} else {
+										// 🔥 已达到最大重试次数，设置 retryable=false
+										falseValue := false
+										parentUpdates := map[string]interface{}{
+											"retryable": &falseValue,
+										}
+										if err := tx.Table("tasks").Select("retryable").
+											Where("id = ?", parentUUID).Updates(parentUpdates).Error; err != nil {
+											logger.Warn("更新原任务retryable失败", zap.Error(err))
+										} else {
+											logger.Info("重试任务失败，但已达到最大重试次数，停止重试",
+												zap.String("parent_task_id", parentTaskID),
+												zap.String("retry_task_id", task.ID.String()),
+												zap.String("retry_status", status),
+												zap.Int("retry_count", parentTask.RetryCount),
+												zap.Int("max_retry", parentTask.MaxRetry))
+										}
+									}
+								} else {
+									logger.Warn("查询原任务失败",
+										zap.String("parent_task_id", parentTaskID),
+										zap.Error(err))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	tx.Commit()
 	return nil
+}
+
+// GetNeedRetryTasks 获取需要重试的任务
+//
+// 🔥 专门用于重试机制的查询方法，查询条件清晰明确：
+//   - status IN (failed, error) - 不包括timeout（新周期会产生新任务）
+//   - is_retry = false - 不是重试任务（重试任务不可再重试）
+//   - retryable = true - 可重试
+//   - next_retry_time IS NOT NULL AND <= now - 已到重试时间
+//   - retry_count < max_retry - 未达到最大重试次数
+//   - max_retry > 0 - 配置了重试
+//
+// 参数:
+//   - ctx: 上下文对象
+//   - limit: 限制返回数量
+//
+// 返回:
+//   - []*core.Task: 需要重试的任务列表
+//   - error: 错误信息
+func (s *TaskStore) GetNeedRetryTasks(ctx context.Context, limit int) ([]*core.Task, error) {
+	var tasks []*core.Task
+	now := time.Now()
+
+	// 🔥 构建查询条件
+	query := s.db.Where("status IN (?)", []string{core.TaskStatusFailed, core.TaskStatusError}).
+		Where("is_retry = ? OR is_retry IS NULL", false). // 兼容旧数据
+		Where("retryable = ?", true).
+		Where("next_retry_time IS NOT NULL").
+		Where("next_retry_time <= ?", now).
+		Where("max_retry > 0").
+		Where("retry_count < max_retry").
+		Order("next_retry_time ASC"). // 按重试时间排序
+		Limit(limit)
+
+	if err := query.Find(&tasks).Error; err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
 }
