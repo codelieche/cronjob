@@ -65,7 +65,7 @@ const (
 // Result 任务执行结果
 type Result struct {
 	Status     Status    `json:"status"`      // 执行状态
-	Output     string    `json:"output"`      // 执行输出（用于后续任务取数据）
+	Output     string    `json:"output"`      // 执行输出（用于后续任务取数据，可以是纯文本或JSON格式）
 	ExecuteLog string    `json:"execute_log"` // 执行日志（用于显示给用户）
 	Error      string    `json:"error"`       // 错误信息
 	StartTime  time.Time `json:"start_time"`  // 开始时间

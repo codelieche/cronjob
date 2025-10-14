@@ -637,13 +637,9 @@ func (wc *WebsocketController) handleTaskUpdateEvent(ctx context.Context, event 
 				}
 			}
 
-			// 如果output太长，就需要截取
+			// 🔥 直接存储 output（不再截取，已改为 TEXT 类型）
 			if output, ok := taskData["output"].(string); ok {
-				if len(output) >= 1024 {
-					updates["output"] = output[0:100] + "\n\n....\n\n\n" + output[len(output)-100:]
-				} else {
-					updates["output"] = output
-				}
+				updates["output"] = output
 			}
 			if workerID, ok := taskData["worker_id"].(string); ok && workerID != "" {
 				workerUUID, err := uuid.Parse(workerID)

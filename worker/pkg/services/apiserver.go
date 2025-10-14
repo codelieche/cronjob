@@ -409,3 +409,90 @@ func (s *apiserverService) PingWorker(workerID string) error {
 
 	return nil
 }
+
+// GetCredential 根据凭证ID获取凭证（已解密的明文）
+//
+// 参数:
+//   - credentialID: 凭证ID
+//
+// 返回值:
+//   - *core.Credential: 凭证信息（包含解密后的明文value）
+//   - error: 获取过程中的错误
+//
+// 使用示例:
+//
+//	// 在 MessageRunner 中获取邮件配置
+//	cred, err := apiserver.GetCredential("uuid-xxx")
+//	if err != nil {
+//	    return fmt.Errorf("获取凭证失败: %w", err)
+//	}
+//
+//	// 使用凭证值
+//	smtpHost := cred.MustGetString("smtp_host")
+//	smtpPort := cred.MustGetInt("smtp_port")
+//	username := cred.MustGetString("username")
+//	password := cred.MustGetString("password")
+func (s *apiserverService) GetCredential(credentialID string) (*core.Credential, error) {
+	// 构建请求URL - 调用解密接口获取明文
+	// 注意：ApiUrl 已包含 /api/v1，无需再添加 /v1
+	url := fmt.Sprintf("%s/credentials/%s/decrypt/", s.ApiUrl, credentialID)
+
+	// 创建HTTP请求（POST方法调用解密接口）
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("创建HTTP请求失败: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json")
+	if s.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.ApiKey)
+	}
+
+	// 发送请求
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("发送HTTP请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应体失败: %w", err)
+	}
+
+	// 检查HTTP状态码
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP请求失败，状态码: %d, 响应: %s", resp.StatusCode, string(body))
+	}
+
+	// 解析响应JSON
+	var apiResp core.ApiserverResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析响应JSON失败: %w", err)
+	}
+
+	// 检查API返回的code
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("API返回错误，code: %d, message: %s", apiResp.Code, apiResp.Message)
+	}
+
+	// 将data字段解析为Credential对象
+	credentialData, err := json.Marshal(apiResp.Data)
+	if err != nil {
+		return nil, fmt.Errorf("序列化data字段失败: %w", err)
+	}
+
+	var credential core.Credential
+	if err := json.Unmarshal(credentialData, &credential); err != nil {
+		return nil, fmt.Errorf("解析Credential数据失败: %w", err)
+	}
+
+	// 验证凭证是否可用
+	if !credential.IsActive {
+		return nil, fmt.Errorf("凭证已被禁用: %s", credential.Name)
+	}
+
+	return &credential, nil
+}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/codelieche/cronjob/worker/pkg/core"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 // createTestTask 创建测试用的Task对象
@@ -149,9 +150,7 @@ func TestCommandRunner_BasicExecution(t *testing.T) {
 			// 解析参数
 			task := createTestTask(tt.command, tt.args)
 			err := runner.ParseArgs(task)
-			if err != nil {
-				t.Fatalf("解析参数失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 执行命令
 			ctx := context.Background()
@@ -159,38 +158,24 @@ func TestCommandRunner_BasicExecution(t *testing.T) {
 			defer close(logChan)
 
 			result, err := runner.Execute(ctx, logChan)
-			if err != nil {
-				t.Fatalf("执行命令失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 验证结果
-			if result.Status != tt.expectedStatus {
-				t.Errorf("期望状态为 %s，实际为 %s", tt.expectedStatus, result.Status)
-			}
+			assert.Equal(t, tt.expectedStatus, result.Status)
 
-			if result.ExitCode != 0 {
-				t.Errorf("期望退出码为0，实际为 %d", result.ExitCode)
-			}
+			assert.Equal(t, 0, result.ExitCode)
 
 			if tt.expectedOutput != "" && result.Output != tt.expectedOutput {
 				t.Errorf("期望输出为 %q，实际为 %q", tt.expectedOutput, result.Output)
 			}
 
 			// 验证执行时间
-			if result.Duration <= 0 {
-				t.Error("执行时间应该大于0")
-			}
+			assert.Greater(t, result.Duration, int64(0))
 
 			// 验证时间字段
-			if result.StartTime.IsZero() {
-				t.Error("开始时间不应该为零值")
-			}
-			if result.EndTime.IsZero() {
-				t.Error("结束时间不应该为零值")
-			}
-			if result.EndTime.Before(result.StartTime) {
-				t.Error("结束时间不应该早于开始时间")
-			}
+			assert.False(t, result.StartTime.IsZero())
+			assert.False(t, result.EndTime.IsZero())
+			assert.False(t, result.EndTime.Before(result.StartTime))
 		})
 	}
 }
@@ -248,9 +233,7 @@ func TestCommandRunner_TimeoutHandling(t *testing.T) {
 
 			// 解析参数
 			err := runner.ParseArgs(task)
-			if err != nil {
-				t.Fatalf("解析参数失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 执行命令
 			ctx := context.Background()
@@ -261,21 +244,15 @@ func TestCommandRunner_TimeoutHandling(t *testing.T) {
 			result, err := runner.Execute(ctx, logChan)
 			actualDuration := time.Since(startTime)
 
-			if err != nil {
-				t.Fatalf("执行命令失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 验证状态
-			if result.Status != tt.expectedStatus {
-				t.Errorf("期望状态为 %s，实际为 %s", tt.expectedStatus, result.Status)
-			}
+			assert.Equal(t, tt.expectedStatus, result.Status)
 
 			// 验证超时情况
 			if tt.expectedStatus == core.StatusTimeout {
 				// 检查错误消息
-				if result.Error == "" {
-					t.Error("超时时错误消息不应该为空")
-				}
+				assert.NotEmpty(t, result.Error)
 
 				// 检查是否包含超时信息
 				if !strings.Contains(result.Error, "超时") {
@@ -320,21 +297,21 @@ func TestCommandRunner_StopFunctionality(t *testing.T) {
 			name:           "快速停止",
 			command:        "sleep 10",
 			stopDelay:      200 * time.Millisecond,
-			expectedStatus: core.StatusCanceled,
+			expectedStatus: core.StatusStopped,
 			description:    "200ms后停止10秒sleep",
 		},
 		{
 			name:           "中等延迟停止",
 			command:        "sleep 10",
 			stopDelay:      500 * time.Millisecond,
-			expectedStatus: core.StatusCanceled,
+			expectedStatus: core.StatusStopped,
 			description:    "500ms后停止10秒sleep",
 		},
 		{
 			name:           "while循环停止",
 			command:        "while true; do sleep 1; done",
 			stopDelay:      300 * time.Millisecond,
-			expectedStatus: core.StatusCanceled,
+			expectedStatus: core.StatusStopped,
 			description:    "停止无限循环命令",
 		},
 	}
@@ -346,9 +323,7 @@ func TestCommandRunner_StopFunctionality(t *testing.T) {
 			// 解析参数
 			task := createTestTask(tt.command, "")
 			err := runner.ParseArgs(task)
-			if err != nil {
-				t.Fatalf("解析参数失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 在goroutine中执行命令
 			ctx := context.Background()
@@ -370,9 +345,7 @@ func TestCommandRunner_StopFunctionality(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 
 			// 检查任务是否在运行
-			if runner.GetStatus() != core.StatusRunning {
-				t.Fatalf("任务应该正在运行，当前状态: %s", runner.GetStatus())
-			}
+			assert.Equal(t, core.StatusRunning, runner.GetStatus())
 
 			// 等待指定时间后停止
 			time.Sleep(tt.stopDelay)
@@ -392,9 +365,7 @@ func TestCommandRunner_StopFunctionality(t *testing.T) {
 				}
 
 				// 检查错误消息
-				if result.Error == "" {
-					t.Error("停止时错误消息不应该为空")
-				}
+				assert.NotEmpty(t, result.Error)
 
 				// 检查错误消息是否包含停止信息
 				if !strings.Contains(result.Error, "停止") && !strings.Contains(result.Error, "SIGTERM") {
@@ -426,21 +397,21 @@ func TestCommandRunner_KillFunctionality(t *testing.T) {
 			name:           "快速强制终止",
 			command:        "sleep 10",
 			killDelay:      200 * time.Millisecond,
-			expectedStatus: core.StatusCanceled,
+			expectedStatus: core.StatusStopped,
 			description:    "200ms后强制终止10秒sleep",
 		},
 		{
 			name:           "while循环强制终止",
 			command:        "while true; do sleep 1; done",
 			killDelay:      300 * time.Millisecond,
-			expectedStatus: core.StatusCanceled,
+			expectedStatus: core.StatusStopped,
 			description:    "强制终止无限循环命令",
 		},
 		{
 			name:           "忽略信号的命令",
 			command:        "trap '' SIGTERM; while true; do sleep 1; done",
 			killDelay:      300 * time.Millisecond,
-			expectedStatus: core.StatusCanceled,
+			expectedStatus: core.StatusStopped,
 			description:    "强制终止忽略SIGTERM的命令",
 		},
 	}
@@ -452,9 +423,7 @@ func TestCommandRunner_KillFunctionality(t *testing.T) {
 			// 解析参数
 			task := createTestTask(tt.command, "")
 			err := runner.ParseArgs(task)
-			if err != nil {
-				t.Fatalf("解析参数失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 在goroutine中执行命令
 			ctx := context.Background()
@@ -476,9 +445,7 @@ func TestCommandRunner_KillFunctionality(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 
 			// 检查任务是否在运行
-			if runner.GetStatus() != core.StatusRunning {
-				t.Fatalf("任务应该正在运行，当前状态: %s", runner.GetStatus())
-			}
+			assert.Equal(t, core.StatusRunning, runner.GetStatus())
 
 			// 等待指定时间后强制终止
 			time.Sleep(tt.killDelay)
@@ -498,9 +465,7 @@ func TestCommandRunner_KillFunctionality(t *testing.T) {
 				}
 
 				// 检查错误消息
-				if result.Error == "" {
-					t.Error("强制终止时错误消息不应该为空")
-				}
+				assert.NotEmpty(t, result.Error)
 
 				// 检查错误消息是否包含终止信息
 				if !strings.Contains(result.Error, "强制终止") && !strings.Contains(result.Error, "SIGKILL") {
@@ -565,9 +530,7 @@ func TestCommandRunner_ErrorHandling(t *testing.T) {
 			// 解析参数
 			task := createTestTask(tt.command, "")
 			err := runner.ParseArgs(task)
-			if err != nil {
-				t.Fatalf("解析参数失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 执行命令
 			ctx := context.Background()
@@ -575,14 +538,10 @@ func TestCommandRunner_ErrorHandling(t *testing.T) {
 			defer close(logChan)
 
 			result, err := runner.Execute(ctx, logChan)
-			if err != nil {
-				t.Fatalf("执行命令失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 验证状态
-			if result.Status != tt.expectedStatus {
-				t.Errorf("期望状态为 %s，实际为 %s", tt.expectedStatus, result.Status)
-			}
+			assert.Equal(t, tt.expectedStatus, result.Status)
 
 			// 验证错误处理
 			if tt.expectError {
@@ -660,9 +619,7 @@ func TestCommandRunner_ComplexCommands(t *testing.T) {
 			// 解析参数
 			task := createTestTask(tt.command, "")
 			err := runner.ParseArgs(task)
-			if err != nil {
-				t.Fatalf("解析参数失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 执行命令
 			ctx := context.Background()
@@ -670,14 +627,10 @@ func TestCommandRunner_ComplexCommands(t *testing.T) {
 			defer close(logChan)
 
 			result, err := runner.Execute(ctx, logChan)
-			if err != nil {
-				t.Fatalf("执行命令失败: %v", err)
-			}
+			assert.NoError(t, err)
 
 			// 验证状态
-			if result.Status != tt.expectedStatus {
-				t.Errorf("期望状态为 %s，实际为 %s", tt.expectedStatus, result.Status)
-			}
+			assert.Equal(t, tt.expectedStatus, result.Status)
 
 			// 验证输出（如果指定了期望输出）
 			if tt.expectedOutput != "" {

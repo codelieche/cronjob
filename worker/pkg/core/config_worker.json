@@ -1,0 +1,11 @@
+{
+  "name": "worker：2263c850-d764-46c1-bdbb-7776ab7dd841",
+  "id": "016aa02e-e7c5-4ef6-b0c3-dfb389099ee5",
+  "description": "cronjob worker",
+  "working_dir": ".",
+  "metadata": {
+    "tasks": [
+      "default"
+    ]
+  }
+}

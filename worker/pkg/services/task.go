@@ -10,6 +10,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -276,6 +277,17 @@ func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 		return
 	}
 
+	// 🔥 如果Runner需要API Server客户端，通过类型断言注入依赖
+	// 使用接口检测而不是具体类型，保持松耦合
+	if runnerWithApiserver, ok := runnerInstance.(interface {
+		SetApiserver(core.Apiserver)
+	}); ok {
+		runnerWithApiserver.SetApiserver(ts.apiserver)
+		logger.Debug("已为Runner注入API Server客户端",
+			zap.String("task_id", task.ID.String()),
+			zap.String("category", task.Category))
+	}
+
 	// 解析任务参数和配置
 	if err := runnerInstance.ParseArgs(task); err != nil {
 		ts.handleTaskError(ctx, err, task, "ParseArgs")
@@ -347,10 +359,6 @@ func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 	switch taskResult.Status {
 	case core.StatusSuccess:
 		taskStatus = core.TaskStatusSuccess
-		if task.SaveLog == nil || !*task.SaveLog {
-			// 无需保存日志的话，就将输出设置为执行成功
-			taskResult.Output = "执行成功"
-		}
 	case core.StatusFailed:
 		taskStatus = core.TaskStatusFailed
 	case core.StatusTimeout:
@@ -365,6 +373,31 @@ func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 		taskStatus = core.TaskStatusError
 	}
 
+	// 🔥 处理 output（如果不保存日志且不是JSON，包装成JSON格式）
+	var outputJSON string
+	if task.SaveLog == nil || !*task.SaveLog {
+		// 不保存日志，检查是否为 JSON 格式
+		trimmedOutput := strings.TrimSpace(taskResult.Output)
+		if strings.HasPrefix(trimmedOutput, "{") && strings.HasSuffix(trimmedOutput, "}") {
+			// 已经是 JSON 格式，直接使用
+			outputJSON = taskResult.Output
+		} else {
+			// 不是 JSON，包装成 {"message": "..."}
+			message := taskResult.Output
+			if message == "" {
+				if taskStatus == core.TaskStatusSuccess {
+					message = "执行成功"
+				} else {
+					message = "执行失败"
+				}
+			}
+			outputJSON = fmt.Sprintf(`{"message": "%s"}`, escapeJSON(message))
+		}
+	} else {
+		// 保存日志，直接使用 Runner 返回的 output（可以是纯文本或JSON）
+		outputJSON = taskResult.Output
+	}
+
 	// 构建结果数据
 	result := map[string]interface{}{
 		"status":   taskStatus,
@@ -372,8 +405,8 @@ func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 	}
 
 	// 添加输出信息（用于后续任务取数据）
-	if taskResult.Output != "" {
-		result["output"] = taskResult.Output
+	if outputJSON != "" {
+		result["output"] = outputJSON
 	}
 
 	// 添加执行日志（用于显示给用户）
