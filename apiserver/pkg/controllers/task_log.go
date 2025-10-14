@@ -105,7 +105,7 @@ func (controller *TaskLogController) Find(c *gin.Context) {
 	// 2. 🔥🔥 优雅的优化方式：通过Context传递优化信息
 	ctx := controller.parseOptimizationContext(c)
 
-	// 🔥 2.5. P2优化：如果用户没提供时间参数，自动从Task表获取created_at
+	// 🔥 P2优化：如果用户没提供时间参数，自动从Task表获取created_at
 	// 性能提升：从跨3个月查询（~50ms）降到精确分片查询（~2-5ms，提升10-25倍）
 	if ctx == c.Request.Context() { // 说明没有优化信息被添加到context
 		if controller.taskService != nil {
@@ -173,6 +173,7 @@ func (controller *TaskLogController) Find(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param task_id path string true "任务ID"
+// @Param created_at query string false "精确创建时间 (YYYY-MM-DD HH:MM:SS)，用于精确分片定位（性能最优）" example("2025-10-05 12:00:00")
 // @Param task_log body forms.TaskLogUpdateForm true "任务日志更新表单"
 // @Success 200 {object} core.TaskLog "更新后的任务日志信息"
 // @Failure 400 {object} core.ErrorResponse "请求参数错误"
@@ -188,21 +189,24 @@ func (controller *TaskLogController) Update(c *gin.Context) {
 		return
 	}
 
-	// 2. 处理表单
+	// 2. 🔥 性能优化：解析 created_at 参数用于分片定位
+	ctx := controller.parseOptimizationContext(c)
+
+	// 3. 处理表单
 	var form forms.TaskLogUpdateForm
 	if err := c.ShouldBind(&form); err != nil {
 		controller.HandleError(c, err, http.StatusBadRequest)
 		return
 	}
 
-	// 3. 对表单进行校验
+	// 4. 对表单进行校验
 	if err := form.Validate(); err != nil {
 		controller.HandleError(c, err, http.StatusBadRequest)
 		return
 	}
 
-	// 4. 获取现有任务日志
-	taskLog, err := controller.service.FindByTaskID(c.Request.Context(), taskID)
+	// 5. 获取现有任务日志
+	taskLog, err := controller.service.FindByTaskID(ctx, taskID)
 	if err != nil {
 		if err == core.ErrNotFound {
 			controller.Handle404(c, err)
@@ -212,11 +216,11 @@ func (controller *TaskLogController) Update(c *gin.Context) {
 		return
 	}
 
-	// 5. 更新任务日志信息
+	// 6. 更新任务日志信息
 	form.UpdateTaskLog(taskLog)
 
-	// 6. 调用服务更新任务日志
-	updatedTaskLog, err := controller.service.Update(c.Request.Context(), taskLog)
+	// 7. 调用服务更新任务日志
+	updatedTaskLog, err := controller.service.Update(ctx, taskLog)
 	if err != nil {
 		if err == core.ErrNotFound {
 			controller.Handle404(c, err)
@@ -226,7 +230,7 @@ func (controller *TaskLogController) Update(c *gin.Context) {
 		return
 	}
 
-	// 6. 返回成功响应
+	// 8. 返回成功响应
 	controller.HandleOK(c, updatedTaskLog)
 }
 
@@ -237,6 +241,7 @@ func (controller *TaskLogController) Update(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param task_id path string true "任务ID"
+// @Param created_at query string false "精确创建时间 (YYYY-MM-DD HH:MM:SS)，用于精确分片定位（性能最优）" example("2025-10-05 12:00:00")
 // @Success 200 {object} map[string]string "删除成功信息"
 // @Failure 400 {object} core.ErrorResponse "请求参数错误"
 // @Failure 401 {object} core.ErrorResponse "未认证"
@@ -251,8 +256,11 @@ func (controller *TaskLogController) Delete(c *gin.Context) {
 		return
 	}
 
-	// 2. 调用服务删除任务日志
-	err := controller.service.DeleteByTaskID(c.Request.Context(), taskID)
+	// 2. 🔥 性能优化：解析 created_at 参数用于分片定位
+	ctx := controller.parseOptimizationContext(c)
+
+	// 3. 调用服务删除任务日志
+	err := controller.service.DeleteByTaskID(ctx, taskID)
 	if err != nil {
 		if err == core.ErrNotFound {
 			controller.Handle404(c, err)
@@ -262,7 +270,7 @@ func (controller *TaskLogController) Delete(c *gin.Context) {
 		return
 	}
 
-	// 3. 返回成功响应
+	// 4. 返回成功响应
 	controller.HandleOK(c, gin.H{"message": "删除成功"})
 }
 
@@ -648,8 +656,24 @@ func (controller *TaskLogController) AppendContent(c *gin.Context) {
 		Storage: request.Storage, // 如果为空，Service层会设置默认值
 	}
 
+	// 5.5 🔥 性能优化：从 Task 表获取 created_at，避免查询多个分片表
+	// AppendContent 是 Worker 频繁调用的接口，必须优化
+	ctx := c.Request.Context()
+	if controller.taskService != nil {
+		if task, err := controller.taskService.FindByID(ctx, taskID); err == nil && task != nil {
+			// 成功获取 Task，将 created_at 注入 context
+			opt := &store.TaskLogOptimization{
+				CreatedAt: &task.CreatedAt,
+			}
+			ctx = store.WithTaskLogOptimization(ctx, opt)
+			logger.Debug("AppendContent优化：从Task获取created_at",
+				zap.String("task_id", taskID),
+				zap.Time("created_at", task.CreatedAt))
+		}
+	}
+
 	// 6. 调用智能追加方法（如果不存在则创建，存在则追加）
-	taskLog, err = controller.service.AppendLogContent(c.Request.Context(), taskLog, request.Content)
+	taskLog, err = controller.service.AppendLogContent(ctx, taskLog, request.Content)
 	if err != nil {
 		controller.HandleError(c, err, http.StatusBadRequest)
 		return

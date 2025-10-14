@@ -18,6 +18,7 @@ type database struct {
 
 // GetDSN 获取数据库的DSN
 func (db *database) GetDSN() string {
+	// 🔥 使用Asia/Shanghai时区，确保与MySQL时区一致（URL编码为Asia%2FShanghai）
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local&collation=utf8mb4_0900_ai_ci",
 		db.User, db.Password, db.Host, db.Port, db.Database)
 	// PG数据库的话默认的schema是public

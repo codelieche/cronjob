@@ -36,8 +36,8 @@ func RandomPassword(length int) string {
 // Cryptography 对称加密
 // Symetric Cryptography
 type Cryptography struct {
-	key  []byte
-	mode cipher.BlockMode
+	key []byte
+	iv  []byte
 }
 
 // NewCryptography 创建一个新的加密实例
@@ -56,13 +56,9 @@ func NewCryptography(key string) *Cryptography {
 	// 创建IV（初始化向量），这里使用固定的IV，实际应用中应该使用随机IV
 	iv := []byte("0000000000000000")
 
-	// 创建CBC模式的block模式
-	block, _ := aes.NewCipher(keyBytes)
-	mode := cipher.NewCBCEncrypter(block, iv)
-
 	return &Cryptography{
-		key:  keyBytes,
-		mode: mode,
+		key: keyBytes,
+		iv:  iv,
 	}
 }
 
@@ -83,8 +79,15 @@ func (c *Cryptography) Encrypt(text string) (string, error) {
 	// 创建一个与填充后文本长度相同的字节数组
 	ciphertext := make([]byte, len(paddedText))
 
+	// 🔥 每次加密都创建新的加密器（CBC 模式是有状态的，不能复用）
+	block, err := aes.NewCipher(c.key)
+	if err != nil {
+		return "", err
+	}
+	encrypter := cipher.NewCBCEncrypter(block, c.iv)
+
 	// 执行加密操作
-	c.mode.CryptBlocks(ciphertext, []byte(paddedText))
+	encrypter.CryptBlocks(ciphertext, []byte(paddedText))
 
 	// 将加密后的字节转换为十六进制字符串
 	return hex.EncodeToString(ciphertext), nil
@@ -102,9 +105,11 @@ func (c *Cryptography) Decrypt(text string) (string, error) {
 	plaintext := make([]byte, len(ciphertext))
 
 	// 创建一个新的解密器
-	block, _ := aes.NewCipher(c.key)
-	iv := []byte("0000000000000000")
-	decrypter := cipher.NewCBCDecrypter(block, iv)
+	block, err := aes.NewCipher(c.key)
+	if err != nil {
+		return "", err
+	}
+	decrypter := cipher.NewCBCDecrypter(block, c.iv)
 
 	// 执行解密操作
 	decrypter.CryptBlocks(plaintext, ciphertext)

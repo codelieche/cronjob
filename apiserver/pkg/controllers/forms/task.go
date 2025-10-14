@@ -64,8 +64,10 @@ func (form *TaskCreateForm) Validate() error {
 	}
 
 	// 5. 验证参数长度
-	if len(form.Args) > 512 {
-		err = fmt.Errorf("任务参数不能超过512个字符")
+	// Args 字段现在是 TEXT 类型，最大支持 64KB
+	// 为了防止恶意提交超大数据，设置一个合理的上限
+	if len(form.Args) > 65535 {
+		err = fmt.Errorf("任务参数不能超过64KB (65535字节)")
 		return err
 	}
 
@@ -272,8 +274,10 @@ func (form *TaskInfoForm) Validate() error {
 	}
 
 	// 验证参数长度
-	if form.Args != "" && len(form.Args) > 512 {
-		err = fmt.Errorf("任务参数不能超过512个字符")
+	// Args 字段现在是 TEXT 类型，最大支持 64KB
+	// 为了防止恶意提交超大数据，设置一个合理的上限
+	if form.Args != "" && len(form.Args) > 65535 {
+		err = fmt.Errorf("任务参数不能超过64KB (65535字节)")
 		return err
 	}
 

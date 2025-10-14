@@ -28,6 +28,9 @@ func AutoMigrate(db *gorm.DB) error {
 			&Task{},
 			&TaskLog{},
 
+			// 凭证管理表
+			&Credential{}, // 凭证信息
+
 			// 🔥 统计数据表（用于性能优化）
 			&TaskStatsDaily{},    // 任务每日统计
 			&CronjobStatsDaily{}, // CronJob每日统计

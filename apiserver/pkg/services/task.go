@@ -252,12 +252,21 @@ func (s *TaskService) Patch(ctx context.Context, id string, updates map[string]i
 // 🔒 使用分布式锁确保并发安全，防止与任务分发、超时检查等操作冲突
 //
 // 取消条件：
-//  1. 任务状态必须是 pending
-//  2. 成功获取任务锁
+//  1. 任务状态是 pending（正常取消）
+//  2. 任务状态是 running 且运行时间超过"预期最大运行时间"（强制取消，容错处理）
+//     - 有 timeout 配置：预期最大运行时间 = timeout + 60秒（缓冲）
+//     - 无 timeout 配置：预期最大运行时间 = 24小时（兜底）
+//  3. 成功获取任务锁
 //
 // 取消操作：
 //  1. 更新任务状态为 canceled
 //  2. 设置任务结束时间为当前时间
+//
+// 🔥 容错设计：
+//
+//	对于运行时间超过预期的 running 任务，允许用户手动取消，
+//	解决 Worker 异常退出导致任务卡在 running 状态无法恢复的问题。
+//	预期时间基于任务的 timeout 配置，更加精确和智能。
 //
 // 参数:
 //   - ctx: 上下文对象
@@ -296,13 +305,51 @@ func (s *TaskService) Cancel(ctx context.Context, id string) (*core.Task, error)
 		return nil, err
 	}
 
-	// 4. 验证任务状态（只能取消 pending 状态的任务）
-	if task.Status != core.TaskStatusPending {
-		logger.Warn("只能取消pending状态的任务",
+	// 4. 验证任务状态
+	// 🔥 允许取消的情况：
+	//    1. pending 状态的任务（原有逻辑）
+	//    2. running 状态且超过"预期最大运行时间"的任务（容错处理，Worker 可能已挂）
+	//       预期最大运行时间 = timeout > 0 ? (time_start + timeout + 60s) : (time_start + 24h)
+	canCancel := false
+	cancelReason := ""
+
+	if task.Status == core.TaskStatusPending {
+		canCancel = true
+		cancelReason = "pending状态"
+	} else if task.Status == core.TaskStatusRunning && task.TimeStart != nil {
+		now := time.Now()
+		runningDuration := now.Sub(*task.TimeStart)
+
+		// 🔥 计算预期最大运行时间
+		var maxExpectedDuration time.Duration
+		if task.Timeout > 0 {
+			// 有 timeout 配置：使用 timeout + 60 秒缓冲时间
+			maxExpectedDuration = time.Duration(task.Timeout)*time.Second + 60*time.Second
+		} else {
+			// 无 timeout 配置：使用 24 小时作为兜底
+			maxExpectedDuration = 24 * time.Hour
+		}
+
+		// 判断是否超过预期最大运行时间
+		if runningDuration >= maxExpectedDuration {
+			canCancel = true
+			cancelReason = fmt.Sprintf("running状态且运行时间(%.1f分钟)超过预期(%.1f分钟)",
+				runningDuration.Minutes(), maxExpectedDuration.Minutes())
+			logger.Warn("强制取消运行时间异常长的任务",
+				zap.String("task_id", uuidID.String()),
+				zap.String("task_name", task.Name),
+				zap.Int("timeout_seconds", task.Timeout),
+				zap.Duration("running_duration", runningDuration),
+				zap.Duration("max_expected_duration", maxExpectedDuration))
+		}
+	}
+
+	if !canCancel {
+		logger.Warn("任务状态不允许取消",
 			zap.String("task_id", uuidID.String()),
 			zap.String("task_name", task.Name),
 			zap.String("current_status", task.Status))
-		return nil, fmt.Errorf("任务状态为 %s，只能取消pending状态的任务", task.Status)
+		return nil, fmt.Errorf("任务状态为 %s，只能取消pending状态的任务或运行时间超过预期的任务", task.Status)
 	}
 
 	// 5. 更新任务状态
@@ -322,6 +369,7 @@ func (s *TaskService) Cancel(ctx context.Context, id string) (*core.Task, error)
 	logger.Info("任务已取消",
 		zap.String("task_id", uuidID.String()),
 		zap.String("task_name", task.Name),
+		zap.String("cancel_reason", cancelReason),
 		zap.Time("cancel_time", now))
 
 	return updatedTask, nil

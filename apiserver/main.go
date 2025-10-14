@@ -40,8 +40,6 @@
 package main
 
 import (
-	"time"
-
 	"github.com/codelieche/cronjob/apiserver/pkg/app"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
 )
@@ -55,12 +53,8 @@ import (
 func main() {
 	logger.Info("计划任务系统 API Server 启动中...")
 
-	// 使用带重试机制的注册
-	if err := app.RegisterWithRetry(3, 2*time.Second); err != nil {
-		logger.Fatalf("权限注册失败: %v", err)
-	} else {
-		logger.Info("权限注册完成")
-	}
+	// 注意：权限和平台配置已统一由 usercenter 管理
+	// Category 注册在 router 初始化时自动执行
 
 	app.Run()
 	logger.Info("计划任务系统 API Server 已停止")

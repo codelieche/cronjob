@@ -24,7 +24,7 @@ type PlatformItem struct {
 	Icon           string `json:"icon"`                     // 平台图标
 	Path           string `json:"path" binding:"required"`  // 路径
 	Description    string `json:"description"`              // 描述
-	Order          int    `json:"order"`                    // 排序
+	DisplayOrder   int    `json:"display_order"`            // 显示顺序
 	PermissionCode string `json:"permission_code"`          // 权限代码（不含系统前缀）
 	IsMenu         bool   `json:"is_menu"`                  // 是否为菜单
 	IsFrontend     bool   `json:"is_frontend"`              // 是否微前端
@@ -68,4 +68,7 @@ type RegistryService interface {
 
 	// RegisterPlatforms 注册平台到用户中心
 	RegisterPlatforms(ctx context.Context, req *PlatformRegistryRequest) (*PlatformRegistryResponse, error)
+
+	// RegisterCategories 注册系统分类
+	RegisterCategories(ctx context.Context) error
 }

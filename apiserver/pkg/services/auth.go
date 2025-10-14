@@ -115,9 +115,16 @@ func (s *authService) Authenticate(ctx context.Context, authHeader string, xTeam
 	result := s.authenticateWithRetry(ctx, authHeader, xTeamID)
 	result.Duration = time.Since(startTime)
 
-	// 成功时存入缓存
-	if result.Success && s.config.EnableCache && result.User != nil {
-		s.setToCache(cacheKey, result.User)
+	// 🔥 优化：根据认证结果处理缓存
+	if s.config.EnableCache {
+		if result.Success && result.User != nil {
+			// 成功时存入缓存
+			s.setToCache(cacheKey, result.User)
+		} else {
+			// 🔥 新增：认证失败时，删除可能存在的旧缓存
+			// 特别是当token过期(401)或权限不足(403)时
+			s.removeFromCache(cacheKey)
+		}
 	}
 
 	return result
@@ -156,12 +163,13 @@ func (s *authService) authenticateWithRetry(ctx context.Context, authHeader stri
 
 		lastErr = result.Error
 
-		// 某些错误不需要重试
+		// 🔥 修复：某些错误不需要重试，直接返回原始错误
 		if s.shouldNotRetry(result.ErrorCode) {
-			break
+			return result // 直接返回，保留原始错误码（如HTTP_401）
 		}
 	}
 
+	// 只有在重试次数用尽时，才返回MAX_RETRIES_EXCEEDED
 	return &core.AuthResult{
 		Success:      false,
 		Error:        lastErr,
@@ -423,6 +431,25 @@ func (s *authService) setToCache(key string, user *core.AuthenticatedUser) {
 	}
 }
 
+// removeFromCache 从缓存中删除指定的条目
+// 🔥 新增：用于在认证失败时清除可能存在的旧缓存
+func (s *authService) removeFromCache(key string) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+
+	if _, exists := s.cache[key]; exists {
+		delete(s.cache, key)
+		if s.config.Debug {
+			// 安全地截取key用于日志显示
+			keyPreview := key
+			if len(key) > 16 {
+				keyPreview = key[:16] + "..."
+			}
+			logger.Debug("已删除失效的认证缓存", zap.String("key_preview", keyPreview))
+		}
+	}
+}
+
 // cleanExpiredCache 清理过期的缓存条目
 func (s *authService) cleanExpiredCache() {
 	now := time.Now()
@@ -435,12 +462,40 @@ func (s *authService) cleanExpiredCache() {
 
 // shouldNotRetry 判断是否不应该重试
 func (s *authService) shouldNotRetry(errorCode string) bool {
-	// 这些错误不应该重试
+	// 🔥 优化：区分永久性错误和临时性错误
+	// 永久性错误（不应该重试）：
+	// - 认证失败（401）：token过期或无效
+	// - 权限不足（403）：用户无权限
+	// - 资源不存在（404）：API不存在
+	// - 数据解析错误：响应格式错误
+	// - 上下文取消：请求被取消
+	//
+	// 临时性错误（可以重试）：
+	// - HTTP_REQUEST_FAILED：网络连接失败
+	// - RESPONSE_READ_FAILED：响应读取失败
+	// - HTTP_5xx：服务器临时错误
 	noRetryErrors := []string{
+		// 业务逻辑错误
 		"AUTH_FAILED",            // 认证失败
 		"USER_DATA_PARSE_FAILED", // 数据解析失败
 		"JSON_PARSE_FAILED",      // JSON解析失败
 		"CONTEXT_CANCELLED",      // 上下文取消
+
+		// HTTP客户端错误（4xx）- 这些是永久性错误，不应该重试
+		"HTTP_400", // 错误请求
+		"HTTP_401", // 未授权（token过期或无效）
+		"HTTP_403", // 权限不足
+		"HTTP_404", // 资源不存在
+		"HTTP_405", // 方法不允许
+		"HTTP_406", // 不可接受
+		"HTTP_408", // 请求超时（客户端超时）
+		"HTTP_409", // 冲突
+		"HTTP_410", // 已删除
+		"HTTP_413", // 请求体过大
+		"HTTP_414", // URI过长
+		"HTTP_415", // 不支持的媒体类型
+		"HTTP_422", // 无法处理的实体
+		"HTTP_429", // 请求过多（应该由调用方处理）
 	}
 
 	for _, code := range noRetryErrors {

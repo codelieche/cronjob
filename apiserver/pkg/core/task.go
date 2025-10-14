@@ -67,7 +67,7 @@ type Task struct {
 	Previous     *uuid.UUID      `gorm:"size:256;index:idx_previous" json:"previous"`                                                                                                                       // 前置任务ID，用于任务链
 	Next         *uuid.UUID      `gorm:"size:256;index:idx_next" json:"next"`                                                                                                                               // 后续任务ID，用于任务链
 	Command      string          `gorm:"size:512" json:"command"`                                                                                                                                           // 要执行的命令
-	Args         string          `gorm:"size:512" json:"args"`                                                                                                                                              // 命令参数，JSON格式
+	Args         string          `gorm:"type:text" json:"args"`                                                                                                                                             // 命令参数，JSON格式，支持大文本（如脚本代码）
 	Description  string          `gorm:"size:512" json:"description"`                                                                                                                                       // 任务描述
 	TimePlan     time.Time       `gorm:"column:time_plan;index:idx_tasks_pending_check,priority:2" json:"time_plan"`                                                                                        // 计划执行时间
 	TimeoutAt    time.Time       `gorm:"column:timeout_at;index:idx_tasks_timeout_check,priority:2;index:idx_tasks_pending_check,priority:3" json:"timeout_at"`                                             // 任务超时时间点

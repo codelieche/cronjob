@@ -289,7 +289,7 @@ func (controller *TaskController) Delete(c *gin.Context) {
 defaultPaginationConfig := &types.PaginationConfig{
     MaxPage:            1000,  // 最大页数限制
     PageQueryParam:     "page", // 页码参数名
-    MaxPageSize:        300,   // 每页最大数据量
+    MaxPageSize:        500,   // 每页最大数据量
     PageSizeQueryParam: "page_size", // 每页大小参数名
 }
 ```

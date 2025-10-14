@@ -626,14 +626,14 @@ func (controller *TaskController) Retry(c *gin.Context) {
 }
 
 // Cancel 取消待执行任务
-// @Summary 取消待执行的任务
-// @Description 取消pending状态的任务，使用分布式锁确保并发安全
+// @Summary 取消待执行的任务或强制取消运行超时的任务
+// @Description 取消任务（支持 pending 状态任务，以及运行时间超过预期的 running 任务），使用分布式锁确保并发安全。预期时间根据任务 timeout 配置计算：有 timeout 则为 timeout+60秒（缓冲），无 timeout 则为 24 小时（兜底）。对于运行超过预期时间的任务，可能是 Worker 已挂导致无法正常 Kill，此时可使用此接口强制标记为 canceled 状态。
 // @Tags tasks
 // @Accept json
 // @Produce json
 // @Param id path string true "任务ID"
 // @Success 200 {object} core.Task "取消后的任务信息"
-// @Failure 400 {object} core.ErrorResponse "请求参数错误或任务状态不允许取消"
+// @Failure 400 {object} core.ErrorResponse "请求参数错误或任务状态不允许取消（只能取消 pending 状态或运行时间超过预期的 running 任务）"
 // @Failure 401 {object} core.ErrorResponse "未认证"
 // @Failure 404 {object} core.ErrorResponse "任务不存在"
 // @Failure 500 {object} core.ErrorResponse "服务器错误"

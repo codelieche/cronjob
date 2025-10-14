@@ -583,7 +583,12 @@ func (s *taskLogShardStore) queryMultipleShards(ctx context.Context, tables []st
 
 // queryShardTable 查询单个分片表
 func (s *taskLogShardStore) queryShardTable(ctx context.Context, tableName string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error) {
-	query := s.db.WithContext(ctx).Table(tableName)
+	// 🔥🔥 性能优化：List 接口不查询 content 字段（避免传输大量日志数据）
+	selectFields := "task_id, storage, path, size, created_at, updated_at, deleted_at, deleted"
+
+	query := s.db.WithContext(ctx).
+		Table(tableName).
+		Select(selectFields) // 🚀 只查询必要字段，排除 content
 
 	// 应用过滤条件
 	for _, filter := range filterActions {
@@ -761,54 +766,6 @@ func (s *taskLogShardStore) countShardTableByTaskIDs(ctx context.Context, tableN
 	}
 
 	return totalCount, nil
-}
-
-// queryShardTableWithTeamFilter 查询单个分片表（带团队过滤）
-// 🔥 已废弃：性能较差，建议使用 queryShardTableByTaskIDs
-func (s *taskLogShardStore) queryShardTableWithTeamFilter(ctx context.Context, tableName string, teamIDs []string, offset, limit int, filterActions ...filters.Filter) ([]*core.TaskLog, error) {
-	// 🔥 关键优化：使用JOIN查询，避免大量IN操作
-	query := s.db.WithContext(ctx).
-		Table(fmt.Sprintf("%s tl", tableName)).
-		Select("tl.*").
-		Joins("INNER JOIN tasks t ON tl.task_id = t.id").
-		Where("t.team_id IN (?)", teamIDs)
-
-	// 应用其他过滤条件（注意表别名）
-	for _, filter := range filterActions {
-		if filterOpt, ok := filter.(*filters.FilterOption); ok {
-			// 为TaskLog字段添加表别名
-			column := filterOpt.Column
-			if !strings.Contains(column, ".") {
-				column = "tl." + column
-			}
-
-			// 创建新的过滤器选项
-			newFilter := &filters.FilterOption{
-				Column: column,
-				Value:  filterOpt.Value,
-				Op:     filterOpt.Op,
-			}
-			query = newFilter.Filter(query)
-		}
-	}
-
-	// 排序
-	query = query.Order("tl.created_at DESC")
-
-	// 分页（如果指定）
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-	if offset > 0 {
-		query = query.Offset(offset)
-	}
-
-	var taskLogs []*core.TaskLog
-	if err := query.Find(&taskLogs).Error; err != nil {
-		return nil, fmt.Errorf("查询分片表 %s 失败: %w", tableName, err)
-	}
-
-	return taskLogs, nil
 }
 
 // countMultipleShards 计数多个分片表
@@ -1230,8 +1187,13 @@ func (s *taskLogShardStore) queryShardTableWithCronjobSubquery(
 	// 🚀 使用 JOIN 代替 IN 子查询 + 强制使用正确索引
 	joinClause := "INNER JOIN tasks t FORCE INDEX (idx_team_deleted) ON tl.task_id = t.id"
 
+	// 🔥🔥 关键性能优化：List 接口不查询 content 字段（避免传输大量日志数据）
+	// content 可能包含几 MB 到几十 MB 的日志，20 条记录会导致查询时间从 <100ms 飙升到 6000ms+
+	selectFields := "tl.task_id, tl.storage, tl.path, tl.size, tl.created_at, tl.updated_at, tl.deleted_at, tl.deleted"
+
 	query := s.db.WithContext(ctx).
 		Table(fmt.Sprintf("%s tl", tableName)).
+		Select(selectFields). // 🚀 只查询必要字段，排除 content
 		Joins(joinClause).
 		Where("t.team_id IN ?", teamIDs).
 		Where("t.deleted_at IS NULL")

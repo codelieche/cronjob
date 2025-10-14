@@ -21,7 +21,7 @@ func init() {
 	defaultPaginationConfig := &types.PaginationConfig{
 		MaxPage:            1000,        // 最大页数限制，防止恶意请求
 		PageQueryParam:     "page",      // 页码查询参数名
-		MaxPageSize:        300,         // 每页最大数据量，防止性能问题
+		MaxPageSize:        500,         // 每页最大数据量，防止性能问题
 		PageSizeQueryParam: "page_size", // 每页大小查询参数名
 	}
 

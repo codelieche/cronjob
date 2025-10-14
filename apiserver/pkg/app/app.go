@@ -16,6 +16,7 @@ import (
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/middleware"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/logger"
+	"github.com/codelieche/cronjob/apiserver/pkg/utils/types"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -43,17 +44,24 @@ func newApp() *gin.Engine {
 //
 // 这是应用程序的主启动函数，执行以下步骤：
 // 1. 初始化日志系统
-// 2. 创建Gin Web应用实例
-// 3. 初始化所有API路由
-// 4. 启动后台调度服务（定时任务调度、任务检查等）
-// 5. 启动Web服务器监听HTTP请求
-// 6. 实现优雅关闭机制
+// 2. 同步加密配置（避免循环依赖）
+// 3. 创建Gin Web应用实例
+// 4. 初始化所有API路由
+// 5. 启动后台调度服务（定时任务调度、任务检查等）
+// 6. 启动Web服务器监听HTTP请求
+// 7. 实现优雅关闭机制
 //
-// 注意：此函数会阻塞执行，直到收到关闭信号
+// 注意：
+// - 加密配置在 config 包 init() 时自动初始化（从环境变量 ENCRYPTION_KEY 读取）
+// - 此函数会阻塞执行，直到收到关闭信号
 func Run() {
 	// 初始化日志系统
 	logger.InitLogger()
 	logger.Info("计划任务系统 API Server 启动中", zap.String("监听地址", config.Web.Address()))
+
+	// 同步加密密钥到types包（向后兼容，避免循环依赖）
+	types.SetEncryptionKey(config.Encryption.Key)
+	logger.Info("加密配置已加载", zap.String("algorithm", config.Encryption.Algorithm))
 
 	// 创建Web应用实例
 	app := newApp()

@@ -49,7 +49,7 @@ type CronJob struct {
 	Name         string          `gorm:"size:128" json:"name"`                                                               // 任务名称，便于识别和管理
 	Time         string          `gorm:"size:100" json:"time"`                                                               // cron时间表达式，定义任务执行时间规则
 	Command      string          `gorm:"size:512" json:"command"`                                                            // 要执行的命令，支持系统命令和脚本
-	Args         string          `gorm:"size:512" json:"args"`                                                               // 命令参数，JSON格式存储
+	Args         string          `gorm:"type:text" json:"args"`                                                              // 命令参数，JSON格式存储，支持大文本（如脚本代码）
 	Description  string          `gorm:"size:512" json:"description"`                                                        // 任务描述，说明任务用途和注意事项
 	LastPlan     *time.Time      `gorm:"column:last_plan;index:idx_cronjobs_dispatch,priority:2" json:"last_plan"`           // 上次计划执行时间，用于调度计算（复合索引：is_active+last_plan）
 	LastDispatch *time.Time      `gorm:"column:last_dispatch" json:"last_dispatch"`                                          // 上次实际执行时间，用于监控和统计

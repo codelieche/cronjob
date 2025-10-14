@@ -76,6 +76,15 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 			return nil
 		}
 		logger.Info("数据库连接和迁移完成")
+
+		// 注册系统分类
+		// 自动注册 default, command, http, script, database, message 等核心分类
+		if err := RegisterCategories(db); err != nil {
+			logger.Error("注册系统分类失败", zap.Error(err))
+			// 不阻塞启动，继续运行
+		} else {
+			logger.Info("系统分类注册完成")
+		}
 	}
 
 	// 配置Session存储
@@ -142,6 +151,27 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 		categoryRoutes.GET("/:id/", categoryController.Find)      // 根据ID获取分类
 		categoryRoutes.PUT("/:id/", categoryController.Update)    // 更新分类信息
 		categoryRoutes.DELETE("/:id/", categoryController.Delete) // 删除分类
+	}
+
+	// ========== 凭证管理模块 ==========
+	// 管理敏感凭证信息（密码、Token等），敏感字段自动加密，需要用户认证
+	credentialStore := store.NewCredentialStore(db)
+	credentialService := services.NewCredentialService(credentialStore)
+	credentialController := controllers.NewCredentialController(credentialService)
+
+	// 凭证管理接口需要用户认证
+	credentialRoutes := apis.Group("/credentials")
+	credentialRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		credentialRoutes.GET("/types/", credentialController.ListTypes)      // 获取所有凭证类型
+		credentialRoutes.POST("/", credentialController.Create)              // 创建凭证
+		credentialRoutes.GET("/", credentialController.List)                 // 获取凭证列表
+		credentialRoutes.GET("/all/", credentialController.All)              // 获取所有凭证（不分页）
+		credentialRoutes.GET("/:id/", credentialController.Find)             // 根据ID获取凭证
+		credentialRoutes.PUT("/:id/", credentialController.Update)           // 更新凭证信息
+		credentialRoutes.PATCH("/:id/", credentialController.Patch)          // 动态更新部分字段
+		credentialRoutes.DELETE("/:id/", credentialController.Delete)        // 删除凭证
+		credentialRoutes.POST("/:id/decrypt/", credentialController.Decrypt) // 解密凭证（需要特殊权限）
 	}
 
 	// ========== 定时任务管理模块 ==========

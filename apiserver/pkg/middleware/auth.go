@@ -265,16 +265,41 @@ func setUserContext(c *gin.Context, user *core.AuthenticatedUser) {
 
 // handleAuthError 处理认证错误
 func handleAuthError(c *gin.Context, result *core.AuthResult) {
-	// 根据错误类型返回不同的HTTP状态码
-	statusCode := http.StatusUnauthorized
+	// 🔥 优化：根据错误类型返回正确的HTTP状态码
+	statusCode := http.StatusUnauthorized // 默认401
 
 	switch result.ErrorCode {
+	// 网络/临时性错误 → 503
 	case "HTTP_REQUEST_FAILED", "RESPONSE_READ_FAILED":
 		statusCode = http.StatusServiceUnavailable
 	case "MAX_RETRIES_EXCEEDED":
 		statusCode = http.StatusServiceUnavailable
+
+	// 超时错误 → 408
 	case "CONTEXT_CANCELLED":
 		statusCode = http.StatusRequestTimeout
+
+	// 🔥 新增：直接透传用户中心返回的HTTP状态码
+	case "HTTP_400":
+		statusCode = http.StatusBadRequest
+	case "HTTP_401":
+		statusCode = http.StatusUnauthorized
+	case "HTTP_403":
+		statusCode = http.StatusForbidden
+	case "HTTP_404":
+		statusCode = http.StatusNotFound
+	case "HTTP_408":
+		statusCode = http.StatusRequestTimeout
+	case "HTTP_429":
+		statusCode = http.StatusTooManyRequests
+	case "HTTP_500":
+		statusCode = http.StatusInternalServerError
+	case "HTTP_502":
+		statusCode = http.StatusBadGateway
+	case "HTTP_503":
+		statusCode = http.StatusServiceUnavailable
+	case "HTTP_504":
+		statusCode = http.StatusGatewayTimeout
 	}
 
 	// 统一的错误响应格式
