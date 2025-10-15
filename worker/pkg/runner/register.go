@@ -28,4 +28,14 @@ func init() {
 	core.RegisterRunner("message", func() core.Runner {
 		return NewMessageRunner()
 	})
+
+	// 注册DatabaseRunner（v1.0 数据库操作）
+	core.RegisterRunner("database", func() core.Runner {
+		return NewDatabaseRunner()
+	})
+
+	// 注册FileRunner（v1.0 文件操作）
+	core.RegisterRunner("file", func() core.Runner {
+		return NewFileRunner()
+	})
 }

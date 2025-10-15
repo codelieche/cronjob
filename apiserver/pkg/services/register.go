@@ -217,6 +217,7 @@ func (s *registryService) sendHTTPRequest(ctx context.Context, method, url strin
 // - script: 脚本执行器，支持Python/Shell/JavaScript等脚本
 // - database: 数据库操作执行器，支持MySQL/PostgreSQL/MongoDB等
 // - message: 消息发送执行器，支持邮件/钉钉/企业微信/短信等
+// - file: 文件操作执行器，支持文件清理/备份/压缩/统计等操作
 func (s *registryService) getSystemCategories() []*core.Category {
 	return []*core.Category{
 		{
@@ -266,6 +267,14 @@ func (s *registryService) getSystemCategories() []*core.Category {
 			Setup:       "", // TODO: 后续补充初始化脚本（如：验证消息服务配置）
 			Teardown:    "", // TODO: 后续补充销毁脚本（如：关闭消息连接）
 			Check:       "", // TODO: 后续补充检查脚本（如：测试消息发送能力）
+		},
+		{
+			Code:        "file",
+			Name:        "文件操作",
+			Description: "文件操作执行器，支持本地和远程文件操作（纯SSH）。提供清理（cleanup）、备份（backup）、压缩（compress）、统计（stat）等功能。支持时间/大小筛选、DryRun模式、路径安全验证等特性。",
+			Setup:       "", // TODO: 后续补充初始化脚本（如：检查文件系统权限）
+			Teardown:    "", // TODO: 后续补充销毁脚本（如：清理临时文件）
+			Check:       "", // TODO: 后续补充检查脚本（如：验证路径可访问性）
 		},
 	}
 }

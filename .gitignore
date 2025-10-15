@@ -12,6 +12,7 @@ sqlite3.db
 /deploy
 
 /usercenter
+/codelieche
 /tutorial
 
 .python-version
