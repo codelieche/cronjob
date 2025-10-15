@@ -672,7 +672,7 @@ func TestScriptRunner_Status(t *testing.T) {
 
 	// 模拟执行中
 	runner.mutex.Lock()
-	runner.status = core.StatusRunning
+	runner.Status = core.StatusRunning
 	runner.mutex.Unlock()
 
 	status = runner.GetStatus()
@@ -680,7 +680,7 @@ func TestScriptRunner_Status(t *testing.T) {
 
 	// 模拟成功
 	runner.mutex.Lock()
-	runner.status = core.StatusSuccess
+	runner.Status = core.StatusSuccess
 	runner.mutex.Unlock()
 
 	status = runner.GetStatus()

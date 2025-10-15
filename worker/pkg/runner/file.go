@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/codelieche/cronjob/worker/pkg/core"
@@ -68,13 +67,9 @@ type FileConfig struct {
 //
 // 远程操作：纯 SSH 命令，无需 SFTP
 type FileRunner struct {
-	task      *core.Task         // 任务对象
-	config    FileConfig         // 文件操作配置
-	apiserver core.Apiserver     // API Server 客户端（用于获取凭证）
-	status    core.Status        // 当前状态
-	result    *core.Result       // 执行结果
-	cancel    context.CancelFunc // 取消函数
-	mutex     sync.RWMutex       // 并发保护
+	BaseRunner // 🔥 嵌入基类
+
+	config FileConfig // 文件操作配置
 
 	// SSH 连接（仅远程模式）
 	sshClient *ssh.Client // SSH 客户端（纯命令方式，无需 SFTP）
@@ -82,17 +77,17 @@ type FileRunner struct {
 
 // NewFileRunner 创建新的 FileRunner
 func NewFileRunner() *FileRunner {
-	return &FileRunner{
-		status: core.StatusPending,
-	}
+	r := &FileRunner{}
+	r.InitBase() // 🔥 初始化基类
+	return r
 }
 
 // ParseArgs 解析任务参数
 func (r *FileRunner) ParseArgs(task *core.Task) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock()
+	defer r.Unlock()
 
-	r.task = task
+	r.Task = task
 
 	// 解析 args（JSON 字符串）
 	if err := json.Unmarshal([]byte(task.Args), &r.config); err != nil {
@@ -157,41 +152,22 @@ func (r *FileRunner) SetTask(task *core.Task) error {
 	return r.ParseArgs(task)
 }
 
-// SetApiserver 设置 API Server 客户端（用于获取凭证）
-func (r *FileRunner) SetApiserver(apiserver core.Apiserver) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.apiserver = apiserver
-}
-
-// GetStatus 获取当前状态
-func (r *FileRunner) GetStatus() core.Status {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.status
-}
-
-// GetResult 获取执行结果
-func (r *FileRunner) GetResult() *core.Result {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.result
-}
+// SetApiserver, GetStatus, GetResult 方法继承自 BaseRunner
 
 // Execute 执行文件操作
 func (r *FileRunner) Execute(ctx context.Context, logChan chan<- string) (*core.Result, error) {
 	startTime := time.Now()
 
 	// 更新状态为运行中
-	r.mutex.Lock()
-	r.status = core.StatusRunning
-	r.mutex.Unlock()
+	r.Lock()
+	r.Status = core.StatusRunning
+	r.Unlock()
 
 	// 创建可取消的上下文
 	ctx, cancel := context.WithCancel(ctx)
-	r.mutex.Lock()
-	r.cancel = cancel
-	r.mutex.Unlock()
+	r.Lock()
+	r.Cancel = cancel
+	r.Unlock()
 	defer cancel()
 
 	r.sendLog(logChan, fmt.Sprintf("🚀 FileRunner 启动 - 操作类型: %s\n", r.config.Action))
@@ -244,34 +220,34 @@ func (r *FileRunner) Execute(ctx context.Context, logChan chan<- string) (*core.
 	}
 
 	// 更新状态
-	r.mutex.Lock()
-	r.status = core.StatusSuccess
-	r.result = result
-	r.mutex.Unlock()
+	r.Lock()
+	r.Status = core.StatusSuccess
+	r.Result = result
+	r.Unlock()
 
 	return result, nil
 }
 
 // Stop 停止执行
 func (r *FileRunner) Stop() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock()
+	defer r.Unlock()
 
-	if r.cancel != nil {
-		r.cancel()
+	if r.Cancel != nil {
+		r.Cancel()
 	}
 
-	r.status = core.StatusStopped
+	r.Status = core.StatusStopped
 	return nil
 }
 
 // Kill 强制终止执行
 func (r *FileRunner) Kill() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock()
+	defer r.Unlock()
 
-	if r.cancel != nil {
-		r.cancel()
+	if r.Cancel != nil {
+		r.Cancel()
 	}
 
 	// 关闭 SSH 连接（如果有）
@@ -280,19 +256,19 @@ func (r *FileRunner) Kill() error {
 		r.sshClient = nil
 	}
 
-	r.status = core.StatusFailed
+	r.Status = core.StatusFailed
 	return nil
 }
 
 // Cleanup 清理资源
 func (r *FileRunner) Cleanup() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock()
+	defer r.Unlock()
 
 	// 取消上下文
-	if r.cancel != nil {
-		r.cancel()
-		r.cancel = nil
+	if r.Cancel != nil {
+		r.Cancel()
+		r.Cancel = nil
 	}
 
 	// 关闭 SSH 连接
@@ -1188,7 +1164,7 @@ func (r *FileRunner) executeStatRemote(ctx context.Context, logChan chan<- strin
 // getAndValidateCredential 获取并验证凭证
 func (r *FileRunner) getAndValidateCredential(logChan chan<- string) (*core.Credential, error) {
 	// 1. 检查 apiserver 是否已注入
-	if r.apiserver == nil {
+	if r.Apiserver == nil {
 		err := fmt.Errorf("apiserver 未初始化，无法获取凭证")
 		r.sendLog(logChan, fmt.Sprintf("❌ %v\n", err))
 		return nil, err
@@ -1196,7 +1172,7 @@ func (r *FileRunner) getAndValidateCredential(logChan chan<- string) (*core.Cred
 
 	// 2. 获取凭证
 	r.sendLog(logChan, fmt.Sprintf("🔐 获取 SSH 凭证...\n"))
-	cred, err := r.apiserver.GetCredential(r.config.Credential)
+	cred, err := r.Apiserver.GetCredential(r.config.Credential)
 	if err != nil {
 		r.sendLog(logChan, fmt.Sprintf("❌ 获取凭证失败: %v\n", err))
 		return nil, err

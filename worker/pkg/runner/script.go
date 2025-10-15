@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -49,13 +48,11 @@ type ScriptConfig struct {
 //   - 临时文件自动清理
 //   - 超时控制（使用 Task 的 Timeout）
 type ScriptRunner struct {
-	task           *core.Task    // 完整的任务对象
+	BaseRunner // 🔥 嵌入基类
+
 	config         *ScriptConfig // 脚本配置
 	timeout        time.Duration // 执行超时时间
-	status         core.Status   // 当前状态
-	result         *core.Result  // 执行结果
 	cmd            *exec.Cmd     // 执行命令对象
-	mutex          sync.RWMutex  // 读写锁
 	stopSignalType string        // 停止信号类型（""=未停止, "SIGTERM"=优雅停止, "SIGKILL"=强制终止）
 	tempFile       string        // 临时文件路径（内联模式使用）
 }
@@ -74,9 +71,9 @@ const maxInlineCodeSize = 10 * 1024
 
 // NewScriptRunner 创建新的ScriptRunner实例
 func NewScriptRunner() *ScriptRunner {
-	return &ScriptRunner{
-		status: core.StatusPending,
-	}
+	r := &ScriptRunner{}
+	r.InitBase() // 🔥 初始化基类
+	return r
 }
 
 // ParseArgs 解析任务参数和配置
@@ -85,10 +82,10 @@ func (r *ScriptRunner) ParseArgs(task *core.Task) error {
 	defer r.mutex.Unlock()
 
 	// 保存任务对象
-	r.task = task
-	if r.task == nil {
+	r.Task = task
+	if r.Task == nil {
 		return fmt.Errorf("任务对象未设置")
-	} else if r.task.ID == uuid.Nil {
+	} else if r.Task.ID == uuid.Nil {
 		return fmt.Errorf("任务ID未设置")
 	}
 
@@ -174,11 +171,11 @@ func (r *ScriptRunner) normalizeLanguage(lang string) string {
 // replaceVariables 替换环境变量
 func (r *ScriptRunner) replaceVariables() error {
 	// 获取元数据
-	metadata, err := r.task.GetMetadata()
+	metadata, err := r.Task.GetMetadata()
 	if err != nil {
 		// 没有元数据也可以继续执行
 		logger.Debug("获取元数据失败，跳过环境变量替换",
-			zap.String("task_id", r.task.ID.String()),
+			zap.String("task_id", r.Task.ID.String()),
 			zap.Error(err))
 		return nil
 	}
@@ -209,7 +206,7 @@ func (r *ScriptRunner) replaceVariables() error {
 // Execute 执行脚本
 func (r *ScriptRunner) Execute(ctx context.Context, logChan chan<- string) (*core.Result, error) {
 	r.mutex.Lock()
-	r.status = core.StatusRunning
+	r.Status = core.StatusRunning
 	startTime := time.Now()
 	r.mutex.Unlock()
 
@@ -300,8 +297,8 @@ func (r *ScriptRunner) Execute(ctx context.Context, logChan chan<- string) (*cor
 
 	endTime := time.Now()
 	r.mutex.Lock()
-	r.status = core.StatusSuccess
-	r.result = &core.Result{
+	r.Status = core.StatusSuccess
+	r.Result = &core.Result{
 		Status:     core.StatusSuccess,
 		Output:     output,
 		ExecuteLog: output,
@@ -313,7 +310,7 @@ func (r *ScriptRunner) Execute(ctx context.Context, logChan chan<- string) (*cor
 	}
 	r.mutex.Unlock()
 
-	return r.result, nil
+	return r.Result, nil
 }
 
 // prepareScript 准备脚本文件
@@ -366,7 +363,7 @@ func (r *ScriptRunner) createTempScript(code string) (string, error) {
 
 	// 生成临时文件名：cronjob_script_<taskid>_<timestamp>.<ext>
 	tmpFileName := fmt.Sprintf("cronjob_script_%s_%d%s",
-		r.task.ID.String()[:8],
+		r.Task.ID.String()[:8],
 		time.Now().Unix(),
 		ext,
 	)
@@ -381,7 +378,7 @@ func (r *ScriptRunner) createTempScript(code string) (string, error) {
 	}
 
 	logger.Debug("创建临时脚本文件",
-		zap.String("task_id", r.task.ID.String()),
+		zap.String("task_id", r.Task.ID.String()),
 		zap.String("file", tmpFile),
 		zap.Int("size", len(code)))
 
@@ -444,11 +441,26 @@ func (r *ScriptRunner) isPathAllowed(absPath string) bool {
 
 // getWorkingDir 获取工作目录（从 metadata 读取）
 func (r *ScriptRunner) getWorkingDir() string {
-	metadata, err := r.task.GetMetadata()
-	if err != nil {
-		return ""
+	var workDir string
+
+	// 从 metadata 读取工作目录
+	metadata, err := r.Task.GetMetadata()
+	if err == nil && metadata.WorkingDir != "" {
+		// 🔥 去除前后空格，防止用户输入错误
+		workDir = strings.TrimSpace(metadata.WorkingDir)
 	}
-	return metadata.WorkingDir
+
+	// 🔥 如果指定了工作目录，确保目录存在
+	if workDir != "" {
+		if err := os.MkdirAll(workDir, 0755); err != nil {
+			logger.Warn("创建工作目录失败",
+				zap.String("task_id", r.Task.ID.String()),
+				zap.String("workDir", workDir),
+				zap.Error(err))
+		}
+	}
+
+	return workDir
 }
 
 // getEnvironment 获取环境变量（合并系统环境变量和 metadata 中的环境变量）
@@ -457,7 +469,7 @@ func (r *ScriptRunner) getEnvironment() []string {
 	env := os.Environ()
 
 	// 从 metadata 读取自定义环境变量
-	metadata, err := r.task.GetMetadata()
+	metadata, err := r.Task.GetMetadata()
 	if err != nil {
 		return env
 	}
@@ -518,14 +530,14 @@ func (r *ScriptRunner) Kill() error {
 func (r *ScriptRunner) GetStatus() core.Status {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
-	return r.status
+	return r.Status
 }
 
 // GetResult 获取执行结果
 func (r *ScriptRunner) GetResult() *core.Result {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
-	return r.result
+	return r.Result
 }
 
 // Cleanup 清理资源
@@ -552,8 +564,8 @@ func (r *ScriptRunner) buildErrorResult(err error, startTime time.Time) *core.Re
 	defer r.mutex.Unlock()
 
 	endTime := time.Now()
-	r.status = core.StatusFailed
-	r.result = &core.Result{
+	r.Status = core.StatusFailed
+	r.Result = &core.Result{
 		Status:     core.StatusFailed,
 		Output:     "",
 		ExecuteLog: "",
@@ -563,7 +575,7 @@ func (r *ScriptRunner) buildErrorResult(err error, startTime time.Time) *core.Re
 		Duration:   endTime.Sub(startTime).Milliseconds(),
 		ExitCode:   1,
 	}
-	return r.result
+	return r.Result
 }
 
 // sendLog 发送日志到通道

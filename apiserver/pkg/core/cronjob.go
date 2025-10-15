@@ -14,22 +14,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// CronJobMetadata 定时任务元数据
-//
-// 定义定时任务的执行环境和配置信息，包括：
-// - 执行环境：工作目录、环境变量等
-// - Worker配置：指定执行节点、节点标签等
-// - 扩展配置：其他自定义配置信息
-type CronJobMetadata struct {
-	WorkingDir    string                 `json:"workingDir,omitempty"`     // 任务执行的工作目录
-	Environment   map[string]string      `json:"environment,omitempty"`    // 环境变量设置
-	WorkerSelect  []string               `json:"worker_select,omitempty"`  // 可执行此任务的Worker节点名称列表，空表示所有Worker
-	WorkerLabels  map[string]string      `json:"worker_labels,omitempty"`  // Worker节点标签选择器
-	Priority      int                    `json:"priority,omitempty"`       // 任务优先级（1-10，默认5）
-	ResourceLimit map[string]string      `json:"resource_limit,omitempty"` // 资源限制配置
-	Extensions    map[string]interface{} `json:"extensions,omitempty"`     // 扩展字段，用于存储其他自定义配置
-}
-
 // CronJob 定时任务实体
 //
 // 定义了一个定时任务的所有属性，包括：
@@ -60,7 +44,7 @@ type CronJob struct {
 	Metadata     json.RawMessage `gorm:"type:json" json:"metadata" swaggertype:"object"`                                     // 任务元数据，存储执行环境、Worker配置等信息
 
 	// 🔥 重试配置（任务级别）
-	MaxRetry  int   `gorm:"type:int;default:3;comment:最大重试次数（0=不重试）" json:"max_retry"`   // 最大重试次数，0表示不重试，默认3次
+	MaxRetry  int   `gorm:"type:int;default:0;comment:最大重试次数（0=不重试）" json:"max_retry"`   // 最大重试次数，0表示不重试，默认0次
 	Retryable *bool `gorm:"type:boolean;default:true;comment:是否启用自动重试" json:"retryable"` // 是否启用自动重试，默认true
 }
 
@@ -71,28 +55,29 @@ func (CronJob) TableName() string {
 }
 
 // GetMetadata 获取解析后的元数据
-// 将JSON格式的Metadata字段解析为CronJobMetadata结构体
-func (c *CronJob) GetMetadata() (*CronJobMetadata, error) {
-	if len(c.Metadata) == 0 {
-		return &CronJobMetadata{}, nil
-	}
-
-	var metadata CronJobMetadata
-	if err := json.Unmarshal(c.Metadata, &metadata); err != nil {
-		return nil, err
-	}
-	return &metadata, nil
+//
+// 将JSON格式的Metadata字段解析为Metadata结构体
+// 使用统一的 Metadata 结构（6 个字段）
+//
+// 返回：
+//   - 解析后的 Metadata 结构体
+//   - 解析错误（如果有）
+func (c *CronJob) GetMetadata() (*Metadata, error) {
+	return ParseMetadata(c.Metadata)
 }
 
 // SetMetadata 设置元数据
-// 将CronJobMetadata结构体序列化为JSON并存储到Metadata字段
-func (c *CronJob) SetMetadata(metadata *CronJobMetadata) error {
-	if metadata == nil {
-		c.Metadata = nil
-		return nil
-	}
-
-	data, err := json.Marshal(metadata)
+//
+// 将 Metadata 结构体序列化为JSON并存储到Metadata字段
+// 使用统一的 Metadata 结构（6 个字段）
+//
+// 参数：
+//   - metadata: Metadata 结构体
+//
+// 返回：
+//   - 序列化错误（如果有）
+func (c *CronJob) SetMetadata(metadata *Metadata) error {
+	data, err := SerializeMetadata(metadata)
 	if err != nil {
 		return err
 	}

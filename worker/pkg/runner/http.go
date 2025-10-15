@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/codelieche/cronjob/worker/pkg/core"
@@ -30,31 +29,29 @@ type HTTPConfig struct {
 
 // HTTPRunner HTTP请求执行器（v2.0 简化版）
 type HTTPRunner struct {
-	task   *core.Task
+	BaseRunner // 🔥 嵌入基类
+
 	config *HTTPConfig
-	status core.Status
-	result *core.Result
 	client *http.Client
-	mutex  sync.RWMutex
-	cancel context.CancelFunc
 }
 
 // NewHTTPRunner 创建新的HTTPRunner
 func NewHTTPRunner() *HTTPRunner {
-	return &HTTPRunner{
-		status: core.StatusPending,
+	r := &HTTPRunner{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
+	r.InitBase() // 🔥 初始化基类
+	return r
 }
 
 // ParseArgs 解析任务参数
 func (r *HTTPRunner) ParseArgs(task *core.Task) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock() // 🔥 使用基类方法
+	defer r.Unlock()
 
-	r.task = task
+	r.Task = task // 🔥 直接访问公共字段
 
 	// 解析args
 	var config HTTPConfig
@@ -100,11 +97,11 @@ func (r *HTTPRunner) ParseArgs(task *core.Task) error {
 
 // replaceVariables 替换环境变量
 func (r *HTTPRunner) replaceVariables() error {
-	if r.task == nil || r.task.Metadata == nil {
+	if r.Task == nil || r.Task.Metadata == nil { // 🔥 直接访问公共字段
 		return nil
 	}
 
-	metadata, err := r.task.GetMetadata()
+	metadata, err := r.Task.GetMetadata() // 🔥 直接访问公共字段
 	if err != nil {
 		return err
 	}
@@ -191,21 +188,21 @@ func (r *HTTPRunner) validateConfig() error {
 
 // Execute 执行HTTP请求
 func (r *HTTPRunner) Execute(ctx context.Context, logChan chan<- string) (*core.Result, error) {
-	r.mutex.Lock()
-	if r.status != core.StatusPending {
-		r.mutex.Unlock()
-		return nil, fmt.Errorf("任务状态不正确，当前状态: %s", r.status)
+	r.Lock()                            // 🔥 使用基类方法
+	if r.Status != core.StatusPending { // 🔥 直接访问公共字段
+		r.Unlock()
+		return nil, fmt.Errorf("任务状态不正确，当前状态: %s", r.Status)
 	}
 
-	r.status = core.StatusRunning
+	r.Status = core.StatusRunning // 🔥 直接访问公共字段
 	startTime := time.Now()
 
 	// 创建可取消的上下文
 	execCtx, cancel := context.WithCancel(ctx)
-	r.cancel = cancel
+	r.Cancel = cancel // 🔥 直接访问公共字段
 	defer cancel()
 
-	r.mutex.Unlock()
+	r.Unlock() // 🔥 使用基类方法
 
 	// 发送日志
 	r.sendLog(logChan, fmt.Sprintf("开始执行HTTP请求: %s %s\n", r.config.Method, r.config.URL))
@@ -218,9 +215,9 @@ func (r *HTTPRunner) Execute(ctx context.Context, logChan chan<- string) (*core.
 		endTime := time.Now()
 		duration := endTime.Sub(startTime).Milliseconds()
 
-		r.mutex.Lock()
-		r.status = core.StatusFailed
-		r.result = &core.Result{
+		r.Lock()                     // 🔥 使用基类方法
+		r.Status = core.StatusFailed // 🔥 直接访问公共字段
+		r.Result = &core.Result{     // 🔥 直接访问公共字段
 			Status:     core.StatusFailed,
 			Error:      fmt.Sprintf("HTTP请求失败: %v", err),
 			ExecuteLog: "请求执行失败",
@@ -229,10 +226,10 @@ func (r *HTTPRunner) Execute(ctx context.Context, logChan chan<- string) (*core.
 			Duration:   duration,
 			ExitCode:   -1,
 		}
-		r.mutex.Unlock()
+		r.Unlock() // 🔥 使用基类方法
 
 		r.sendLog(logChan, fmt.Sprintf("✗ 请求失败: %v\n", err))
-		return r.result, err
+		return r.Result, err // 🔥 直接访问公共字段
 	}
 
 	// 验证响应
@@ -242,9 +239,9 @@ func (r *HTTPRunner) Execute(ctx context.Context, logChan chan<- string) (*core.
 		endTime := time.Now()
 		duration := endTime.Sub(startTime).Milliseconds()
 
-		r.mutex.Lock()
-		r.status = core.StatusFailed
-		r.result = &core.Result{
+		r.Lock()                     // 🔥 使用基类方法
+		r.Status = core.StatusFailed // 🔥 直接访问公共字段
+		r.Result = &core.Result{     // 🔥 直接访问公共字段
 			Status:     core.StatusFailed,
 			Error:      fmt.Sprintf("响应验证失败: %v", err),
 			ExecuteLog: resp.Log,
@@ -253,19 +250,19 @@ func (r *HTTPRunner) Execute(ctx context.Context, logChan chan<- string) (*core.
 			Duration:   duration,
 			ExitCode:   resp.StatusCode,
 		}
-		r.mutex.Unlock()
+		r.Unlock() // 🔥 使用基类方法
 
 		r.sendLog(logChan, fmt.Sprintf("✗ 验证失败: %v\n", err))
-		return r.result, err
+		return r.Result, err // 🔥 直接访问公共字段
 	}
 
 	// 成功
 	endTime := time.Now()
 	duration := endTime.Sub(startTime).Milliseconds()
 
-	r.mutex.Lock()
-	r.status = core.StatusSuccess
-	r.result = &core.Result{
+	r.Lock()                      // 🔥 使用基类方法
+	r.Status = core.StatusSuccess // 🔥 直接访问公共字段
+	r.Result = &core.Result{      // 🔥 直接访问公共字段
 		Status:     core.StatusSuccess,
 		Output:     resp.Body,
 		ExecuteLog: resp.Log,
@@ -274,10 +271,10 @@ func (r *HTTPRunner) Execute(ctx context.Context, logChan chan<- string) (*core.
 		Duration:   duration,
 		ExitCode:   resp.StatusCode,
 	}
-	r.mutex.Unlock()
+	r.Unlock() // 🔥 使用基类方法
 
 	r.sendLog(logChan, fmt.Sprintf("✓ 请求成功完成 (状态码: %d, 耗时: %dms)\n", resp.StatusCode, duration))
-	return r.result, nil
+	return r.Result, nil // 🔥 直接访问公共字段
 }
 
 // HTTPResponse HTTP响应
@@ -388,9 +385,9 @@ func (r *HTTPRunner) sendLog(logChan chan<- string, message string) {
 		}
 	}
 
-	if r.task != nil {
+	if r.Task != nil { // 🔥 直接访问公共字段
 		logger.Info("HTTP请求日志",
-			zap.String("task_id", r.task.ID.String()),
+			zap.String("task_id", r.Task.ID.String()),
 			zap.String("message", message),
 		)
 	}
@@ -398,13 +395,13 @@ func (r *HTTPRunner) sendLog(logChan chan<- string, message string) {
 
 // Stop 停止任务
 func (r *HTTPRunner) Stop() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock() // 🔥 使用基类方法
+	defer r.Unlock()
 
-	if r.cancel != nil {
-		r.cancel()
-		if r.task != nil {
-			logger.Info("HTTP请求已停止", zap.String("task_id", r.task.ID.String()))
+	if r.Cancel != nil { // 🔥 直接访问公共字段
+		r.Cancel()
+		if r.Task != nil { // 🔥 直接访问公共字段
+			logger.Info("HTTP请求已停止", zap.String("task_id", r.Task.ID.String()))
 		}
 	}
 
@@ -416,31 +413,19 @@ func (r *HTTPRunner) Kill() error {
 	return r.Stop() // HTTP请求Stop和Kill行为一致
 }
 
-// GetStatus 获取状态
-func (r *HTTPRunner) GetStatus() core.Status {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.status
-}
-
-// GetResult 获取结果
-func (r *HTTPRunner) GetResult() *core.Result {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.result
-}
+// GetStatus, GetResult 方法继承自 BaseRunner
 
 // Cleanup 清理资源
 func (r *HTTPRunner) Cleanup() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock() // 🔥 使用基类方法
+	defer r.Unlock()
 
-	if r.cancel != nil {
-		r.cancel()
+	if r.Cancel != nil { // 🔥 直接访问公共字段
+		r.Cancel()
 	}
 
-	r.status = core.StatusPending
-	r.result = nil
+	r.Status = core.StatusPending // 🔥 直接访问公共字段
+	r.Result = nil                // 🔥 直接访问公共字段
 
 	return nil
 }

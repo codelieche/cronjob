@@ -38,4 +38,14 @@ func init() {
 	core.RegisterRunner("file", func() core.Runner {
 		return NewFileRunner()
 	})
+
+	// 注册GitRunner（v1.0 Git 操作）
+	core.RegisterRunner("git", func() core.Runner {
+		return NewGitRunner()
+	})
+
+	// 注册ContainerRunner（v1.0 容器操作）
+	core.RegisterRunner("container", func() core.Runner {
+		return NewContainerRunner()
+	})
 }

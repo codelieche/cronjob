@@ -29,7 +29,7 @@ const (
 //
 // 使用示例：
 //
-//	metadata := &TaskMetadata{
+//	metadata := &Metadata{
 //	    WorkingDir: "/var/logs",
 //	    Environment: map[string]string{
 //	        "LOG_LEVEL": "INFO",
@@ -38,15 +38,7 @@ const (
 //	    WorkerSelect: []string{"worker-01", "worker-02"},
 //	    Priority: 5,
 //	}
-type TaskMetadata struct {
-	WorkingDir    string                 `json:"workingDir,omitempty"`     // 任务执行的工作目录（如：/var/logs）
-	Environment   map[string]string      `json:"environment,omitempty"`    // 环境变量设置（如：{"LOG_LEVEL": "INFO"}）
-	WorkerSelect  []string               `json:"worker_select,omitempty"`  // 可执行此任务的Worker节点名称列表，空表示所有Worker
-	WorkerLabels  map[string]string      `json:"worker_labels,omitempty"`  // Worker节点标签选择器（如：{"env": "prod", "type": "web"}）
-	Priority      int                    `json:"priority,omitempty"`       // 任务优先级（1-10，默认5，数字越大优先级越高）
-	ResourceLimit map[string]string      `json:"resource_limit,omitempty"` // 资源限制配置（如：{"cpu": "1000m", "memory": "512Mi"}）
-	Extensions    map[string]interface{} `json:"extensions,omitempty"`     // 扩展字段，用于存储其他自定义配置
-}
+// 注意：使用统一的 Metadata 结构（见 metadata.go）
 
 // Task 任务
 //
@@ -112,14 +104,15 @@ type Task struct {
 //	if metadata.WorkingDir != "" {
 //	    // 使用工作目录
 //	}
-func (t *Task) GetMetadata() (*TaskMetadata, error) {
-	if len(t.Metadata) == 0 {
-		return &TaskMetadata{}, nil
-	}
-
-	var metadata TaskMetadata
-	if err := json.Unmarshal(t.Metadata, &metadata); err != nil {
-		return nil, err
-	}
-	return &metadata, nil
+//
+// # GetMetadata 获取解析后的元数据
+//
+// 将JSON格式的Metadata字段解析为Metadata结构体
+// 使用统一的 Metadata 结构（6 个字段）
+//
+// 返回：
+//   - 解析后的 Metadata 结构体
+//   - 解析错误（如果有）
+func (t *Task) GetMetadata() (*Metadata, error) {
+	return ParseMetadata(t.Metadata)
 }

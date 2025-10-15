@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/codelieche/cronjob/worker/pkg/core"
@@ -46,28 +45,24 @@ type DatabaseConfig struct {
 // - Excel 自动导出（SELECT 查询结果）
 // - Task Output 机制（供下游任务使用）
 type DatabaseRunner struct {
-	task      *core.Task         // 任务对象
-	config    DatabaseConfig     // 数据库配置
-	apiserver core.Apiserver     // API Server 客户端（用于获取凭证）
-	status    core.Status        // 当前状态
-	result    *core.Result       // 执行结果
-	cancel    context.CancelFunc // 取消函数
-	mutex     sync.RWMutex       // 并发保护
+	BaseRunner // 🔥 嵌入基类
+
+	config DatabaseConfig // 数据库配置
 }
 
 // NewDatabaseRunner 创建新的 DatabaseRunner
 func NewDatabaseRunner() *DatabaseRunner {
-	return &DatabaseRunner{
-		status: core.StatusPending,
-	}
+	r := &DatabaseRunner{}
+	r.InitBase() // 🔥 初始化基类
+	return r
 }
 
 // ParseArgs 解析任务参数
 func (r *DatabaseRunner) ParseArgs(task *core.Task) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock() // 🔥 使用基类方法
+	defer r.Unlock()
 
-	r.task = task
+	r.Task = task // 🔥 直接访问公共字段
 
 	// 解析 args（JSON 字符串）
 	if err := json.Unmarshal([]byte(task.Args), &r.config); err != nil {
@@ -142,30 +137,30 @@ func (r *DatabaseRunner) ParseArgs(task *core.Task) error {
 
 // Execute 执行数据库操作
 func (r *DatabaseRunner) Execute(ctx context.Context, logChan chan<- string) (*core.Result, error) {
-	r.mutex.Lock()
-	if r.status != core.StatusPending {
-		r.mutex.Unlock()
-		return nil, fmt.Errorf("任务状态不正确，当前状态: %s", r.status)
+	r.Lock()                            // 🔥 使用基类方法
+	if r.Status != core.StatusPending { // 🔥 直接访问公共字段
+		r.Unlock()
+		return nil, fmt.Errorf("任务状态不正确，当前状态: %s", r.Status)
 	}
 
-	r.status = core.StatusRunning
+	r.Status = core.StatusRunning // 🔥 直接访问公共字段
 	startTime := time.Now()
 
 	// 创建可取消的上下文（使用 Task.Timeout）
 	var execCtx context.Context
 	var cancel context.CancelFunc
 
-	if r.task.Timeout > 0 {
+	if r.Task.Timeout > 0 { // 🔥 直接访问公共字段
 		// 有超时设置
-		execCtx, cancel = context.WithTimeout(ctx, time.Duration(r.task.Timeout)*time.Second)
+		execCtx, cancel = context.WithTimeout(ctx, time.Duration(r.Task.Timeout)*time.Second)
 	} else {
 		// 无超时限制
 		execCtx, cancel = context.WithCancel(ctx)
 	}
-	r.cancel = cancel
+	r.Cancel = cancel // 🔥 直接访问公共字段
 	defer cancel()
 
-	r.mutex.Unlock()
+	r.Unlock() // 🔥 使用基类方法
 
 	// 发送日志
 	r.sendLog(logChan, fmt.Sprintf("📊 开始执行数据库操作: %s\n", r.config.DBType))
@@ -262,10 +257,10 @@ func (r *DatabaseRunner) Execute(ctx context.Context, logChan chan<- string) (*c
 	}
 
 	// 10. 更新状态
-	r.mutex.Lock()
-	r.status = core.StatusSuccess
-	r.result = result
-	r.mutex.Unlock()
+	r.Lock()                      // 🔥 使用基类方法
+	r.Status = core.StatusSuccess // 🔥 直接访问公共字段
+	r.Result = result             // 🔥 直接访问公共字段
+	r.Unlock()                    // 🔥 使用基类方法
 
 	endTime := time.Now()
 	r.sendLog(logChan, fmt.Sprintf("✅ 数据库操作完成（耗时: %v）\n", endTime.Sub(startTime)))
@@ -275,13 +270,13 @@ func (r *DatabaseRunner) Execute(ctx context.Context, logChan chan<- string) (*c
 
 // Stop 停止任务
 func (r *DatabaseRunner) Stop() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock() // 🔥 使用基类方法
+	defer r.Unlock()
 
-	if r.cancel != nil {
-		r.cancel()
-		r.status = core.StatusStopped
-		logger.Info("数据库任务已停止", zap.String("task_id", r.task.ID.String()))
+	if r.Cancel != nil { // 🔥 直接访问公共字段
+		r.Cancel()
+		r.Status = core.StatusStopped                                      // 🔥 直接访问公共字段
+		logger.Info("数据库任务已停止", zap.String("task_id", r.Task.ID.String())) // 🔥 直接访问公共字段
 	}
 	return nil
 }
@@ -291,45 +286,24 @@ func (r *DatabaseRunner) Kill() error {
 	return r.Stop() // 数据库操作 Stop 和 Kill 行为一致
 }
 
-// GetStatus 获取任务状态
-func (r *DatabaseRunner) GetStatus() core.Status {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.status
-}
-
-// GetResult 获取执行结果
-func (r *DatabaseRunner) GetResult() *core.Result {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	if r.result == nil {
-		return &core.Result{
-			Status: r.status,
-		}
-	}
-	return r.result
-}
+// GetStatus, GetResult 方法继承自 BaseRunner (增强版本已移除)
 
 // Cleanup 清理资源
 func (r *DatabaseRunner) Cleanup() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock() // 🔥 使用基类方法
+	defer r.Unlock()
 
-	if r.cancel != nil {
-		r.cancel()
+	if r.Cancel != nil { // 🔥 直接访问公共字段
+		r.Cancel()
 	}
 
-	r.status = core.StatusPending
-	r.result = nil
+	r.Status = core.StatusPending // 🔥 直接访问公共字段
+	r.Result = nil                // 🔥 直接访问公共字段
 
 	return nil
 }
 
-// SetApiserver 设置 API Server 客户端（依赖注入）
-func (r *DatabaseRunner) SetApiserver(apiserver core.Apiserver) {
-	r.apiserver = apiserver
-}
+// SetApiserver 继承自 BaseRunner
 
 // getDriverName 获取数据库驱动名称
 func (r *DatabaseRunner) getDriverName() string {
@@ -359,9 +333,9 @@ func (r *DatabaseRunner) buildDSN(username, password string) (string, error) {
 func (r *DatabaseRunner) buildMySQLDSN(username, password string) string {
 	// username:password@tcp(host:port)/database?charset=utf8mb4&parseTime=True&loc=Local
 	// 如果有超时设置，添加 timeout 参数
-	if r.task.Timeout > 0 {
+	if r.Task.Timeout > 0 { // 🔥 直接访问公共字段
 		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local&timeout=%ds",
-			username, password, r.config.Host, r.config.Port, r.config.Database, r.task.Timeout)
+			username, password, r.config.Host, r.config.Port, r.config.Database, r.Task.Timeout)
 	}
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		username, password, r.config.Host, r.config.Port, r.config.Database)
@@ -371,9 +345,9 @@ func (r *DatabaseRunner) buildMySQLDSN(username, password string) string {
 func (r *DatabaseRunner) buildPostgresDSN(username, password string) string {
 	// host=localhost port=5432 user=postgres password=secret dbname=mydb sslmode=disable
 	// 如果有超时设置，添加 connect_timeout
-	if r.task.Timeout > 0 {
+	if r.Task.Timeout > 0 { // 🔥 直接访问公共字段
 		return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable connect_timeout=%d",
-			r.config.Host, r.config.Port, username, password, r.config.Database, r.task.Timeout)
+			r.config.Host, r.config.Port, username, password, r.config.Database, r.Task.Timeout)
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		r.config.Host, r.config.Port, username, password, r.config.Database)
@@ -650,7 +624,7 @@ func (r *DatabaseRunner) exportToExcel(columns []string, results []map[string]in
 
 	// 2. 生成文件名：{task_id}_{timestamp}.xlsx
 	timestamp := time.Now().Format("20060102_150405")
-	filename := fmt.Sprintf("%s_%s.xlsx", r.task.ID.String(), timestamp)
+	filename := fmt.Sprintf("%s_%s.xlsx", r.Task.ID.String(), timestamp) // 🔥 直接访问公共字段
 	filePath := filepath.Join(exportDir, filename)
 
 	r.sendLog(logChan, fmt.Sprintf("📝 正在生成 Excel: %s\n", filename))
@@ -727,7 +701,7 @@ func (r *DatabaseRunner) exportToExcel(columns []string, results []map[string]in
 // getAndValidateCredential 获取并验证凭证（内部公共方法）
 func (r *DatabaseRunner) getAndValidateCredential(logChan chan<- string, logPrefix string) (*core.Credential, error) {
 	// 1. 检查 apiserver 是否已注入
-	if r.apiserver == nil {
+	if r.Apiserver == nil { // 🔥 直接访问公共字段
 		err := fmt.Errorf("apiserver 未初始化，无法获取凭证")
 		r.sendLog(logChan, fmt.Sprintf("❌ %v\n", err))
 		return nil, err
@@ -735,7 +709,7 @@ func (r *DatabaseRunner) getAndValidateCredential(logChan chan<- string, logPref
 
 	// 2. 获取凭证
 	r.sendLog(logChan, fmt.Sprintf("🔐 获取%s凭证...\n", logPrefix))
-	cred, err := r.apiserver.GetCredential(r.config.CredentialID)
+	cred, err := r.Apiserver.GetCredential(r.config.CredentialID) // 🔥 直接访问公共字段
 	if err != nil {
 		r.sendLog(logChan, fmt.Sprintf("❌ 获取凭证失败: %v\n", err))
 		return nil, err
@@ -783,8 +757,8 @@ func (r *DatabaseRunner) executeRedis(ctx context.Context, logChan chan<- string
 
 	// 设置超时（使用 Task.Timeout，如果为 0 则使用默认的 30 秒）
 	timeout := 30 * time.Second
-	if r.task.Timeout > 0 {
-		timeout = time.Duration(r.task.Timeout) * time.Second
+	if r.Task.Timeout > 0 { // 🔥 直接访问公共字段
+		timeout = time.Duration(r.Task.Timeout) * time.Second
 	}
 
 	rdb := redis.NewClient(&redis.Options{
@@ -1010,9 +984,9 @@ func (r *DatabaseRunner) executeRedisCommand(ctx context.Context, rdb *redis.Cli
 	r.sendLog(logChan, fmt.Sprintf("✅ 命令执行成功\n"))
 	r.sendLog(logChan, fmt.Sprintf("📊 结果: %v\n", cmdResult))
 
-	r.mutex.Lock()
-	r.status = core.StatusSuccess
-	r.result = &core.Result{
+	r.Lock()                      // 🔥 使用基类方法
+	r.Status = core.StatusSuccess // 🔥 直接访问公共字段
+	r.Result = &core.Result{      // 🔥 直接访问公共字段
 		Status:     core.StatusSuccess,
 		Output:     outputStr,
 		ExecuteLog: outputStr,
@@ -1021,9 +995,9 @@ func (r *DatabaseRunner) executeRedisCommand(ctx context.Context, rdb *redis.Cli
 		Duration:   duration,
 		ExitCode:   0,
 	}
-	r.mutex.Unlock()
+	r.Unlock() // 🔥 使用基类方法
 
-	return r.result, nil
+	return r.Result, nil // 🔥 直接访问公共字段
 }
 
 // buildErrorResult 构建错误结果
@@ -1031,9 +1005,9 @@ func (r *DatabaseRunner) buildErrorResult(message string, err error, startTime t
 	endTime := time.Now()
 	duration := endTime.Sub(startTime).Milliseconds()
 
-	r.mutex.Lock()
-	r.status = core.StatusFailed
-	r.mutex.Unlock()
+	r.Lock()                     // 🔥 使用基类方法
+	r.Status = core.StatusFailed // 🔥 直接访问公共字段
+	r.Unlock()                   // 🔥 使用基类方法
 
 	output := fmt.Sprintf("%s: %v", message, err)
 
@@ -1059,9 +1033,9 @@ func (r *DatabaseRunner) sendLog(logChan chan<- string, message string) {
 		}
 	}
 
-	if r.task != nil {
+	if r.Task != nil { // 🔥 直接访问公共字段
 		logger.Info("数据库任务日志",
-			zap.String("task_id", r.task.ID.String()),
+			zap.String("task_id", r.Task.ID.String()),
 			zap.String("message", message),
 		)
 	}

@@ -10,29 +10,29 @@ import (
 
 // TaskCreateForm 任务创建表单
 type TaskCreateForm struct {
-	ID           string             `json:"id" form:"id" example:""`
-	TeamID       string             `json:"team_id" form:"team_id" example:"123e4567-e89b-12d3-a456-426614174000"`
-	Project      string             `json:"project" form:"project" example:"web-backend"`
-	Category     string             `json:"category" form:"category" example:"backup"`
-	CronJob      string             `json:"cronjob" form:"cronjob" example:"987fcdeb-51a2-43d7-8f6e-123456789abc"`
-	Name         string             `json:"name" form:"name" binding:"required" example:"数据库备份任务执行"`
-	IsGroup      bool               `json:"is_group" form:"is_group" example:"false"`
-	TaskOrder    int                `json:"task_order" form:"task_order" example:"1"`
-	Previous     string             `json:"previous" form:"previous" example:""`
-	Next         string             `json:"next" form:"next" example:""`
-	Command      string             `json:"command" form:"command" example:"backup_database.sh"`
-	Args         string             `json:"args" form:"args" example:"--full --compress"`
-	Description  string             `json:"description" form:"description" example:"执行数据库全量备份"`
-	TimePlan     time.Time          `json:"time_plan" form:"time_plan" example:"2025-09-30T02:00:00Z"`
-	TimeoutAt    time.Time          `json:"timeout_at" form:"timeout_at" example:"2025-09-30T02:05:00Z"`
-	Status       string             `json:"status" form:"status" example:"pending"`
-	SaveLog      bool               `json:"save_log" form:"save_log" example:"true"`
-	MaxRetry     int                `json:"max_retry" form:"max_retry" example:"3"`
-	WorkerID     string             `json:"worker_id" form:"worker_id" example:"456e7890-f12a-34b5-c678-9012345678de"`
-	WorkerName   string             `json:"worker_name" form:"worker_name" example:"worker-node-01"`
-	IsStandalone bool               `json:"is_standalone" form:"is_standalone" example:"false"`
-	Timeout      int                `json:"timeout" form:"timeout" example:"300"`
-	Metadata     *core.TaskMetadata `json:"metadata" form:"metadata"`
+	ID           string         `json:"id" form:"id" example:""`
+	TeamID       string         `json:"team_id" form:"team_id" example:"123e4567-e89b-12d3-a456-426614174000"`
+	Project      string         `json:"project" form:"project" example:"web-backend"`
+	Category     string         `json:"category" form:"category" example:"backup"`
+	CronJob      string         `json:"cronjob" form:"cronjob" example:"987fcdeb-51a2-43d7-8f6e-123456789abc"`
+	Name         string         `json:"name" form:"name" binding:"required" example:"数据库备份任务执行"`
+	IsGroup      bool           `json:"is_group" form:"is_group" example:"false"`
+	TaskOrder    int            `json:"task_order" form:"task_order" example:"1"`
+	Previous     string         `json:"previous" form:"previous" example:""`
+	Next         string         `json:"next" form:"next" example:""`
+	Command      string         `json:"command" form:"command" example:"backup_database.sh"`
+	Args         string         `json:"args" form:"args" example:"--full --compress"`
+	Description  string         `json:"description" form:"description" example:"执行数据库全量备份"`
+	TimePlan     time.Time      `json:"time_plan" form:"time_plan" example:"2025-09-30T02:00:00Z"`
+	TimeoutAt    time.Time      `json:"timeout_at" form:"timeout_at" example:"2025-09-30T02:05:00Z"`
+	Status       string         `json:"status" form:"status" example:"pending"`
+	SaveLog      bool           `json:"save_log" form:"save_log" example:"true"`
+	MaxRetry     int            `json:"max_retry" form:"max_retry" example:"3"`
+	WorkerID     string         `json:"worker_id" form:"worker_id" example:"456e7890-f12a-34b5-c678-9012345678de"`
+	WorkerName   string         `json:"worker_name" form:"worker_name" example:"worker-node-01"`
+	IsStandalone bool           `json:"is_standalone" form:"is_standalone" example:"false"`
+	Timeout      int            `json:"timeout" form:"timeout" example:"300"`
+	Metadata     *core.Metadata `json:"metadata" form:"metadata"`
 }
 
 // Validate 验证表单
@@ -225,30 +225,30 @@ func (form *TaskCreateForm) ToTask() *core.Task {
 
 // TaskInfoForm 任务信息表单（用于更新）
 type TaskInfoForm struct {
-	TeamID       string             `json:"team_id" form:"team_id"`
-	Project      string             `json:"project" form:"project"`
-	Category     string             `json:"category" form:"category"`
-	CronJob      string             `json:"cronjob" form:"cronjob"`
-	Name         string             `json:"name" form:"name"`
-	IsGroup      bool               `json:"is_group" form:"is_group"`
-	TaskOrder    int                `json:"task_order" form:"task_order"`
-	Timeout      int                `json:"timeout" form:"timeout"`
-	Previous     string             `json:"previous" form:"previous"`
-	Next         string             `json:"next" form:"next"`
-	Command      string             `json:"command" form:"command"`
-	Args         string             `json:"args" form:"args"`
-	Description  string             `json:"description" form:"description"`
-	TimePlan     time.Time          `json:"time_plan" form:"time_plan"`
-	TimeoutAt    time.Time          `json:"timeout_at" form:"timeout_at"`
-	Status       string             `json:"status" form:"status"`
-	Output       string             `json:"output" form:"output"`
-	SaveLog      bool               `json:"save_log" form:"save_log"`
-	RetryCount   int                `json:"retry_count" form:"retry_count"`
-	MaxRetry     int                `json:"max_retry" form:"max_retry"`
-	WorkerID     string             `json:"worker_id" form:"worker_id"`
-	WorkerName   string             `json:"worker_name" form:"worker_name"`
-	IsStandalone bool               `json:"is_standalone" form:"is_standalone"`
-	Metadata     *core.TaskMetadata `json:"metadata" form:"metadata"`
+	TeamID       string         `json:"team_id" form:"team_id"`
+	Project      string         `json:"project" form:"project"`
+	Category     string         `json:"category" form:"category"`
+	CronJob      string         `json:"cronjob" form:"cronjob"`
+	Name         string         `json:"name" form:"name"`
+	IsGroup      bool           `json:"is_group" form:"is_group"`
+	TaskOrder    int            `json:"task_order" form:"task_order"`
+	Timeout      int            `json:"timeout" form:"timeout"`
+	Previous     string         `json:"previous" form:"previous"`
+	Next         string         `json:"next" form:"next"`
+	Command      string         `json:"command" form:"command"`
+	Args         string         `json:"args" form:"args"`
+	Description  string         `json:"description" form:"description"`
+	TimePlan     time.Time      `json:"time_plan" form:"time_plan"`
+	TimeoutAt    time.Time      `json:"timeout_at" form:"timeout_at"`
+	Status       string         `json:"status" form:"status"`
+	Output       string         `json:"output" form:"output"`
+	SaveLog      bool           `json:"save_log" form:"save_log"`
+	RetryCount   int            `json:"retry_count" form:"retry_count"`
+	MaxRetry     int            `json:"max_retry" form:"max_retry"`
+	WorkerID     string         `json:"worker_id" form:"worker_id"`
+	WorkerName   string         `json:"worker_name" form:"worker_name"`
+	IsStandalone bool           `json:"is_standalone" form:"is_standalone"`
+	Metadata     *core.Metadata `json:"metadata" form:"metadata"`
 }
 
 // Validate 验证表单

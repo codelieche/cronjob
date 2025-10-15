@@ -277,7 +277,7 @@ func TestDatabaseRunner_BuildDSN(t *testing.T) {
 				Database: tt.database,
 			}
 			// 注意：Timeout 已移除，使用 Task.Timeout
-			runner.task = &core.Task{Timeout: 60}
+			runner.Task = &core.Task{Timeout: 60}
 
 			dsn, err := runner.buildDSN(tt.username, tt.password)
 			if (err != nil) != tt.wantErr {
@@ -338,7 +338,7 @@ func TestDatabaseRunner_SetApiserver(t *testing.T) {
 
 	runner.SetApiserver(mockApiserver)
 
-	if runner.apiserver != mockApiserver {
+	if runner.Apiserver != mockApiserver {
 		t.Error("SetApiserver() 应该正确设置 apiserver")
 	}
 }
@@ -354,7 +354,7 @@ func TestDatabaseRunner_GetStatus(t *testing.T) {
 
 	// 修改状态
 	runner.mutex.Lock()
-	runner.status = core.StatusRunning
+	runner.Status = core.StatusRunning
 	runner.mutex.Unlock()
 
 	if runner.GetStatus() != core.StatusRunning {
@@ -368,9 +368,9 @@ func TestDatabaseRunner_Cleanup(t *testing.T) {
 
 	// 设置一些状态
 	ctx, cancel := context.WithCancel(context.Background())
-	runner.cancel = cancel
-	runner.status = core.StatusRunning
-	runner.result = &core.Result{Status: core.StatusSuccess}
+	runner.Cancel = cancel
+	runner.Status = core.StatusRunning
+	runner.Result = &core.Result{Status: core.StatusSuccess}
 
 	// 执行清理
 	err := runner.Cleanup()
@@ -379,11 +379,11 @@ func TestDatabaseRunner_Cleanup(t *testing.T) {
 	}
 
 	// 验证清理效果
-	if runner.status != core.StatusPending {
-		t.Errorf("清理后状态应该是 Pending，实际: %v", runner.status)
+	if runner.Status != core.StatusPending {
+		t.Errorf("清理后状态应该是 Pending，实际: %v", runner.Status)
 	}
 
-	if runner.result != nil {
+	if runner.Result != nil {
 		t.Error("清理后 result 应该为 nil")
 	}
 

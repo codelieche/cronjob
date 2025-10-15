@@ -241,7 +241,9 @@ func TestMessageRunner_GetTypeLabel(t *testing.T) {
 // TestMessageRunner_BuildErrorResult 测试错误结果构建
 func TestMessageRunner_BuildErrorResult(t *testing.T) {
 	runner := &MessageRunner{
-		startTime: time.Now(),
+		BaseRunner: BaseRunner{
+			StartTime: time.Now(),
+		},
 	}
 
 	result := runner.buildErrorResult("测试错误", assert.AnError)

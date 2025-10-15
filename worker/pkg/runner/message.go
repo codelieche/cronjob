@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/codelieche/cronjob/worker/pkg/core"
@@ -18,15 +17,10 @@ import (
 // - wechat_work_bot: 企业微信群机器人
 // - feishu_bot: 飞书群机器人
 type MessageRunner struct {
-	task      *core.Task
-	config    MessageConfig
-	apiserver core.Apiserver // API Server 客户端（用于获取凭证）
-	startTime time.Time
-	endTime   time.Time
-	status    core.Status
-	result    *core.Result
-	cancel    context.CancelFunc
-	mutex     sync.RWMutex // 保护并发访问
+	BaseRunner // 🔥 嵌入基类
+
+	config  MessageConfig
+	endTime time.Time // 任务结束时间（单独保留，因为 Result 可能为空）
 }
 
 // MessageConfig 消息配置
@@ -69,14 +63,14 @@ type MessageSender interface {
 
 // NewMessageRunner 创建新的 MessageRunner
 func NewMessageRunner() *MessageRunner {
-	return &MessageRunner{
-		status: core.StatusPending,
-	}
+	r := &MessageRunner{}
+	r.InitBase() // 🔥 初始化基类
+	return r
 }
 
 // ParseArgs 解析任务参数
 func (r *MessageRunner) ParseArgs(task *core.Task) error {
-	r.task = task
+	r.Task = task
 
 	// 解析 args（JSON 字符串）
 	if err := json.Unmarshal([]byte(task.Args), &r.config); err != nil {
@@ -128,23 +122,23 @@ func (r *MessageRunner) ParseArgs(task *core.Task) error {
 func (r *MessageRunner) Execute(ctx context.Context, logChan chan<- string) (*core.Result, error) {
 	// 创建可取消的上下文
 	ctx, cancel := context.WithCancel(ctx)
-	r.cancel = cancel
+	r.Cancel = cancel
 	defer cancel()
 
-	r.startTime = time.Now()
-	r.status = core.StatusRunning
+	r.StartTime = time.Now()
+	r.Status = core.StatusRunning
 
 	// 构建初始结果
-	r.result = &core.Result{
+	r.Result = &core.Result{
 		Status:    core.StatusRunning,
-		StartTime: r.startTime,
+		StartTime: r.StartTime,
 	}
 
 	logChan <- fmt.Sprintf("📤 开始发送 %s 消息\n", r.getTypeLabel())
 	logChan <- fmt.Sprintf("📋 消息内容长度: %d 字符\n", len(r.config.Content))
 
 	// 1. 检查 apiserver 是否已注入
-	if r.apiserver == nil {
+	if r.Apiserver == nil {
 		err := fmt.Errorf("apiserver 未初始化，无法获取凭证")
 		logChan <- fmt.Sprintf("❌ %v\n", err)
 		return r.buildErrorResult("内部错误", err), err
@@ -153,7 +147,7 @@ func (r *MessageRunner) Execute(ctx context.Context, logChan chan<- string) (*co
 	// 2. 获取凭证
 	logChan <- "🔐 获取凭证...\n"
 	logChan <- fmt.Sprintf("🔑 凭证ID: %s\n", r.config.CredentialID)
-	cred, err := r.apiserver.GetCredential(r.config.CredentialID)
+	cred, err := r.Apiserver.GetCredential(r.config.CredentialID)
 	if err != nil {
 		logChan <- fmt.Sprintf("❌ 获取凭证失败: %v\n", err)
 		return r.buildErrorResult("获取凭证失败", err), err
@@ -187,22 +181,22 @@ func (r *MessageRunner) Execute(ctx context.Context, logChan chan<- string) (*co
 	r.endTime = time.Now()
 	result.EndTime = r.endTime
 	result.Status = core.StatusSuccess
-	r.status = core.StatusSuccess
-	r.result = result
+	r.Status = core.StatusSuccess
+	r.Result = result
 
-	logChan <- fmt.Sprintf("✅ 消息发送成功（耗时: %v）\n", r.endTime.Sub(r.startTime))
+	logChan <- fmt.Sprintf("✅ 消息发送成功（耗时: %v）\n", r.endTime.Sub(r.StartTime))
 
 	return result, nil
 }
 
 // Stop 停止任务
 func (r *MessageRunner) Stop() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock()
+	defer r.Unlock()
 
-	if r.cancel != nil {
-		r.cancel()
-		r.status = core.StatusStopped
+	if r.Cancel != nil {
+		r.Cancel()
+		r.Status = core.StatusStopped
 	}
 	return nil
 }
@@ -214,44 +208,31 @@ func (r *MessageRunner) Kill() error {
 
 // GetStatus 获取任务状态
 func (r *MessageRunner) GetStatus() core.Status {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.status
+	r.RLock()
+	defer r.RUnlock()
+	return r.Status
 }
 
-// GetResult 获取执行结果
-func (r *MessageRunner) GetResult() *core.Result {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	if r.result == nil {
-		return &core.Result{
-			Status:    r.status,
-			StartTime: r.startTime,
-			EndTime:   r.endTime,
-		}
-	}
-	return r.result
-}
+// GetResult 方法继承自 BaseRunner
 
 // Cleanup 清理资源
 func (r *MessageRunner) Cleanup() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.Lock()
+	defer r.Unlock()
 
-	if r.cancel != nil {
-		r.cancel()
+	if r.Cancel != nil {
+		r.Cancel()
 	}
 
-	r.status = core.StatusPending
-	r.result = nil
+	r.Status = core.StatusPending
+	r.Result = nil
 
 	return nil
 }
 
 // SetApiserver 设置API Server客户端（依赖注入）
 func (r *MessageRunner) SetApiserver(apiserver core.Apiserver) {
-	r.apiserver = apiserver
+	r.Apiserver = apiserver
 }
 
 // getSender 根据消息类型获取对应的发送器
@@ -303,14 +284,14 @@ func (r *MessageRunner) getTypeLabel() string {
 // buildErrorResult 构建错误结果
 func (r *MessageRunner) buildErrorResult(message string, err error) *core.Result {
 	r.endTime = time.Now()
-	r.status = core.StatusError
+	r.Status = core.StatusError
 
 	output := fmt.Sprintf("%s: %v", message, err)
 
 	return &core.Result{
 		Status:    core.StatusError,
 		Output:    output,
-		StartTime: r.startTime,
+		StartTime: r.StartTime,
 		EndTime:   r.endTime,
 	}
 }

@@ -218,6 +218,7 @@ func (s *registryService) sendHTTPRequest(ctx context.Context, method, url strin
 // - database: 数据库操作执行器，支持MySQL/PostgreSQL/MongoDB等
 // - message: 消息发送执行器，支持邮件/钉钉/企业微信/短信等
 // - file: 文件操作执行器，支持文件清理/备份/压缩/统计等操作
+// - git: Git 仓库操作执行器，支持智能 sync（clone/pull）
 func (s *registryService) getSystemCategories() []*core.Category {
 	return []*core.Category{
 		{
@@ -275,6 +276,22 @@ func (s *registryService) getSystemCategories() []*core.Category {
 			Setup:       "", // TODO: 后续补充初始化脚本（如：检查文件系统权限）
 			Teardown:    "", // TODO: 后续补充销毁脚本（如：清理临时文件）
 			Check:       "", // TODO: 后续补充检查脚本（如：验证路径可访问性）
+		},
+		{
+			Code:        "git",
+			Name:        "Git 操作",
+			Description: "Git 仓库操作执行器，自动拉取代码到任务工作目录。支持智能 sync（自动判断 clone/pull）、SSH 私钥认证、清空模式等特性。极简配置（只需 URL + 分支 + 凭证），适合 CI/CD 流程中的代码拉取场景。",
+			Setup:       "",          // TODO: 后续补充初始化脚本
+			Teardown:    "",          // TODO: 后续补充销毁脚本
+			Check:       "which git", // 检查 git 命令
+		},
+		{
+			Code:        "container",
+			Name:        "容器操作",
+			Description: "容器操作执行器，支持 Docker 和 containerd 运行时。提供镜像构建/推送/拉取、容器运行/停止/重启、日志查看、命令执行等功能。支持本地 Unix Socket 和远程 TCP 连接（TLS 认证），适合 CI/CD 镜像构建、容器部署、运维管理等场景。",
+			Setup:       "",               // TODO: 后续补充初始化脚本
+			Teardown:    "",               // TODO: 后续补充销毁脚本
+			Check:       "docker version", // 检查 docker 命令
 		},
 	}
 }
