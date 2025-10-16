@@ -344,6 +344,7 @@ type WebsocketService struct {
 	taskStore     core.TaskStore     // 任务数据存储接口
 	workerStore   core.WorkerStore   // Worker数据存储接口
 	clientManager *ClientManagerImpl // 客户端管理器实例
+	workflowExecService core.WorkflowExecuteService   // 🔥 用于处理工作流任务完成逻辑
 }
 
 // NewWebsocketService 创建WebSocket服务实例
@@ -359,6 +360,12 @@ func NewWebsocketService(taskStore core.TaskStore, workerStore core.WorkerStore)
 		workerStore:   workerStore,
 		clientManager: NewClientManager(),
 	}
+}
+
+// SetWorkflowExecuteService 设置工作流执行服务 🔥
+// 用于避免循环依赖，在初始化后注入
+func (w *WebsocketService) SetWorkflowExecuteService(service core.WorkflowExecuteService) {
+	w.workflowExecService = service
 }
 
 // HandleTaskEvent 处理任务事件
@@ -448,7 +455,35 @@ func (w *WebsocketService) UpdateTaskFields(ctx context.Context, id string, upda
 		return core.ErrBadRequest
 	}
 
-	return w.taskStore.Patch(ctx, uuidID, updates)
+	
+	// 🔥 先执行数据库更新
+	err = w.taskStore.Patch(ctx, uuidID, updates)
+	if err != nil {
+		return err
+	}
+	
+	// 🔥 如果更新了状态且为完成状态，触发 HandleTaskComplete
+	if status, ok := updates["status"].(string); ok {
+		isCompleted := status == core.TaskStatusSuccess ||
+			status == core.TaskStatusFailed ||
+			status == core.TaskStatusError ||
+			status == core.TaskStatusTimeout ||
+			status == core.TaskStatusCanceled
+		
+		if isCompleted && w.workflowExecService != nil {
+			// 异步调用 HandleTaskComplete，避免阻塞
+			go func() {
+				if err := w.workflowExecService.HandleTaskComplete(context.Background(), uuidID); err != nil {
+					logger.Error("处理工作流任务完成失败",
+						zap.Error(err),
+						zap.String("task_id", uuidID.String()),
+						zap.String("status", status))
+				}
+			}()
+		}
+	}
+	
+	return nil
 }
 
 // StartConsumingQueues 启动队列消费goroutines

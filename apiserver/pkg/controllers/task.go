@@ -18,17 +18,19 @@ import (
 // TaskController 任务控制器
 type TaskController struct {
 	controllers.BaseController
-	service          core.TaskService
-	dispatchService  core.DispatchService  // 用于手动重试
-	websocketService core.WebsocketService // 用于发送stop/kill指令
+	service             core.TaskService
+	dispatchService     core.DispatchService        // 用于手动重试
+	websocketService    core.WebsocketService       // 用于发送stop/kill指令
+	workflowExecService core.WorkflowExecuteService // ⭐ 用于工作流任务完成后的自动流转
 }
 
 // NewTaskController 创建TaskController实例
-func NewTaskController(service core.TaskService, dispatchService core.DispatchService, websocketService core.WebsocketService) *TaskController {
+func NewTaskController(service core.TaskService, dispatchService core.DispatchService, websocketService core.WebsocketService, workflowExecService core.WorkflowExecuteService) *TaskController {
 	return &TaskController{
-		service:          service,
-		dispatchService:  dispatchService,
-		websocketService: websocketService,
+		service:             service,
+		dispatchService:     dispatchService,
+		websocketService:    websocketService,
+		workflowExecService: workflowExecService, // ⭐ 注入 WorkflowExecuteService
 	}
 }
 
@@ -61,6 +63,17 @@ func (controller *TaskController) Create(c *gin.Context) {
 
 	// 3. 准备创建对象
 	task := form.ToTask()
+
+	// 🔥 自动填充当前团队ID（仅当用户未传递team_id时）
+	if task.TeamID == nil {
+		if teamID, exists := c.Get(core.ContextKeyCurrentTeamID); exists {
+			if teamIDStr, ok := teamID.(string); ok && teamIDStr != "" {
+				if parsedTeamID, err := uuid.Parse(teamIDStr); err == nil {
+					task.TeamID = &parsedTeamID
+				}
+			}
+		}
+	}
 
 	// 4. 调用服务创建任务
 	createdTask, err := controller.service.Create(c.Request.Context(), task)
@@ -193,6 +206,9 @@ func (controller *TaskController) Update(c *gin.Context) {
 		task.TimeoutAt = form.TimeoutAt
 	}
 
+	// 6. 记录原状态（用于判断状态是否发生变化）⭐
+	oldStatus := task.Status
+
 	if form.Status != "" {
 		task.Status = form.Status
 	}
@@ -246,14 +262,42 @@ func (controller *TaskController) Update(c *gin.Context) {
 		task.WorkerID = nil
 	}
 
-	// 6. 调用服务更新任务
+	// 7. 调用服务更新任务
 	updatedTask, err := controller.service.Update(c.Request.Context(), task)
 	if err != nil {
 		controller.HandleError(c, err, http.StatusBadRequest)
 		return
 	}
 
-	// 7. 返回成功响应
+	// 8. ⭐ 自动触发工作流任务完成处理
+	// 如果是工作流任务 && 状态变化为完成态 → 自动调用 HandleTaskComplete
+	if controller.workflowExecService != nil && updatedTask.IsWorkflowTask() {
+		// 检查状态是否为完成态
+		isCompletedStatus := updatedTask.Status == core.TaskStatusSuccess ||
+			updatedTask.Status == core.TaskStatusFailed ||
+			updatedTask.Status == core.TaskStatusError ||
+			updatedTask.Status == core.TaskStatusTimeout ||
+			updatedTask.Status == core.TaskStatusCanceled
+
+		// 检查状态是否发生变化（从非完成态 → 完成态）
+		wasNotCompleted := oldStatus != core.TaskStatusSuccess &&
+			oldStatus != core.TaskStatusFailed &&
+			oldStatus != core.TaskStatusError &&
+			oldStatus != core.TaskStatusTimeout &&
+			oldStatus != core.TaskStatusCanceled
+
+		if isCompletedStatus && wasNotCompleted {
+			// 异步调用 HandleTaskComplete，避免阻塞响应
+			go func(taskID uuid.UUID) {
+				if err := controller.workflowExecService.HandleTaskComplete(c.Request.Context(), taskID); err != nil {
+					// 记录错误日志，但不影响响应
+					fmt.Printf("HandleTaskComplete error: %v\n", err)
+				}
+			}(updatedTask.ID)
+		}
+	}
+
+	// 9. 返回成功响应
 	controller.HandleOK(c, updatedTask)
 }
 
@@ -302,6 +346,7 @@ func (controller *TaskController) Delete(c *gin.Context) {
 // @Param name query string false "任务名称过滤"
 // @Param status query string false "任务状态过滤"
 // @Param cronjob query string false "定时任务ID过滤"
+// @Param workflow query string false "工作流ID过滤"
 // @Param search query string false "搜索关键词"
 // @Param view_all_teams query boolean false "查看跨团队数据（管理员：所有团队，普通用户：自己所属团队）" example(true)
 // @Success 200 {object} types.ResponseList "分页的任务列表"
@@ -335,6 +380,21 @@ func (controller *TaskController) List(c *gin.Context) {
 		&filters.FilterOption{
 			QueryKey: "cronjob",
 			Column:   "cronjob",
+			Op:       filters.FILTER_EQ,
+		},
+		&filters.FilterOption{
+			QueryKey: "workflow",
+			Column:   "workflow",
+			Op:       filters.FILTER_EQ,
+		},
+		&filters.FilterOption{
+			QueryKey: "workflow_exec_id",
+			Column:   "workflow_exec_id",
+			Op:       filters.FILTER_EQ,
+		},
+		&filters.FilterOption{
+			QueryKey: "step_order",
+			Column:   "step_order",
 			Op:       filters.FILTER_EQ,
 		},
 		&filters.FilterOption{

@@ -15,6 +15,7 @@ type TaskCreateForm struct {
 	Project      string         `json:"project" form:"project" example:"web-backend"`
 	Category     string         `json:"category" form:"category" example:"backup"`
 	CronJob      string         `json:"cronjob" form:"cronjob" example:"987fcdeb-51a2-43d7-8f6e-123456789abc"`
+	Workflow     string         `json:"workflow" form:"workflow" example:"123e4567-e89b-12d3-a456-426614174000"`
 	Name         string         `json:"name" form:"name" binding:"required" example:"数据库备份任务执行"`
 	IsGroup      bool           `json:"is_group" form:"is_group" example:"false"`
 	TaskOrder    int            `json:"task_order" form:"task_order" example:"1"`
@@ -106,7 +107,15 @@ func (form *TaskCreateForm) Validate() error {
 		}
 	}
 
-	// 9. 验证Previous格式
+	// 9. 验证Workflow格式
+	if form.Workflow != "" {
+		if _, err := uuid.Parse(form.Workflow); err != nil {
+			err = fmt.Errorf("WorkflowID格式无效")
+			return err
+		}
+	}
+
+	// 10. 验证Previous格式
 	if form.Previous != "" {
 		if _, err := uuid.Parse(form.Previous); err != nil {
 			err = fmt.Errorf("Previous任务ID格式无效")
@@ -114,7 +123,7 @@ func (form *TaskCreateForm) Validate() error {
 		}
 	}
 
-	// 10. 验证Next格式
+	// 11. 验证Next格式
 	if form.Next != "" {
 		if _, err := uuid.Parse(form.Next); err != nil {
 			err = fmt.Errorf("Next任务ID格式无效")
@@ -122,7 +131,7 @@ func (form *TaskCreateForm) Validate() error {
 		}
 	}
 
-	// 11. 验证TeamID格式
+	// 12. 验证TeamID格式
 	if form.TeamID != "" {
 		if _, err := uuid.Parse(form.TeamID); err != nil {
 			err = fmt.Errorf("TeamID格式无效")
@@ -152,6 +161,14 @@ func (form *TaskCreateForm) ToTask() *core.Task {
 	if form.CronJob != "" {
 		if parsedID, err := uuid.Parse(form.CronJob); err == nil {
 			cronJobID = &parsedID
+		}
+	}
+
+	// 处理Workflow
+	var workflowID *uuid.UUID
+	if form.Workflow != "" {
+		if parsedID, err := uuid.Parse(form.Workflow); err == nil {
+			workflowID = &parsedID
 		}
 	}
 
@@ -193,6 +210,7 @@ func (form *TaskCreateForm) ToTask() *core.Task {
 		Project:      form.Project,
 		Category:     form.Category,
 		CronJob:      cronJobID,
+		Workflow:     workflowID,
 		Name:         form.Name,
 		IsGroup:      &form.IsGroup,
 		TaskOrder:    form.TaskOrder,
@@ -229,6 +247,7 @@ type TaskInfoForm struct {
 	Project      string         `json:"project" form:"project"`
 	Category     string         `json:"category" form:"category"`
 	CronJob      string         `json:"cronjob" form:"cronjob"`
+	Workflow     string         `json:"workflow" form:"workflow"`
 	Name         string         `json:"name" form:"name"`
 	IsGroup      bool           `json:"is_group" form:"is_group"`
 	TaskOrder    int            `json:"task_order" form:"task_order"`
@@ -317,6 +336,14 @@ func (form *TaskInfoForm) Validate() error {
 		}
 	}
 
+	// 验证Workflow格式
+	if form.Workflow != "" {
+		if _, err := uuid.Parse(form.Workflow); err != nil {
+			err = fmt.Errorf("WorkflowID格式无效")
+			return err
+		}
+	}
+
 	// 验证Previous格式
 	if form.Previous != "" {
 		if _, err := uuid.Parse(form.Previous); err != nil {
@@ -397,6 +424,11 @@ func (form *TaskInfoForm) UpdateTask(task *core.Task) error {
 	if form.CronJob != "" {
 		if parsedID, err := uuid.Parse(form.CronJob); err == nil {
 			task.CronJob = &parsedID
+		}
+	}
+	if form.Workflow != "" {
+		if parsedID, err := uuid.Parse(form.Workflow); err == nil {
+			task.Workflow = &parsedID
 		}
 	}
 	if form.Previous != "" {

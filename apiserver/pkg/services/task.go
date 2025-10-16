@@ -23,8 +23,15 @@ func NewTaskService(store core.TaskStore, locker core.Locker) core.TaskService {
 
 // TaskService 任务服务实现
 type TaskService struct {
-	store  core.TaskStore
-	locker core.Locker
+	store               core.TaskStore
+	locker              core.Locker
+	workflowExecService core.WorkflowExecuteService // 🔥 用于处理工作流任务完成逻辑
+}
+
+// SetWorkflowExecuteService 设置工作流执行服务 🔥
+// 用于避免循环依赖，在初始化后注入
+func (s *TaskService) SetWorkflowExecuteService(service core.WorkflowExecuteService) {
+	s.workflowExecService = service
 }
 
 // FindByID 根据ID获取任务
@@ -181,8 +188,31 @@ func (s *TaskService) UpdateStatus(ctx context.Context, id string, status string
 	err = s.store.UpdateStatus(ctx, uuidID, status)
 	if err != nil {
 		logger.Error("update task status error", zap.Error(err), zap.String("id", id), zap.String("status", status))
+		return err
 	}
-	return err
+
+	// 🔥 如果是工作流任务且状态已完成，触发 HandleTaskComplete
+	// 判断任务状态是否已完成（success/failed/error/timeout/canceled）
+	isCompleted := status == core.TaskStatusSuccess ||
+		status == core.TaskStatusFailed ||
+		status == core.TaskStatusError ||
+		status == core.TaskStatusTimeout ||
+		status == core.TaskStatusCanceled
+
+	if isCompleted && s.workflowExecService != nil {
+		// 异步调用 HandleTaskComplete，避免阻塞 UpdateStatus
+		go func() {
+			// 使用 context.Background()，因为原 ctx 可能已经取消
+			if err := s.workflowExecService.HandleTaskComplete(context.Background(), uuidID); err != nil {
+				logger.Error("处理工作流任务完成失败",
+					zap.Error(err),
+					zap.String("task_id", uuidID.String()),
+					zap.String("status", status))
+			}
+		}()
+	}
+
+	return nil
 }
 
 // UpdateOutput 更新任务输出

@@ -11,6 +11,8 @@ var (
 	ErrConflict = errors.New("记录已存在")
 	// ErrBadRequest 请求参数错误
 	ErrBadRequest = errors.New("请求参数错误")
+	// ErrNotImplemented 功能未实现
+	ErrNotImplemented = errors.New("功能未实现")
 
 	// ErrUnauthorized token 校验错误
 	ErrUnauthorized = errors.New("unauthorized")

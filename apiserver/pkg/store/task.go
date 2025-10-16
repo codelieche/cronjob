@@ -138,7 +138,8 @@ func (s *TaskStore) Delete(ctx context.Context, task *core.Task) error {
 		}
 	}()
 
-	if err := tx.Delete(task).Error; err != nil {
+	// 🔥 使用Model().Where().Delete()方式，明确指定WHERE条件
+	if err := tx.Model(&core.Task{}).Where("id = ?", task.ID).Delete(&core.Task{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	} else {
@@ -149,14 +150,27 @@ func (s *TaskStore) Delete(ctx context.Context, task *core.Task) error {
 
 // DeleteByID 根据ID删除任务
 func (s *TaskStore) DeleteByID(ctx context.Context, id uuid.UUID) error {
-	// 先获取任务
-	task, err := s.FindByID(ctx, id)
+	// 先检查任务是否存在
+	_, err := s.FindByID(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	// 删除任务
-	return s.Delete(ctx, task)
+	// 在事务中执行删除
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 🔥 使用Model().Where().Delete()方式，明确指定WHERE条件
+	if err := tx.Model(&core.Task{}).Where("id = ?", id).Delete(&core.Task{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
 }
 
 // List 获取任务列表

@@ -63,6 +63,7 @@ type DispatchService struct {
 	cronJobStore core.CronJobStore // 定时任务数据存储
 	taskStore    core.TaskStore    // 任务记录数据存储
 	locker       core.Locker       // 分布式锁服务
+	workflowExecService core.WorkflowExecuteService // 🔥 用于处理工作流任务超时
 }
 
 // Dispatch 调度cronjob
@@ -349,6 +350,18 @@ func (d *DispatchService) checkTimeoutTasks(ctx context.Context) {
 			logger.Info("任务已超时",
 				zap.String("task_id", task.ID.String()),
 				zap.String("task_name", task.Name))
+
+			// 🔥 如果是工作流任务，触发 HandleTaskComplete
+			if task.IsWorkflowTask() && d.workflowExecService != nil {
+				// 异步调用，避免阻塞调度循环
+				go func(taskID uuid.UUID) {
+					if err := d.workflowExecService.HandleTaskComplete(context.Background(), taskID); err != nil {
+						logger.Error("处理超时工作流任务失败",
+							zap.Error(err),
+							zap.String("task_id", taskID.String()))
+					}
+				}(task.ID)
+			}
 		}(task)
 	}
 }
@@ -861,4 +874,9 @@ func (d *DispatchService) RetryTask(ctx context.Context, taskID string) (*core.T
 	}
 
 	return tasks[0], nil
+}
+
+// SetWorkflowExecuteService 设置工作流执行服务（用于依赖注入）
+func (d *DispatchService) SetWorkflowExecuteService(service core.WorkflowExecuteService) {
+	d.workflowExecService = service
 }

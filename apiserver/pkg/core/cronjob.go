@@ -12,6 +12,7 @@ import (
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/filters"
 	"github.com/codelieche/cronjob/apiserver/pkg/utils/types"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // CronJob 定时任务实体
@@ -82,6 +83,15 @@ func (c *CronJob) SetMetadata(metadata *Metadata) error {
 		return err
 	}
 	c.Metadata = data
+	return nil
+}
+
+// BeforeDelete 删除前设置deleted字段为True
+// 覆盖 BaseModel 的 BeforeDelete，避免 "WHERE conditions required" 错误
+func (c *CronJob) BeforeDelete(tx *gorm.DB) (err error) {
+	// 设置Deleted字段为true
+	trueValue := true
+	c.Deleted = &trueValue
 	return nil
 }
 

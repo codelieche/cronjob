@@ -1,0 +1,197 @@
+package forms
+
+import (
+	"fmt"
+
+	"github.com/codelieche/cronjob/apiserver/pkg/core"
+	"github.com/google/uuid"
+)
+
+// WorkflowCreateForm 工作流创建表单
+type WorkflowCreateForm struct {
+	ID               string                 `json:"id" form:"id"`
+	TeamID           string                 `json:"team_id" form:"team_id"`
+	Project          string                 `json:"project" form:"project" example:"default"`
+	Code             string                 `json:"code" form:"code" binding:"required" example:"cicd"`
+	Name             string                 `json:"name" form:"name" binding:"required" example:"前端 CI/CD"`
+	Description      string                 `json:"description" form:"description" example:"前端项目持续集成和部署"`
+	Steps            []core.WorkflowStep    `json:"steps" form:"steps" binding:"required"`
+	DefaultVariables map[string]interface{} `json:"default_variables" form:"default_variables"` // ⭐ 默认变量
+	Metadata         *core.Metadata         `json:"metadata" form:"metadata"`
+	IsActive         bool                   `json:"is_active" form:"is_active" example:"true"`
+	Timeout          int                    `json:"timeout" form:"timeout" example:"3600"` // 工作流整体超时时间（秒），0表示默认24小时
+}
+
+// Validate 验证表单
+func (form *WorkflowCreateForm) Validate() error {
+	// 1. 验证名称
+	if form.Name == "" {
+		return fmt.Errorf("工作流名称不能为空")
+	}
+	if len(form.Name) > 256 {
+		return fmt.Errorf("工作流名称不能超过256个字符")
+	}
+
+	// 2. 验证Code
+	if form.Code == "" {
+		return fmt.Errorf("工作流代码不能为空")
+	}
+	if len(form.Code) > 128 {
+		return fmt.Errorf("工作流代码不能超过128个字符")
+	}
+
+	// 3. 验证步骤列表
+	if len(form.Steps) == 0 {
+		return fmt.Errorf("工作流步骤不能为空")
+	}
+
+	// 4. 验证每个步骤
+	for i, step := range form.Steps {
+		if step.Order <= 0 {
+			return fmt.Errorf("第%d个步骤的序号必须大于0", i+1)
+		}
+		if step.Name == "" {
+			return fmt.Errorf("第%d个步骤的名称不能为空", i+1)
+		}
+		if step.Category == "" {
+			return fmt.Errorf("第%d个步骤的分类不能为空", i+1)
+		}
+	}
+
+	return nil
+}
+
+// ToWorkflow 转换为Workflow对象
+func (form *WorkflowCreateForm) ToWorkflow() *core.Workflow {
+	workflow := &core.Workflow{
+		Project:     form.Project,
+		Code:        form.Code,
+		Name:        form.Name,
+		Description: form.Description,
+	}
+
+	// 设置ID
+	if form.ID != "" {
+		if id, err := uuid.Parse(form.ID); err == nil {
+			workflow.ID = id
+		}
+	}
+
+	// 设置TeamID
+	if form.TeamID != "" {
+		if teamID, err := uuid.Parse(form.TeamID); err == nil {
+			workflow.TeamID = &teamID
+		}
+	}
+
+	// 设置Steps
+	if err := workflow.SetSteps(form.Steps); err == nil {
+		// Steps设置成功
+	}
+
+	// ⭐ 设置DefaultVariables
+	if form.DefaultVariables != nil {
+		if err := workflow.SetDefaultVariables(form.DefaultVariables); err == nil {
+			// DefaultVariables设置成功
+		}
+	}
+
+	// 设置Metadata
+	if form.Metadata != nil {
+		if err := workflow.SetMetadata(form.Metadata); err == nil {
+			// Metadata设置成功
+		}
+	}
+
+	// 设置IsActive
+	workflow.IsActive = &form.IsActive
+	
+	// 🔥 设置Timeout
+	workflow.Timeout = form.Timeout
+
+	// 设置默认值
+	if workflow.Project == "" {
+		workflow.Project = "default"
+	}
+
+	return workflow
+}
+
+// WorkflowUpdateForm 工作流更新表单
+type WorkflowUpdateForm struct {
+	Project          string                 `json:"project" form:"project"`
+	Code             string                 `json:"code" form:"code"`
+	Name             string                 `json:"name" form:"name"`
+	Description      string                 `json:"description" form:"description"`
+	Steps            []core.WorkflowStep    `json:"steps" form:"steps"`
+	DefaultVariables map[string]interface{} `json:"default_variables" form:"default_variables"` // ⭐ 默认变量
+	Metadata         *core.Metadata         `json:"metadata" form:"metadata"`
+	IsActive         *bool                  `json:"is_active" form:"is_active"`
+	Timeout          int                    `json:"timeout" form:"timeout" example:"3600"` // 工作流整体超时时间（秒），0表示默认24小时
+}
+
+// Validate 验证表单
+func (form *WorkflowUpdateForm) Validate() error {
+	// 1. 验证名称长度
+	if len(form.Name) > 256 {
+		return fmt.Errorf("工作流名称不能超过256个字符")
+	}
+
+	// 2. 验证Code长度
+	if len(form.Code) > 128 {
+		return fmt.Errorf("工作流代码不能超过128个字符")
+	}
+
+	// 3. 如果有步骤列表，验证步骤
+	if len(form.Steps) > 0 {
+		for i, step := range form.Steps {
+			if step.Order <= 0 {
+				return fmt.Errorf("第%d个步骤的序号必须大于0", i+1)
+			}
+			if step.Name == "" {
+				return fmt.Errorf("第%d个步骤的名称不能为空", i+1)
+			}
+			if step.Category == "" {
+				return fmt.Errorf("第%d个步骤的分类不能为空", i+1)
+			}
+		}
+	}
+
+	return nil
+}
+
+// ToWorkflow 转换为Workflow对象（用于更新）
+func (form *WorkflowUpdateForm) ToWorkflow(id uuid.UUID) *core.Workflow {
+	workflow := &core.Workflow{
+		ID:          id,
+		Project:     form.Project,
+		Code:        form.Code,
+		Name:        form.Name,
+		Description: form.Description,
+		IsActive:    form.IsActive,
+		Timeout:     form.Timeout, // 🔥 设置Timeout
+	}
+
+	// 设置Steps（如果有）
+	if len(form.Steps) > 0 {
+		if err := workflow.SetSteps(form.Steps); err == nil {
+			// Steps设置成功
+		}
+	}
+
+	// ⭐ 设置DefaultVariables（如果有）
+	if form.DefaultVariables != nil {
+		if err := workflow.SetDefaultVariables(form.DefaultVariables); err == nil {
+			// DefaultVariables设置成功
+		}
+	}
+
+	// 设置Metadata（如果有）
+	if form.Metadata != nil {
+		if err := workflow.SetMetadata(form.Metadata); err == nil {
+			// Metadata设置成功
+		}
+	}
+
+	return workflow
+}

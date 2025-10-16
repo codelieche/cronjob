@@ -129,36 +129,10 @@ func (s *CategoryStore) Update(ctx context.Context, category *core.Category) (*c
 func (s *CategoryStore) Delete(ctx context.Context, category *core.Category) error {
 	if category.ID <= 0 {
 		return core.ErrNotFound
-	} else {
-		// 在事务中执行
-		tx := s.db.Begin()
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
-			}
-		}()
-
-		// 检查分类是否存在
-		existingCategory, err := s.FindByID(ctx, category.ID)
-		if err != nil {
-			tx.Rollback()
-			return err
-		} else {
-			// 使用tx.Delete直接删除对象，以触发BeforeDelete钩子
-			if err := tx.Delete(existingCategory).Error; err != nil {
-				tx.Rollback()
-				return err
-			}
-			tx.Commit()
-			return nil
-		}
 	}
-}
 
-// DeleteByID 根据ID删除分类
-func (s *CategoryStore) DeleteByID(ctx context.Context, id uint) error {
 	// 检查分类是否存在
-	category, err := s.FindByID(ctx, id)
+	_, err := s.FindByID(ctx, category.ID)
 	if err != nil {
 		return err
 	}
@@ -171,8 +145,33 @@ func (s *CategoryStore) DeleteByID(ctx context.Context, id uint) error {
 		}
 	}()
 
-	// 使用tx.Delete直接删除对象，以触发BeforeDelete钩子
-	if err := tx.Delete(category).Error; err != nil {
+	// 🔥 使用Model().Where().Delete()方式，明确指定WHERE条件
+	if err := tx.Model(&core.Category{}).Where("id = ?", category.ID).Delete(&core.Category{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
+// DeleteByID 根据ID删除分类
+func (s *CategoryStore) DeleteByID(ctx context.Context, id uint) error {
+	// 检查分类是否存在
+	_, err := s.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// 在事务中执行
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 🔥 使用Model().Where().Delete()方式，明确指定WHERE条件
+	if err := tx.Model(&core.Category{}).Where("id = ?", id).Delete(&core.Category{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}

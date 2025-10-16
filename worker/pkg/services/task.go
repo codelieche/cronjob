@@ -9,6 +9,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -373,29 +374,60 @@ func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 		taskStatus = core.TaskStatusError
 	}
 
-	// 🔥 处理 output（如果不保存日志且不是JSON，包装成JSON格式）
+	// 🔥 处理 output：确保总是有效的JSON格式（用于Workflow参数传递）⭐
 	var outputJSON string
-	if task.SaveLog == nil || !*task.SaveLog {
-		// 不保存日志，检查是否为 JSON 格式
-		trimmedOutput := strings.TrimSpace(taskResult.Output)
-		if strings.HasPrefix(trimmedOutput, "{") && strings.HasSuffix(trimmedOutput, "}") {
-			// 已经是 JSON 格式，直接使用
-			outputJSON = taskResult.Output
-		} else {
-			// 不是 JSON，包装成 {"message": "..."}
-			message := taskResult.Output
-			if message == "" {
-				if taskStatus == core.TaskStatusSuccess {
-					message = "执行成功"
-				} else {
-					message = "执行失败"
-				}
+
+	// 检查 output 是否为有效的 JSON 格式
+	trimmedOutput := strings.TrimSpace(taskResult.Output)
+	var testParse map[string]interface{}
+	isValidJSON := false
+
+	// 尝试解析为JSON，验证是否有效
+	if trimmedOutput != "" && json.Unmarshal([]byte(trimmedOutput), &testParse) == nil {
+		// 是有效的 JSON 对象，直接使用
+		outputJSON = trimmedOutput
+		isValidJSON = true
+	}
+
+	// 如果不是有效的JSON，需要包装
+	if !isValidJSON {
+		// 构建标准的 JSON 输出
+		outputMap := make(map[string]interface{})
+
+		// 添加原始输出（如果是字符串类型）
+		if taskResult.Output != "" {
+			// 限制长度，避免输出过大（最大10KB）
+			maxLen := 10 * 1024
+			if len(taskResult.Output) > maxLen {
+				outputMap["message"] = taskResult.Output[:maxLen] + "... (truncated)"
+				outputMap["truncated"] = true
+			} else {
+				outputMap["message"] = taskResult.Output
 			}
-			outputJSON = fmt.Sprintf(`{"message": "%s"}`, escapeJSON(message))
+		} else {
+			// 空输出，添加默认消息
+			if taskStatus == core.TaskStatusSuccess {
+				outputMap["message"] = "执行成功"
+			} else {
+				outputMap["message"] = "执行失败"
+			}
 		}
-	} else {
-		// 保存日志，直接使用 Runner 返回的 output（可以是纯文本或JSON）
-		outputJSON = taskResult.Output
+
+		// 添加其他有用的信息
+		if taskResult.ExitCode != 0 {
+			outputMap["exit_code"] = taskResult.ExitCode
+		}
+		if taskResult.Duration > 0 {
+			outputMap["duration_ms"] = taskResult.Duration
+		}
+
+		// 序列化为 JSON
+		if jsonBytes, err := json.Marshal(outputMap); err == nil {
+			outputJSON = string(jsonBytes)
+		} else {
+			// 序列化失败，使用最简单的格式
+			outputJSON = fmt.Sprintf(`{"message": "%s"}`, escapeJSON(taskResult.Output))
+		}
 	}
 
 	// 构建结果数据

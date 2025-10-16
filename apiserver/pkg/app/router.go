@@ -196,6 +196,43 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 		cronjobRoutes.PATCH("/:id/", cronjobController.Patch)                                      // 动态更新部分字段
 	}
 
+	// ========== 工作流管理模块 ⭐ ==========
+	// 工作流编排模块：管理工作流模板、执行实例、任务流转
+	// 🔥 核心功能：
+	//   1. Workflow 模板管理（创建、更新、删除、查询）
+	//   2. WorkflowExecute 执行实例管理（触发执行、查询、取消）
+	//   3. 自动任务流转（Task 完成后自动激活下一个）
+	//   4. 参数传递（Variables + Template 替换）
+	//   5. 环境锁定（确保所有步骤在同一 Worker 执行）
+	workflowStore := store.NewWorkflowStore(db)
+	workflowService := services.NewWorkflowService(workflowStore)
+	workflowController := controllers.NewWorkflowController(workflowService)
+
+	// Workflow 模板管理接口需要用户认证
+	workflowRoutes := apis.Group("/workflow")
+	workflowRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		workflowRoutes.POST("/", workflowController.Create)                         // 创建工作流模板
+		workflowRoutes.GET("/", workflowController.List)                            // 获取工作流列表
+		workflowRoutes.GET("/:id/", workflowController.Find)                        // 根据ID获取工作流详情
+		workflowRoutes.GET("/by-code/:code/", workflowController.FindByCode)        // 根据Code获取工作流（用于快捷访问）
+		workflowRoutes.PUT("/:id/", workflowController.Update)                      // 更新工作流模板
+		workflowRoutes.DELETE("/:id/", workflowController.Delete)                   // 删除工作流
+		workflowRoutes.POST("/:id/toggle-active/", workflowController.ToggleActive) // 切换激活状态
+		workflowRoutes.GET("/:id/statistics/", workflowController.GetStatistics)    // 获取统计信息
+	}
+
+	// ========== 工作流执行管理模块 ⭐ ==========
+	// WorkflowExecute 执行实例管理
+	// 注意：TaskStore 在后面创建，这里先声明，后面再初始化
+	var taskStore core.TaskStore
+	var workflowExecService core.WorkflowExecuteService
+
+	// 这些会在 taskStore 创建后初始化
+	// workflowExecStore := store.NewWorkflowExecuteStore(db)
+	// workflowExecService = services.NewWorkflowExecuteService(workflowExecStore, workflowStore, taskStore)
+	// workflowExecController := controllers.NewWorkflowExecuteController(workflowExecService)
+
 	// ========== 分布式锁管理模块 ==========
 	// 基于Redis的分布式锁，主要供Worker节点使用，暂时不使用认证中间件
 	// 如果需要保护这些接口，可以添加专门的Worker认证机制
@@ -218,8 +255,30 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 
 	// ========== 任务执行记录模块 ==========
 	// 记录每次任务执行的详细信息，需要用户认证
-	taskStore := store.NewTaskStore(db)
+	taskStore = store.NewTaskStore(db)                               // 🔥 这里使用之前声明的变量
 	taskService := services.NewTaskService(taskStore, lockerService) // 🔥 注入lockerService用于取消功能
+
+	// 🔥 创建 WorkflowExecute 相关服务（在 taskStore 创建后）⭐
+	workflowExecStore := store.NewWorkflowExecuteStore(db)
+	workflowExecService = services.NewWorkflowExecuteService(workflowExecStore, workflowStore, taskStore)
+	workflowExecController := controllers.NewWorkflowExecuteController(workflowExecService)
+
+	// WorkflowExecute 执行实例管理接口需要用户认证
+	workflowExecRoutes := apis.Group("/workflow-execute")
+	workflowExecRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		workflowExecRoutes.GET("/:id/", workflowExecController.Find)           // 根据ID获取执行实例
+		workflowExecRoutes.GET("/", workflowExecController.List)               // 获取执行实例列表
+		workflowExecRoutes.POST("/:id/cancel/", workflowExecController.Cancel) // 取消执行
+		workflowExecRoutes.DELETE("/:id/", workflowExecController.Delete)      // 删除执行实例
+	}
+
+	// Workflow 执行相关路由（挂在 workflow 路由组下）
+	// 注意：这里必须使用 :id 而不是 :workflow_id，避免与上面的 /:id/ 路由冲突
+	{
+		workflowRoutes.POST("/:id/execute/", workflowExecController.Execute)          // ⭐ 触发执行
+		workflowRoutes.GET("/:id/executes/", workflowExecController.ListByWorkflowID) // 执行历史
+	}
 
 	// 🔥 创建dispatchService用于任务调度和重试（注意：在taskController之前创建）
 	dispatchService := services.NewDispatchService(cronjobStore, taskStore, lockerService)
@@ -227,12 +286,31 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	// 🔥 创建websocketService用于任务Stop/Kill功能（注意：在taskController之前创建）
 	websocketService := services.NewWebsocketService(taskStore, workerStore)
 
-	taskController := controllers.NewTaskController(taskService, dispatchService, websocketService) // 注入websocketService用于Stop/Kill功能
+	// 🔥 创建 TaskController，注入 WorkflowExecuteService 用于自动任务流转 ⭐
+	taskController := controllers.NewTaskController(taskService, dispatchService, websocketService, workflowExecService)
 
 	// 🔥 将 taskService 注入到 cronjobService 中，用于手动执行任务功能
 	// 注意：必须在 taskService 创建后才能注入，避免 nil pointer
 	if cs, ok := cronjobService.(*services.CronJobService); ok {
 		cs.SetTaskService(taskService)
+	}
+
+	// 🔥 将 workflowExecService 注入到 taskService 中，用于自动任务流转功能 ⭐
+	// 注意：必须在 workflowExecService 创建后才能注入，避免 nil pointer
+	if ts, ok := taskService.(*services.TaskService); ok {
+		ts.SetWorkflowExecuteService(workflowExecService)
+	}
+
+	// 🔥 将 workflowExecService 注入到 websocketService 中，用于 Worker 回写状态时触发任务流转 ⭐
+	// 注意：必须在 workflowExecService 创建后才能注入，避免 nil pointer
+	if ws, ok := websocketService.(*services.WebsocketService); ok {
+		ws.SetWorkflowExecuteService(workflowExecService)
+	}
+
+	// 🔥 将 workflowExecService 注入到 dispatchService 中，用于超时任务触发任务流转 ⭐
+	// 注意：必须在 workflowExecService 创建后才能注入，避免 nil pointer
+	if ds, ok := dispatchService.(*services.DispatchService); ok {
+		ds.SetWorkflowExecuteService(workflowExecService)
 	}
 
 	// 任务记录管理接口需要用户认证

@@ -153,36 +153,10 @@ func (s *CronJobStore) Update(ctx context.Context, cronJob *core.CronJob) (*core
 func (s *CronJobStore) Delete(ctx context.Context, cronJob *core.CronJob) error {
 	if cronJob.ID == uuid.Nil {
 		return core.ErrNotFound
-	} else {
-		// 在事务中执行
-		tx := s.db.Begin()
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
-			}
-		}()
-
-		// 检查定时任务是否存在
-		existingCronJob, err := s.FindByID(ctx, cronJob.ID)
-		if err != nil {
-			tx.Rollback()
-			return err
-		} else {
-			// 使用tx.Delete直接删除对象，以触发BeforeDelete钩子
-			if err := tx.Delete(existingCronJob).Error; err != nil {
-				tx.Rollback()
-				return err
-			}
-			tx.Commit()
-			return nil
-		}
 	}
-}
 
-// DeleteByID 根据ID删除定时任务
-func (s *CronJobStore) DeleteByID(ctx context.Context, id uuid.UUID) error {
 	// 检查定时任务是否存在
-	CronJob, err := s.FindByID(ctx, id)
+	_, err := s.FindByID(ctx, cronJob.ID)
 	if err != nil {
 		return err
 	}
@@ -195,8 +169,35 @@ func (s *CronJobStore) DeleteByID(ctx context.Context, id uuid.UUID) error {
 		}
 	}()
 
-	// 使用tx.Delete直接删除对象，以触发BeforeDelete钩子
-	if err := tx.Delete(CronJob).Error; err != nil {
+	// 🔥 使用Model().Where().Delete()方式，明确指定WHERE条件
+	// 不能直接用Delete(&core.CronJob{ID: id})，因为CronJob有BaseModel和自己的ID字段，会混淆
+	if err := tx.Model(&core.CronJob{}).Where("id = ?", cronJob.ID).Delete(&core.CronJob{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
+// DeleteByID 根据ID删除定时任务
+func (s *CronJobStore) DeleteByID(ctx context.Context, id uuid.UUID) error {
+	// 检查定时任务是否存在
+	_, err := s.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// 在事务中执行
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 🔥 使用Model().Where().Delete()方式，明确指定WHERE条件
+	// 不能直接用Delete(&core.CronJob{ID: id})，因为CronJob有BaseModel和自己的ID字段，会混淆
+	if err := tx.Model(&core.CronJob{}).Where("id = ?", id).Delete(&core.CronJob{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}

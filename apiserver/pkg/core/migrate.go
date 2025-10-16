@@ -31,6 +31,10 @@ func AutoMigrate(db *gorm.DB) error {
 			// 凭证管理表
 			&Credential{}, // 凭证信息
 
+			// 🔥 工作流管理表（Workflow 模块）
+			&Workflow{},        // 工作流模板
+			&WorkflowExecute{}, // 工作流执行实例
+
 			// 🔥 统计数据表（用于性能优化）
 			&TaskStatsDaily{},    // 任务每日统计
 			&CronjobStatsDaily{}, // CronJob每日统计

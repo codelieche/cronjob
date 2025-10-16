@@ -135,36 +135,10 @@ func (s *WorkerStore) Update(ctx context.Context, worker *core.Worker) (*core.Wo
 func (s *WorkerStore) Delete(ctx context.Context, worker *core.Worker) error {
 	if worker.ID == uuid.Nil {
 		return core.ErrNotFound
-	} else {
-		// 在事务中执行
-		tx := s.db.Begin()
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
-			}
-		}()
-
-		// 检查工作节点是否存在
-		existingWorker, err := s.FindByID(ctx, worker.ID)
-		if err != nil {
-			tx.Rollback()
-			return err
-		} else {
-			// 使用tx.Delete直接删除对象，以触发BeforeDelete钩子
-			if err := tx.Delete(existingWorker).Error; err != nil {
-				tx.Rollback()
-				return err
-			}
-			tx.Commit()
-			return nil
-		}
 	}
-}
 
-// DeleteByID 根据ID删除工作节点
-func (s *WorkerStore) DeleteByID(ctx context.Context, id uuid.UUID) error {
 	// 检查工作节点是否存在
-	worker, err := s.FindByID(ctx, id)
+	_, err := s.FindByID(ctx, worker.ID)
 	if err != nil {
 		return err
 	}
@@ -177,8 +151,33 @@ func (s *WorkerStore) DeleteByID(ctx context.Context, id uuid.UUID) error {
 		}
 	}()
 
-	// 使用tx.Delete直接删除对象，以触发BeforeDelete钩子
-	if err := tx.Delete(worker).Error; err != nil {
+	// 🔥 使用Model().Where().Delete()方式，明确指定WHERE条件
+	if err := tx.Model(&core.Worker{}).Where("id = ?", worker.ID).Delete(&core.Worker{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
+// DeleteByID 根据ID删除工作节点
+func (s *WorkerStore) DeleteByID(ctx context.Context, id uuid.UUID) error {
+	// 检查工作节点是否存在
+	_, err := s.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// 在事务中执行
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 🔥 使用Model().Where().Delete()方式，明确指定WHERE条件
+	if err := tx.Model(&core.Worker{}).Where("id = ?", id).Delete(&core.Worker{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
