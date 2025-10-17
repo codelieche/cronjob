@@ -496,3 +496,76 @@ func (s *apiserverService) GetCredential(credentialID string) (*core.Credential,
 
 	return &credential, nil
 }
+
+// CreateApproval 创建审批对象
+//
+// 参数:
+//   - data: 审批数据（包含title, content, user_ids等字段）
+//
+// 返回值:
+//   - approvalID: 创建成功的审批ID
+//   - error: 创建过程中的错误
+func (s *apiserverService) CreateApproval(data map[string]interface{}) (string, error) {
+	// 构建请求URL
+	url := fmt.Sprintf("%s/approvals/", s.ApiUrl)
+
+	// 将data序列化为JSON
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return "", fmt.Errorf("序列化审批数据失败: %w", err)
+	}
+
+	// 创建HTTP请求
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("创建HTTP请求失败: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json")
+	if s.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.ApiKey)
+	}
+
+	// 发送请求
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("发送HTTP请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("读取响应体失败: %w", err)
+	}
+
+	// 检查HTTP状态码
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP请求失败，状态码: %d, 响应: %s", resp.StatusCode, string(body))
+	}
+
+	// 解析响应JSON
+	var apiResp struct {
+		Code int `json:"code"`
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", fmt.Errorf("解析响应JSON失败: %w, 响应: %s", err, string(body))
+	}
+
+	// 检查API返回的code
+	if apiResp.Code != 0 {
+		return "", fmt.Errorf("API返回错误，code: %d, message: %s", apiResp.Code, apiResp.Message)
+	}
+
+	// 返回审批ID
+	if apiResp.Data.ID == "" {
+		return "", fmt.Errorf("API返回的审批ID为空")
+	}
+
+	return apiResp.Data.ID, nil
+}

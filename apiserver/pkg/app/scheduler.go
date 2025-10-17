@@ -17,18 +17,19 @@ import (
 // Scheduler 定时任务调度器
 //
 // 负责管理系统的后台定时任务，包括：
-// - 每日统计数据聚合（凌晨01:00）
+// - 每日统计数据聚合（Task：凌晨01:00，Workflow：凌晨01:10）
 // - TaskLog分片表维护（凌晨02:00）
 // - 可扩展支持其他定时任务
 //
 // 🔥 多副本安全：使用分布式锁防止并发执行
 // 🔥 架构层次：Scheduler -> Service -> Store -> Database
 type Scheduler struct {
-	cron            *cron.Cron
-	statsAggregator *services.StatsAggregator
-	shardManager    *shard.ShardManager // 🔥 TaskLog分片管理器
-	locker          core.Locker         // 🔥 分布式锁
-	cronJobService  core.CronJobService // 🔥 CronJob服务（遵循分层架构）
+	cron                 *cron.Cron
+	statsAggregator      *services.StatsAggregator      // 🔥 Task统计聚合器
+	workflowStatsService *services.WorkflowStatsService // 🔥 Workflow统计服务
+	shardManager         *shard.ShardManager            // 🔥 TaskLog分片管理器
+	locker               core.Locker                    // 🔥 分布式锁
+	cronJobService       core.CronJobService            // 🔥 CronJob服务（遵循分层架构）
 }
 
 // NewScheduler 创建定时任务调度器实例
@@ -36,9 +37,15 @@ func NewScheduler(db *gorm.DB, locker core.Locker, cronJobService core.CronJobSe
 	// 创建Cron实例（带秒级精度）
 	c := cron.New(cron.WithSeconds())
 
-	// 创建统计聚合器（遵循分层架构）
+	// 创建Task统计聚合器（遵循分层架构）
 	statsAggregatorStore := store.NewStatsAggregatorStore(db)
 	statsAggregator := services.NewStatsAggregator(statsAggregatorStore)
+
+	// 🔥 创建Workflow统计服务（遵循分层架构）
+	workflowStatsStore := store.NewWorkflowStatsStore(db)
+	workflowStore := store.NewWorkflowStore(db)
+	workflowExecStore := store.NewWorkflowExecuteStore(db)
+	workflowStatsService := services.NewWorkflowStatsService(db, workflowStatsStore, workflowExecStore, workflowStore)
 
 	// 🔥 创建TaskLog分片管理器
 	shardConfig := &shard.ShardConfig{
@@ -51,11 +58,12 @@ func NewScheduler(db *gorm.DB, locker core.Locker, cronJobService core.CronJobSe
 	shardManager := shard.NewShardManager(db, shardConfig)
 
 	return &Scheduler{
-		cron:            c,
-		statsAggregator: statsAggregator,
-		shardManager:    shardManager,
-		locker:          locker,
-		cronJobService:  cronJobService, // 🔥 注入Service层
+		cron:                 c,
+		statsAggregator:      statsAggregator,
+		workflowStatsService: workflowStatsService, // 🔥 注入Workflow统计服务
+		shardManager:         shardManager,
+		locker:               locker,
+		cronJobService:       cronJobService, // 🔥 注入Service层
 	}
 }
 
@@ -101,7 +109,47 @@ func (s *Scheduler) Start() error {
 		return err
 	}
 
-	// 🔥 任务2：初始化CronJob的NULL last_plan
+	// 🔥 任务2：Workflow统计数据聚合
+	// Cron表达式：0 10 1 * * *（每天凌晨1点10分执行，避免与Task统计聚合冲突）
+	// 使用分布式锁，防止多副本并发执行
+	_, err = s.cron.AddFunc("0 10 1 * * *", func() {
+		ctx := context.Background()
+		lockKey := "workflow:stats:aggregator:daily"
+
+		// 🔥 尝试获取锁（10分钟过期，预留充足时间）
+		lock, err := s.locker.TryAcquire(ctx, lockKey, 10*time.Minute)
+		if err != nil {
+			if err == core.ErrLockAlreadyAcquired {
+				logger.Warn("Workflow统计数据聚合任务已被其他实例执行，跳过", zap.String("lock_key", lockKey))
+				return
+			}
+			logger.Error("获取Workflow聚合任务锁失败", zap.String("lock_key", lockKey), zap.Error(err))
+			return
+		}
+		defer lock.Release(ctx)
+
+		logger.Info("开始执行Workflow每日统计数据聚合任务", zap.String("instance", "acquired_lock"))
+		startTime := time.Now()
+
+		// 聚合昨天的数据
+		yesterday := time.Now().AddDate(0, 0, -1)
+		if err := s.workflowStatsService.AggregateDailyStats(ctx, yesterday); err != nil {
+			logger.Error("Workflow每日统计数据聚合失败", zap.Error(err))
+		} else {
+			duration := time.Since(startTime)
+			logger.Info("Workflow每日统计数据聚合成功",
+				zap.Duration("duration", duration),
+				zap.String("date", yesterday.Format("2006-01-02")),
+				zap.String("lock_key", lockKey))
+		}
+	})
+
+	if err != nil {
+		logger.Error("注册Workflow每日统计数据聚合任务失败", zap.Error(err))
+		return err
+	}
+
+	// 🔥 任务3：初始化CronJob的NULL last_plan
 	// Cron表达式：0 */10 * * * *（每10分钟执行一次）
 	// 用于初始化新建CronJob的last_plan字段，避免无法调度
 	// 使用分布式锁，防止多副本并发执行
@@ -144,7 +192,7 @@ func (s *Scheduler) Start() error {
 		return err
 	}
 
-	// 🔥 任务3：TaskLog分片表维护
+	// 🔥 任务4：TaskLog分片表维护
 	// Cron表达式：0 0 2 * * *（每天凌晨2点执行，避免与统计聚合冲突）
 	// 使用分布式锁，防止多副本并发执行
 	_, err = s.cron.AddFunc("0 0 2 * * *", func() {
@@ -210,9 +258,10 @@ func (s *Scheduler) Start() error {
 	// 启动调度器
 	s.cron.Start()
 	logger.Info("定时任务调度器已启动",
-		zap.String("任务1", "统计聚合(凌晨01:00)"),
-		zap.String("任务2", "CronJob初始化(每10分钟)"),
-		zap.String("任务3", "TaskLog分片维护(凌晨02:00)"))
+		zap.String("任务1", "Task统计聚合(凌晨01:00)"),
+		zap.String("任务2", "Workflow统计聚合(凌晨01:10)"),
+		zap.String("任务3", "CronJob初始化(每10分钟)"),
+		zap.String("任务4", "TaskLog分片维护(凌晨02:00)"))
 
 	return nil
 }

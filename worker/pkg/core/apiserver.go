@@ -13,4 +13,5 @@ type Apiserver interface {
 	AcquireLock(key string, expire int) (lockKey, lockValue string, err error) // 获取分布式锁，返回key和value
 	PingWorker(workerID string) error                                          // 发送Worker心跳，更新is_active状态
 	GetCredential(credentialID string) (*Credential, error)                    // 🔥 获取凭证（已解密的明文）
+	CreateApproval(data map[string]interface{}) (approvalID string, err error) // 🔥 创建审批对象
 }

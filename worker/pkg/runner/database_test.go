@@ -514,4 +514,9 @@ func (m *mockApiserverService) GetCredential(credentialID string) (*core.Credent
 	}, nil
 }
 
+func (m *mockApiserverService) CreateApproval(data map[string]interface{}) (string, error) {
+	// 返回一个模拟的审批ID
+	return uuid.New().String(), nil
+}
+
 // contains 函数已在 security_test.go 中定义，这里直接使用

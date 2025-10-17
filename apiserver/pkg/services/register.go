@@ -219,6 +219,7 @@ func (s *registryService) sendHTTPRequest(ctx context.Context, method, url strin
 // - message: 消息发送执行器，支持邮件/钉钉/企业微信/短信等
 // - file: 文件操作执行器，支持文件清理/备份/压缩/统计等操作
 // - git: Git 仓库操作执行器，支持智能 sync（clone/pull）
+// - approval: 审批流程执行器，支持人工审批和AI自动审批
 func (s *registryService) getSystemCategories() []*core.Category {
 	return []*core.Category{
 		{
@@ -292,6 +293,14 @@ func (s *registryService) getSystemCategories() []*core.Category {
 			Setup:       "",               // TODO: 后续补充初始化脚本
 			Teardown:    "",               // TODO: 后续补充销毁脚本
 			Check:       "docker version", // 检查 docker 命令
+		},
+		{
+			Code:        "approval",
+			Name:        "审批流程",
+			Description: "审批流程执行器，支持人工审批和AI自动审批。在工作流中插入审批节点，实现流程控制和风险把控。支持单人审批/多人会签、超时自动处理、审批记录追溯等功能。可配置审批人员（团队成员）、AI智能体、审批策略等。适用于生产发布审批、资源变更审批、代码合并审批等场景。",
+			Setup:       "", // 无需初始化脚本
+			Teardown:    "", // 无需清理脚本
+			Check:       "", // 无需环境检查
 		},
 	}
 }

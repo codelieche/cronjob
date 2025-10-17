@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/codelieche/cronjob/apiserver/pkg/config"
 	"github.com/codelieche/cronjob/apiserver/pkg/core"
 	"github.com/codelieche/cronjob/apiserver/pkg/monitoring"
 	"github.com/codelieche/cronjob/apiserver/pkg/services"
@@ -96,6 +97,25 @@ func dispatch() {
 		5*time.Minute,  // 超过5分钟没有心跳的worker视为失活
 	)
 	logger.Info("Worker状态检查循环已启动")
+
+	// 🔥 启动审批超时检查循环
+	// 定期检查超时的审批，自动设置为timeout状态，并触发关联Task的流转
+	approvalStore := store.NewApprovalStore(db)
+	approvalRecordStore := store.NewApprovalRecordStore(db)
+	workflowExecStore := store.NewWorkflowExecuteStore(db)
+	workflowStore := store.NewWorkflowStore(db) // 🔥 创建 workflowStore
+
+	// 🔥 创建 workflowExecService（直接传入 approvalStore）
+	workflowExecService := services.NewWorkflowExecuteService(workflowExecStore, workflowStore, taskStore, approvalStore)
+	// 🔥 创建 Usercenter Service（复用 Auth 配置）
+	usercenterService := services.NewUsercenterService(
+		config.Auth.ApiUrl,
+		config.Auth.ApiKey,
+		config.Auth.Timeout,
+	)
+	approvalService := services.NewApprovalService(approvalStore, approvalRecordStore, taskStore, workflowExecStore, workflowExecService, usercenterService) // 🔥 传递 usercenterService
+	go services.StartApprovalTimeoutChecker(context.Background(), approvalService)
+	logger.Info("审批超时检查循环已启动")
 
 	// 🔥 启动后台定时任务调度器（Cron-based）
 	// 与上面的"定时任务调度循环"不同，这是基于Cron表达式的系统维护任务

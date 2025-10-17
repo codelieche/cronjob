@@ -37,11 +37,11 @@ func parseWeb() {
 	}
 
 	Web = &web{
-		host,
-		port,
-		sessionSecretKey,
-		sessionIDName,
-		logStorage,
+		Host:             host,
+		Port:             port,
+		SessionSecretKey: sessionSecretKey,
+		SessionIDName:    sessionIDName,
+		LogStorage:       logStorage,
 	}
 }
 

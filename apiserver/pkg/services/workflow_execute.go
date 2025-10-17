@@ -21,11 +21,13 @@ func NewWorkflowExecuteService(
 	store core.WorkflowExecuteStore,
 	workflowStore core.WorkflowStore,
 	taskStore core.TaskStore,
+	approvalStore core.ApprovalStore, // 🔥 直接在构造函数中传入
 ) core.WorkflowExecuteService {
 	return &WorkflowExecuteService{
 		store:         store,
 		workflowStore: workflowStore,
 		taskStore:     taskStore,
+		approvalStore: approvalStore,
 	}
 }
 
@@ -34,6 +36,7 @@ type WorkflowExecuteService struct {
 	store         core.WorkflowExecuteStore
 	workflowStore core.WorkflowStore
 	taskStore     core.TaskStore
+	approvalStore core.ApprovalStore // 用于取消审批
 }
 
 // FindByID 根据ID获取工作流执行实例
@@ -182,23 +185,60 @@ func (s *WorkflowExecuteService) Cancel(ctx context.Context, id string, userID *
 		return err
 	}
 
-	// 取消所有待执行的 Task（status=todo 或 status=pending）
-	// 这里需要查询该执行实例的所有 Task
-	// TODO: 实现 TaskStore.ListByWorkflowExecID 方法
-	// tasks, err := s.taskStore.ListByWorkflowExecID(ctx, uuidID)
-	// if err != nil {
-	//     logger.Error("list tasks by workflow exec id error", zap.Error(err))
-	//     return err
-	// }
-	//
-	// for _, task := range tasks {
-	//     if task.Status == core.TaskStatusPending || task.Status == "todo" {
-	//         task.Status = core.TaskStatusCanceled
-	//         if err := s.taskStore.Update(ctx, task); err != nil {
-	//             logger.Error("cancel task error", zap.Error(err), zap.String("task_id", task.ID.String()))
-	//         }
-	//     }
-	// }
+	// 🔥 取消所有未完成的 Task
+	// 1. 查询该执行实例的所有 Task
+	tasks, err := s.taskStore.ListByWorkflowExecID(ctx, uuidID)
+	if err != nil {
+		logger.Error("list tasks by workflow exec id error", zap.Error(err))
+		// 不返回错误，继续执行（至少WorkflowExec已经取消）
+	} else {
+		// 2. 遍历所有Task，取消未完成的
+		for _, task := range tasks {
+			// 取消状态：todo, pending, running
+			if task.Status == "todo" || task.Status == core.TaskStatusPending || task.Status == core.TaskStatusRunning {
+				task.Status = core.TaskStatusCanceled
+				now := time.Now()
+				if task.TimeStart == nil {
+					task.TimeStart = &now
+				}
+				task.TimeEnd = &now
+				task.FailureReason = "Workflow cancelled by " + username
+
+				// 更新Task
+				if _, err := s.taskStore.Update(ctx, task); err != nil {
+					logger.Error("cancel task error",
+						zap.Error(err),
+						zap.String("task_id", task.ID.String()),
+						zap.String("task_status", task.Status))
+				} else {
+					logger.Info("task cancelled",
+						zap.String("task_id", task.ID.String()),
+						zap.String("task_name", task.Name))
+
+					// 🔥 如果是审批类型的Task，同步取消对应的Approval
+					if task.Category == "approval" && task.Output != "" {
+						// 从Output中解析approval_id
+						var output map[string]interface{}
+						if err := json.Unmarshal([]byte(task.Output), &output); err == nil {
+							if approvalID, ok := output["approval_id"].(string); ok && approvalID != "" {
+								// 取消审批
+								if err := s.cancelApproval(ctx, approvalID, username); err != nil {
+									logger.Error("cancel approval error",
+										zap.Error(err),
+										zap.String("approval_id", approvalID),
+										zap.String("task_id", task.ID.String()))
+								} else {
+									logger.Info("approval cancelled",
+										zap.String("approval_id", approvalID),
+										zap.String("task_id", task.ID.String()))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// 更新 Workflow 统计信息
 	if err := s.workflowStore.UpdateStats(ctx, execute.WorkflowID, core.WorkflowExecuteStatusCanceled); err != nil {
@@ -209,6 +249,50 @@ func (s *WorkflowExecuteService) Cancel(ctx context.Context, id string, userID *
 	logger.Info("workflow execute cancelled",
 		zap.String("id", id),
 		zap.String("workflow_id", execute.WorkflowID.String()),
+		zap.String("username", username))
+
+	return nil
+}
+
+// cancelApproval 取消审批（辅助方法）
+func (s *WorkflowExecuteService) cancelApproval(ctx context.Context, approvalID string, username string) error {
+	if s.approvalStore == nil {
+		return fmt.Errorf("approval store not set")
+	}
+
+	// 解析UUID
+	uuidID, err := uuid.Parse(approvalID)
+	if err != nil {
+		return err
+	}
+
+	// 获取审批实例
+	approval, err := s.approvalStore.FindByID(ctx, uuidID)
+	if err != nil {
+		return err
+	}
+
+	// 检查状态（只能取消pending状态的审批）
+	if approval.Status != "pending" {
+		logger.Warn("approval cannot be cancelled",
+			zap.String("approval_id", approvalID),
+			zap.String("status", approval.Status))
+		return nil // 不返回错误，避免影响主流程
+	}
+
+	// 更新审批状态
+	approval.Status = "cancelled"
+	now := time.Now()
+	approval.ApprovedAt = &now
+	approval.ApprovalComment = "Workflow cancelled by " + username
+
+	// 保存更新
+	if _, err := s.approvalStore.Update(ctx, approval); err != nil {
+		return err
+	}
+
+	logger.Info("approval cancelled successfully",
+		zap.String("approval_id", approvalID),
 		zap.String("username", username))
 
 	return nil
@@ -497,6 +581,11 @@ func (s *WorkflowExecuteService) batchCreateTasks(
 			IsStandalone:   boolPtr(false),
 			CreatedAt:      now,
 			UpdatedAt:      now,
+			// 🔥 新增：条件分支和并行执行字段（从 WorkflowStep 复制）
+			Condition:       step.Condition,
+			ParallelGroup:   step.ParallelGroup,
+			WaitStrategy:    step.WaitStrategy,
+			FailureStrategy: step.FailureStrategy,
 		}
 
 		// 设置 Metadata（继承自 Workflow）
@@ -784,76 +873,158 @@ func (s *WorkflowExecuteService) HandleTaskComplete(ctx context.Context, taskID 
 	success := task.Status == core.TaskStatusSuccess
 	workflowExec.UpdateStepStats(task.StepOrder, success)
 
-	// ========== Step 7: 判断任务状态，决定下一步动作 ==========
+	// ========== Step 7: ⭐⭐⭐ 判断任务状态，决定下一步动作（支持条件分支和并行执行）==========
 	now := time.Now()
 	workflowExec.UpdatedAt = now
 
-	switch task.Status {
-	case core.TaskStatusSuccess:
-		// ========== 7.1 任务成功 → 激活下一个 Task ==========
-		if task.Next != nil {
-			// 查找下一个任务
-			nextTask, err := s.taskStore.FindByID(ctx, *task.Next)
-			if err != nil {
-				logger.Error("查找下一个任务失败", zap.Error(err))
-			} else {
-				// 激活下一个任务
-				if err := s.activateTask(ctx, nextTask, workflowExec); err != nil {
-					logger.Error("激活下一个任务失败", zap.Error(err))
-					// 标记工作流执行失败
-					workflowExec.Status = core.WorkflowExecuteStatusFailed
-					workflowExec.ErrorMessage = fmt.Sprintf("激活任务失败: %s", err.Error())
-					workflowExec.TimeEnd = &now
-				}
-			}
-		} else {
-			// ========== 7.2 没有下一个任务 → 工作流执行成功 ==========
-			workflowExec.Status = core.WorkflowExecuteStatusSuccess
-			workflowExec.TimeEnd = &now
-			logger.Info("工作流执行成功",
-				zap.String("exec_id", workflowExec.ID.String()),
-				zap.Int("total_steps", workflowExec.TotalSteps),
-				zap.Int("success_steps", workflowExec.SuccessSteps))
+	// 7.0 提取上一步的输出（供条件评估使用）
+	var lastOutput map[string]interface{}
+	if len(task.Output) > 0 {
+		if err := json.Unmarshal([]byte(task.Output), &lastOutput); err != nil {
+			logger.Warn("解析任务输出失败，条件评估可能受影响",
+				zap.Error(err),
+				zap.String("task_id", taskID.String()))
+			lastOutput = make(map[string]interface{})
 		}
+	} else {
+		lastOutput = make(map[string]interface{})
+	}
 
-	case core.TaskStatusFailed, core.TaskStatusError, core.TaskStatusTimeout:
-		// ========== 7.3 任务失败 → 工作流执行失败 ==========
-		workflowExec.Status = core.WorkflowExecuteStatusFailed
-		workflowExec.TimeEnd = &now
-
-		// 尝试从 Output 中提取错误信息
-		errorMsg := task.Status
-		if len(task.Output) > 0 {
-			var outputMap map[string]interface{}
-			if err := json.Unmarshal([]byte(task.Output), &outputMap); err == nil {
-				if errMsg, ok := outputMap["error"].(string); ok && errMsg != "" {
-					errorMsg = errMsg
-				}
-			}
-		}
-		workflowExec.ErrorMessage = fmt.Sprintf("任务 %s 失败: %s", task.Name, errorMsg)
-
-		logger.Error("工作流执行失败",
-			zap.String("exec_id", workflowExec.ID.String()),
-			zap.String("failed_task", task.Name),
-			zap.String("task_status", task.Status),
-			zap.String("error", workflowExec.ErrorMessage))
-
-	case core.TaskStatusCanceled:
-		// ========== 7.4 任务取消 → 工作流执行取消 ==========
-		workflowExec.Status = core.WorkflowExecuteStatusCanceled
-		workflowExec.TimeEnd = &now
-		workflowExec.ErrorMessage = fmt.Sprintf("任务 %s 被取消", task.Name)
-
-		logger.Info("工作流执行已取消",
-			zap.String("exec_id", workflowExec.ID.String()),
-			zap.String("canceled_task", task.Name))
-
-	default:
-		// 其他状态（如 running, pending），暂不处理
-		logger.Debug("任务状态未完成，等待后续处理",
+	// 7.1 🔥 检查是否是并行任务
+	if task.ParallelGroup != "" {
+		// ========== 7.1.1 🔥 并行任务完成 → 调用 handleParallelTaskComplete() ==========
+		logger.Info("并行任务完成，进入并行组完成检测流程",
 			zap.String("task_id", taskID.String()),
-			zap.String("status", task.Status))
+			zap.String("parallel_group", task.ParallelGroup),
+			zap.String("task_status", task.Status))
+
+		if err := s.handleParallelTaskComplete(ctx, task, workflowExec, lastOutput); err != nil {
+			logger.Error("处理并行任务完成失败",
+				zap.Error(err),
+				zap.String("task_id", taskID.String()),
+				zap.String("parallel_group", task.ParallelGroup))
+			// 不直接返回错误，继续保存 workflowExec（可能已被 handleParallelTaskComplete 修改）
+		}
+	} else {
+		// ========== 7.2 🔥 顺序任务完成 → 根据状态激活不同分支 ==========
+		switch task.Status {
+		case core.TaskStatusSuccess:
+			// ========== 7.2.1 🔥 任务成功 → 激活成功分支 ==========
+			logger.Info("任务成功，激活成功分支",
+				zap.String("task_id", taskID.String()),
+				zap.String("task_name", task.Name))
+
+			if err := s.activateNextBatch(ctx, task, workflowExec, core.TaskStatusSuccess, lastOutput); err != nil {
+				logger.Error("激活成功分支失败",
+					zap.Error(err),
+					zap.String("task_id", taskID.String()))
+				// 如果激活失败，可能是因为没有下一批任务（已在 activateNextBatch 中处理）
+			}
+
+		case core.TaskStatusFailed:
+			// ========== 7.2.2 🔥 任务失败（业务失败）→ 尝试激活失败分支 ==========
+			logger.Warn("任务失败（业务失败），尝试激活失败分支",
+				zap.String("task_id", taskID.String()),
+				zap.String("task_name", task.Name))
+
+			if err := s.activateNextBatch(ctx, task, workflowExec, core.TaskStatusFailed, lastOutput); err != nil {
+				// 没有失败分支，工作流执行失败
+				workflowExec.Status = core.WorkflowExecuteStatusFailed
+				workflowExec.TimeEnd = &now
+				workflowExec.ErrorMessage = fmt.Sprintf("任务 %s 业务失败（无失败分支处理）", task.Name)
+
+				logger.Error("工作流执行失败（业务失败，无失败分支）",
+					zap.String("exec_id", workflowExec.ID.String()),
+					zap.String("failed_task", task.Name))
+
+				// 🔥 更新 Workflow 统计信息
+				if err := s.workflowStore.UpdateStats(ctx, workflowExec.WorkflowID, workflowExec.Status); err != nil {
+					logger.Error("更新工作流统计失败", zap.Error(err))
+				}
+			}
+
+		case core.TaskStatusError:
+			// ========== 7.2.3 🔥 任务错误（系统错误）→ 尝试激活错误分支 ==========
+			logger.Error("任务错误（系统错误），尝试激活错误分支",
+				zap.String("task_id", taskID.String()),
+				zap.String("task_name", task.Name))
+
+			if err := s.activateNextBatch(ctx, task, workflowExec, core.TaskStatusError, lastOutput); err != nil {
+				// 没有错误分支，工作流执行失败
+				workflowExec.Status = core.WorkflowExecuteStatusFailed
+				workflowExec.TimeEnd = &now
+				workflowExec.ErrorMessage = fmt.Sprintf("任务 %s 发生系统错误（无错误分支处理）", task.Name)
+
+				logger.Error("工作流执行失败（系统错误，无错误分支）",
+					zap.String("exec_id", workflowExec.ID.String()),
+					zap.String("failed_task", task.Name))
+
+				// 🔥 更新 Workflow 统计信息
+				if err := s.workflowStore.UpdateStats(ctx, workflowExec.WorkflowID, workflowExec.Status); err != nil {
+					logger.Error("更新工作流统计失败", zap.Error(err))
+				}
+			}
+
+		case core.TaskStatusTimeout:
+			// ========== 7.2.4 🔥 任务超时 → 尝试激活超时分支 ==========
+			logger.Warn("任务超时，尝试激活超时分支",
+				zap.String("task_id", taskID.String()),
+				zap.String("task_name", task.Name))
+
+			if err := s.activateNextBatch(ctx, task, workflowExec, core.TaskStatusTimeout, lastOutput); err != nil {
+				// 没有超时分支，工作流执行失败
+				workflowExec.Status = core.WorkflowExecuteStatusFailed
+				workflowExec.TimeEnd = &now
+				workflowExec.ErrorMessage = fmt.Sprintf("任务 %s 超时（无超时分支处理）", task.Name)
+
+				logger.Error("工作流执行失败（超时，无超时分支）",
+					zap.String("exec_id", workflowExec.ID.String()),
+					zap.String("failed_task", task.Name))
+
+				// 🔥 更新 Workflow 统计信息
+				if err := s.workflowStore.UpdateStats(ctx, workflowExec.WorkflowID, workflowExec.Status); err != nil {
+					logger.Error("更新工作流统计失败", zap.Error(err))
+				}
+			}
+
+		case core.TaskStatusStopped:
+			// ========== 7.2.5 🔥 任务停止 → 尝试激活停止分支（通常会失败，导致工作流终止）==========
+			logger.Warn("任务被停止，尝试激活停止分支",
+				zap.String("task_id", taskID.String()),
+				zap.String("task_name", task.Name))
+
+			if err := s.activateNextBatch(ctx, task, workflowExec, core.TaskStatusStopped, lastOutput); err != nil {
+				// 没有停止分支，工作流执行失败
+				workflowExec.Status = core.WorkflowExecuteStatusFailed
+				workflowExec.TimeEnd = &now
+				workflowExec.ErrorMessage = fmt.Sprintf("任务 %s 被停止", task.Name)
+
+				logger.Info("工作流执行终止（任务被停止）",
+					zap.String("exec_id", workflowExec.ID.String()),
+					zap.String("stopped_task", task.Name))
+
+				// 🔥 更新 Workflow 统计信息
+				if err := s.workflowStore.UpdateStats(ctx, workflowExec.WorkflowID, workflowExec.Status); err != nil {
+					logger.Error("更新工作流统计失败", zap.Error(err))
+				}
+			}
+
+		case core.TaskStatusCanceled:
+			// ========== 7.2.6 任务取消 → 工作流执行取消 ==========
+			workflowExec.Status = core.WorkflowExecuteStatusCanceled
+			workflowExec.TimeEnd = &now
+			workflowExec.ErrorMessage = fmt.Sprintf("任务 %s 被取消", task.Name)
+
+			logger.Info("工作流执行已取消",
+				zap.String("exec_id", workflowExec.ID.String()),
+				zap.String("canceled_task", task.Name))
+
+		default:
+			// 其他状态（如 running, pending, todo），暂不处理
+			logger.Debug("任务状态未完成，等待后续处理",
+				zap.String("task_id", taskID.String()),
+				zap.String("status", task.Status))
+		}
 	}
 
 	// ========== Step 8: 保存 WorkflowExecute 更新 ==========
@@ -863,12 +1034,10 @@ func (s *WorkflowExecuteService) HandleTaskComplete(ctx context.Context, taskID 
 	}
 
 	// ========== Step 9: 更新 Workflow 统计信息 ==========
-	if workflowExec.IsCompleted() {
-		if err := s.workflowStore.UpdateStats(ctx, workflowExec.WorkflowID, workflowExec.Status); err != nil {
-			logger.Error("更新工作流统计失败", zap.Error(err))
-			// 不影响主流程
-		}
-	}
+	// 注意：UpdateStats() 调用已经在各个分支中完成：
+	// - activateNextBatch() 正常完成时（有下一批或没有下一批）
+	// - 或者在异常完成时（failed/error/timeout/stopped，且没有对应分支）
+	// 这里不再重复调用，避免重复计数
 
 	logger.Info("任务完成处理完毕",
 		zap.String("task_id", taskID.String()),
@@ -1041,4 +1210,424 @@ func truncateString(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// ========== 🔥 条件分支和并行执行核心方法 ==========
+
+// activateNextBatch 激活下一批任务（支持条件分支和并行执行）⭐⭐⭐
+//
+// 这是整个条件分支和并行执行的核心调度方法，负责：
+// 1. 查找下一批任务（stepOrder = currentTask.StepOrder + 1）
+// 2. 评估每个任务的条件表达式，决定执行/跳过
+// 3. 检测并行组，决定激活策略（顺序 vs 并行）
+// 4. 批量激活任务（todo → pending）或标记为跳过（skipped）
+//
+// 调用时机：
+// - 当前任务完成时（任意状态：success/failed/error/timeout）
+// - 并行组所有任务完成时
+//
+// 参数：
+//   - ctx: 上下文对象
+//   - currentTask: 当前完成的任务
+//   - workflowExec: 工作流执行实例
+//   - lastStatus: 上一步的详细状态（success/failed/error/timeout/stopped/canceled）
+//   - lastOutput: 上一步的输出对象（从 Task.Output 解析）
+//
+// 返回：
+//   - error: 查询错误或激活错误
+//
+// 核心流程：
+// 1. 查找下一批任务（同一个 order 可能有多个 Task，对应不同的条件分支）
+// 2. 使用 ConditionEvaluator 评估每个任务的条件
+// 3. 将不满足条件的任务标记为 skipped
+// 4. 根据 ParallelGroup 决定激活策略：
+//   - 有并行组：同时激活所有任务（Worker 并发执行）
+//   - 无并行组：只激活第一个任务（顺序执行）
+//
+// 5. 如果没有任务需要激活（都被跳过），递归激活下一批
+//
+// 示例场景：
+//
+// 场景1：条件分支（健康检查）
+// Step 1: 健康检查 → failed
+// Step 2a: condition="success" → 跳过
+// Step 2b: condition="failed" → 激活（执行回滚）
+//
+// 场景2：并行执行（多服务构建）
+// Step 1: 拉取代码 → success
+// Step 2a: parallel_group="build" → 激活
+// Step 2b: parallel_group="build" → 激活
+// Step 2c: parallel_group="build" → 激活
+// （所有 Task 同时 pending，Worker 并发执行）
+func (s *WorkflowExecuteService) activateNextBatch(
+	ctx context.Context,
+	currentTask *core.Task,
+	workflowExec *core.WorkflowExecute,
+	lastStatus string,
+	lastOutput map[string]interface{},
+) error {
+	// ========== Step 1: 查找下一批任务 ==========
+	nextOrder := currentTask.StepOrder + 1
+	nextTasks, err := s.taskStore.FindByWorkflowExecAndOrder(ctx, workflowExec.ID, nextOrder)
+	if err != nil {
+		logger.Error("查找下一批任务失败",
+			zap.Error(err),
+			zap.String("exec_id", workflowExec.ID.String()),
+			zap.Int("next_order", nextOrder))
+		return err
+	}
+
+	// ========== Step 2: 🔥 检查是否有下一批任务 ==========
+	if len(nextTasks) == 0 {
+		// 没有下一批任务 → 工作流执行成功
+		now := time.Now()
+		workflowExec.Status = core.WorkflowExecuteStatusSuccess
+		workflowExec.TimeEnd = &now
+
+		logger.Info("工作流执行成功（没有更多任务）",
+			zap.String("exec_id", workflowExec.ID.String()),
+			zap.Int("total_steps", workflowExec.TotalSteps),
+			zap.Int("success_steps", workflowExec.SuccessSteps),
+			zap.Int("completed_steps", workflowExec.CompletedSteps))
+
+		// 🔥 更新 WorkflowExecute 状态
+		if err := s.store.Update(ctx, workflowExec); err != nil {
+			logger.Error("更新工作流执行状态失败", zap.Error(err))
+			return err
+		}
+
+		// 🔥 更新 Workflow 统计信息（last_status、success_count 等）
+		if err := s.workflowStore.UpdateStats(ctx, workflowExec.WorkflowID, workflowExec.Status); err != nil {
+			logger.Error("更新工作流统计失败", zap.Error(err))
+			// 不返回错误，只记录日志（WorkflowExecute 已经更新成功）
+		}
+
+		return nil
+	}
+
+	logger.Info("查找到下一批任务",
+		zap.Int("next_order", nextOrder),
+		zap.Int("task_count", len(nextTasks)))
+
+	// ========== Step 3: 🔥 评估条件，过滤任务 ==========
+	variables, _ := workflowExec.GetVariables()
+	evaluator := NewConditionEvaluator()
+
+	tasksToActivate := []*core.Task{}
+	tasksToSkip := []*core.Task{}
+
+	for _, task := range nextTasks {
+		// 3.1 评估任务的条件表达式
+		shouldExecute, err := evaluator.EvaluateWithLastStatus(
+			task.Condition,
+			variables,
+			lastStatus,
+			lastOutput,
+		)
+
+		if err != nil {
+			logger.Error("条件评估失败，任务将被跳过",
+				zap.String("task_id", task.ID.String()),
+				zap.String("task_name", task.Name),
+				zap.String("condition", task.Condition),
+				zap.Error(err))
+			// 评估失败时，默认跳过任务（安全策略）
+			shouldExecute = false
+		}
+
+		// 3.2 根据评估结果分类
+		if shouldExecute {
+			tasksToActivate = append(tasksToActivate, task)
+			logger.Info("任务条件满足，将被激活",
+				zap.String("task_id", task.ID.String()),
+				zap.String("task_name", task.Name),
+				zap.String("condition", task.Condition),
+				zap.String("last_status", lastStatus))
+		} else {
+			tasksToSkip = append(tasksToSkip, task)
+			logger.Info("任务条件不满足，将被跳过",
+				zap.String("task_id", task.ID.String()),
+				zap.String("task_name", task.Name),
+				zap.String("condition", task.Condition),
+				zap.String("last_status", lastStatus))
+		}
+	}
+
+	// ========== Step 4: 🔥 标记跳过的任务 ==========
+	for _, task := range tasksToSkip {
+		now := time.Now()
+		task.Status = core.TaskStatusSkipped
+		task.TimePlan = now
+		task.TimeStart = &now
+		task.TimeEnd = &now
+
+		if _, err := s.taskStore.Update(ctx, task); err != nil {
+			logger.Error("标记任务为 skipped 失败",
+				zap.Error(err),
+				zap.String("task_id", task.ID.String()))
+			// 继续处理其他任务，不中断流程
+		} else {
+			logger.Info("任务已标记为 skipped",
+				zap.String("task_id", task.ID.String()),
+				zap.String("task_name", task.Name))
+		}
+	}
+
+	// ========== Step 5: 🔥 检查是否有任务需要激活 ==========
+	if len(tasksToActivate) == 0 {
+		logger.Info("没有任务需要激活（都被跳过），尝试激活下一批",
+			zap.Int("current_order", nextOrder),
+			zap.Int("skipped_count", len(tasksToSkip)))
+
+		// 🔥 递归激活下一批（跳过本批，继续下一批）
+		// 创建一个虚拟 task（order = nextOrder）用于递归
+		virtualTask := &core.Task{
+			StepOrder: nextOrder,
+		}
+		return s.activateNextBatch(ctx, virtualTask, workflowExec, lastStatus, lastOutput)
+	}
+
+	// ========== Step 6: 🔥 检测并行组，决定激活策略 ==========
+	parallelGroup := tasksToActivate[0].ParallelGroup
+
+	if parallelGroup != "" {
+		// ========== 6.1 🔥 并行执行：同时激活所有任务 ==========
+		logger.Info("检测到并行组，将同时激活所有任务",
+			zap.String("parallel_group", parallelGroup),
+			zap.Int("task_count", len(tasksToActivate)))
+
+		// 激活所有任务（todo → pending）
+		// Worker 会并发执行这些 pending 的任务
+		for _, task := range tasksToActivate {
+			if err := s.activateTask(ctx, task, workflowExec); err != nil {
+				logger.Error("激活并行任务失败",
+					zap.String("task_id", task.ID.String()),
+					zap.String("task_name", task.Name),
+					zap.Error(err))
+				// 继续激活其他任务，不中断流程
+			} else {
+				logger.Info("并行任务已激活",
+					zap.String("task_id", task.ID.String()),
+					zap.String("task_name", task.Name))
+			}
+		}
+	} else {
+		// ========== 6.2 🔥 顺序执行：只激活第一个任务 ==========
+		logger.Info("顺序执行，激活第一个任务",
+			zap.String("task_id", tasksToActivate[0].ID.String()),
+			zap.String("task_name", tasksToActivate[0].Name))
+
+		if err := s.activateTask(ctx, tasksToActivate[0], workflowExec); err != nil {
+			logger.Error("激活任务失败",
+				zap.String("task_id", tasksToActivate[0].ID.String()),
+				zap.Error(err))
+			return err
+		}
+
+		logger.Info("任务已激活",
+			zap.String("task_id", tasksToActivate[0].ID.String()),
+			zap.String("task_name", tasksToActivate[0].Name))
+	}
+
+	return nil
+}
+
+// handleParallelTaskComplete 处理并行任务完成⭐
+//
+// 这是并行执行的核心完成检测方法，负责：
+// 1. 查找同组的所有并行任务
+// 2. 统计任务完成情况（总数、成功数、失败数、跳过数）
+// 3. 根据等待策略（WaitStrategy）判断是否继续下一批
+// 4. 根据失败策略（FailureStrategy）决定失败时的处理方式
+// 5. 调用 activateNextBatch() 激活下一批任务
+//
+// 调用时机：
+// - 并行组内的任何一个任务完成时都会调用
+// - 但只有满足等待策略时才会继续下一批
+//
+// 参数：
+//   - ctx: 上下文对象
+//   - task: 当前完成的并行任务
+//   - workflowExec: 工作流执行实例
+//   - lastOutput: 当前任务的输出对象
+//
+// 返回：
+//   - error: 查询错误或激活错误
+//
+// 等待策略（WaitStrategy）：
+// - "all": 等待所有并行任务完成（默认）
+// - "any": 任意一个完成即可
+// - "threshold:N": 完成 N 个即可（如 "threshold:3"）
+//
+// 失败策略（FailureStrategy）：
+// - "continue": 某个任务失败，其他继续（默认）
+// - "abort": 某个任务失败，立即终止所有并行任务和工作流
+//
+// 示例场景：
+//
+// 场景1：构建任务（等待全部，失败中止）
+// Task A: 构建服务A → success
+// Task B: 构建服务B → failed（立即中止工作流）
+//
+// 场景2：部署任务（等待全部，失败继续）
+// Task A: 部署服务A → success
+// Task B: 部署服务B → failed（继续等待其他任务）
+// Task C: 部署服务C → success
+// → 等待全部完成后，激活下一批（传递 failed 状态）
+func (s *WorkflowExecuteService) handleParallelTaskComplete(
+	ctx context.Context,
+	task *core.Task,
+	workflowExec *core.WorkflowExecute,
+	lastOutput map[string]interface{},
+) error {
+	// ========== Step 1: 查找同组的所有任务 ==========
+	groupTasks, err := s.taskStore.FindByWorkflowExecAndParallelGroup(
+		ctx,
+		workflowExec.ID,
+		task.ParallelGroup,
+	)
+	if err != nil {
+		logger.Error("查找并行组任务失败",
+			zap.Error(err),
+			zap.String("exec_id", workflowExec.ID.String()),
+			zap.String("parallel_group", task.ParallelGroup))
+		return err
+	}
+
+	logger.Info("并行任务完成，检查同组任务状态",
+		zap.String("parallel_group", task.ParallelGroup),
+		zap.Int("total_tasks", len(groupTasks)),
+		zap.String("completed_task_id", task.ID.String()),
+		zap.String("completed_task_status", task.Status))
+
+	// ========== Step 2: 统计任务状态 ==========
+	var (
+		totalCount     = len(groupTasks)
+		completedCount = 0
+		successCount   = 0
+		failedCount    = 0
+		skippedCount   = 0
+	)
+
+	for _, t := range groupTasks {
+		switch t.Status {
+		case core.TaskStatusSuccess:
+			completedCount++
+			successCount++
+		case core.TaskStatusFailed, core.TaskStatusError, core.TaskStatusTimeout, core.TaskStatusStopped:
+			completedCount++
+			failedCount++
+		case core.TaskStatusSkipped:
+			completedCount++
+			skippedCount++
+		case core.TaskStatusCanceled:
+			completedCount++
+			// 被取消的任务不计入成功或失败
+		}
+	}
+
+	logger.Info("并行组任务统计",
+		zap.Int("total", totalCount),
+		zap.Int("completed", completedCount),
+		zap.Int("success", successCount),
+		zap.Int("failed", failedCount),
+		zap.Int("skipped", skippedCount))
+
+	// ========== Step 3: 🔥 先检查失败策略（failure_strategy=abort 需立即处理） ==========
+	failureStrategy := task.FailureStrategy
+	if failureStrategy == "" {
+		failureStrategy = "continue" // 默认继续
+	}
+
+	if failedCount > 0 && failureStrategy == "abort" {
+		// ========== 3.1 🔥 失败策略=abort：任意一个任务失败，立即终止工作流 ==========
+		now := time.Now()
+		workflowExec.Status = core.WorkflowExecuteStatusFailed
+		workflowExec.TimeEnd = &now
+		workflowExec.ErrorMessage = fmt.Sprintf("并行组 %s 有 %d 个任务失败（失败策略=abort）", task.ParallelGroup, failedCount)
+
+		logger.Error("并行组有任务失败，立即终止工作流（失败策略=abort）",
+			zap.String("parallel_group", task.ParallelGroup),
+			zap.Int("failed_count", failedCount),
+			zap.Int("completed", completedCount),
+			zap.Int("total", totalCount),
+			zap.String("failure_strategy", failureStrategy))
+
+		// 立即更新工作流状态，不再等待其他并行任务
+		return s.store.Update(ctx, workflowExec)
+	}
+
+	// ========== Step 4: 🔥 检查等待策略（failure_strategy=continue 时才需要等待） ==========
+	waitStrategy := task.WaitStrategy
+	if waitStrategy == "" {
+		waitStrategy = "all" // 默认等待全部
+	}
+
+	shouldContinue := false
+
+	switch {
+	case waitStrategy == "all":
+		// 等待全部完成（包括 skipped）
+		shouldContinue = (completedCount == totalCount)
+
+	case waitStrategy == "any":
+		// 任意一个完成即可（不包括 skipped）
+		shouldContinue = (successCount > 0 || failedCount > 0)
+
+	case strings.HasPrefix(waitStrategy, "threshold:"):
+		// threshold:N 形式（完成 N 个即可）
+		thresholdStr := strings.TrimPrefix(waitStrategy, "threshold:")
+		threshold := 0
+		if _, err := fmt.Sscanf(thresholdStr, "%d", &threshold); err != nil {
+			logger.Error("解析等待策略失败，fallback to 'all'",
+				zap.String("wait_strategy", waitStrategy),
+				zap.Error(err))
+			shouldContinue = (completedCount == totalCount) // fallback to "all"
+		} else {
+			shouldContinue = (completedCount >= threshold)
+		}
+
+	default:
+		logger.Warn("未知的等待策略，fallback to 'all'",
+			zap.String("wait_strategy", waitStrategy))
+		shouldContinue = (completedCount == totalCount) // fallback to "all"
+	}
+
+	if !shouldContinue {
+		logger.Info("并行组还有任务未完成，继续等待",
+			zap.String("wait_strategy", waitStrategy),
+			zap.Int("completed", completedCount),
+			zap.Int("total", totalCount))
+		return nil // 继续等待
+	}
+
+	logger.Info("并行组满足等待策略，准备激活下一批",
+		zap.String("wait_strategy", waitStrategy),
+		zap.Int("completed", completedCount),
+		zap.Int("total", totalCount))
+
+	// ========== Step 5: 🔥 确定最终状态（failure_strategy=continue 且有失败） ==========
+	var finalStatus string
+
+	if failedCount > 0 {
+		// ========== 5.1 🔥 失败策略=continue：继续执行，传递 failed 状态 ==========
+		finalStatus = core.TaskStatusFailed
+
+		logger.Info("并行组有任务失败，但继续执行（失败策略=continue）",
+			zap.String("parallel_group", task.ParallelGroup),
+			zap.Int("failed_count", failedCount),
+			zap.String("failure_strategy", failureStrategy))
+	} else {
+		// 全部成功（或都被跳过）
+		finalStatus = core.TaskStatusSuccess
+	}
+
+	// ========== Step 5: 🔥 激活下一批任务 ==========
+	logger.Info("并行组全部完成，激活下一批任务",
+		zap.String("parallel_group", task.ParallelGroup),
+		zap.String("final_status", finalStatus),
+		zap.Int("success_count", successCount),
+		zap.Int("failed_count", failedCount))
+
+	return s.activateNextBatch(ctx, task, workflowExec, finalStatus, lastOutput)
 }

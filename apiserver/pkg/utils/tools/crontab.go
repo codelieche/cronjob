@@ -285,7 +285,8 @@ func (c *CronExpression) NextExecutionTime(fromTime time.Time) (time.Time, error
 		// 检查日期
 		if !contains(c.dayRanges, next.Day()) {
 			// 移动到下一天00:00:00
-			next = next.Add(24 * time.Hour).Truncate(24 * time.Hour)
+			// 🔥 不能使用 Truncate(24h)，在非UTC时区会截断到错误的时间
+			next = time.Date(next.Year(), next.Month(), next.Day()+1, 0, 0, 0, 0, next.Location())
 			continue
 		}
 
@@ -293,7 +294,8 @@ func (c *CronExpression) NextExecutionTime(fromTime time.Time) (time.Time, error
 		weekday := int(next.Weekday())
 		if !contains(c.weekdayRanges, weekday) {
 			// 移动到下一天00:00:00
-			next = next.Add(24 * time.Hour).Truncate(24 * time.Hour)
+			// 🔥 不能使用 Truncate(24h)，在非UTC时区会截断到错误的时间
+			next = time.Date(next.Year(), next.Month(), next.Day()+1, 0, 0, 0, 0, next.Location())
 			continue
 		}
 

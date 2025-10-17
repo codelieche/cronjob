@@ -111,6 +111,7 @@ func (s *TaskStore) Update(ctx context.Context, task *core.Task) (*core.Task, er
 		"status", "output", "save_log",
 		"retry_count", "max_retry", "retryable", "failure_reason", "next_retry_time", // 🔥 包含重试配置字段
 		"worker_id", "worker_name", "is_standalone", "timeout", "metadata",
+		"condition", "parallel_group", "wait_strategy", "failure_strategy", // 🔥 条件分支和并行执行字段
 	}
 
 	// 更新任务信息
@@ -456,6 +457,93 @@ func (s *TaskStore) GetNeedRetryTasks(ctx context.Context, limit int) ([]*core.T
 		Limit(limit)
 
 	if err := query.Find(&tasks).Error; err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+
+// FindByWorkflowExecAndOrder 根据工作流执行ID和步骤序号查找任务⭐
+//
+// 这是条件分支的核心查询方法：
+// - 在工作流执行时，需要查找下一批任务（nextOrder = currentTask.StepOrder + 1）
+// - 由于支持条件分支，同一个 order 可能对应多个 Task（不同的条件分支）
+// - 返回的任务列表需要在 activateNextBatch() 中进行条件评估和过滤
+//
+// 查询条件：
+// - workflow_exec_id = ? AND step_order = ?
+// - 按 id ASC 排序（保证顺序一致性）
+//
+// 参数：
+//   - ctx: 上下文对象
+//   - workflowExecID: 工作流执行实例ID
+//   - order: 步骤序号（从1开始）
+//
+// 返回：
+//   - []*Task: 任务列表（可能为空，如果是最后一步）
+//   - error: 查询错误
+func (s *TaskStore) FindByWorkflowExecAndOrder(
+	ctx context.Context,
+	workflowExecID uuid.UUID,
+	order int,
+) ([]*core.Task, error) {
+	var tasks []*core.Task
+
+	// 使用复合索引：idx_workflow_exec_order (workflow_exec_id, step_order)
+	err := s.db.WithContext(ctx).
+		Where("workflow_exec_id = ? AND step_order = ?", workflowExecID, order).
+		Order("id ASC"). // 按 ID 排序，保证顺序一致
+		Find(&tasks).Error
+
+	return tasks, err
+}
+
+// FindByWorkflowExecAndParallelGroup 根据工作流执行ID和并行组ID查找任务⭐
+//
+// 这是并行执行的核心查询方法：
+// - 在并行任务完成时，需要查找同组的所有任务，判断是否全部完成
+// - 通过 WaitStrategy 决定是否继续下一批任务
+// - 通过 FailureStrategy 决定失败时的处理方式
+//
+// 查询条件：
+// - workflow_exec_id = ? AND parallel_group = ?
+// - 按 step_order ASC, id ASC 排序
+//
+// 参数：
+//   - ctx: 上下文对象
+//   - workflowExecID: 工作流执行实例ID
+//   - parallelGroup: 并行组ID
+//
+// 返回：
+//   - []*Task: 任务列表
+//   - error: 查询错误
+func (s *TaskStore) FindByWorkflowExecAndParallelGroup(
+	ctx context.Context,
+	workflowExecID uuid.UUID,
+	parallelGroup string,
+) ([]*core.Task, error) {
+	var tasks []*core.Task
+
+	// 使用复合索引：idx_workflow_exec_parallel (workflow_exec_id, parallel_group)
+	err := s.db.WithContext(ctx).
+		Where("workflow_exec_id = ? AND parallel_group = ?", workflowExecID, parallelGroup).
+		Order("step_order ASC, id ASC"). // 按步骤序号和 ID 排序
+		Find(&tasks).Error
+
+	return tasks, err
+}
+
+// ListByWorkflowExecID 根据工作流执行ID获取任务列表
+func (s *TaskStore) ListByWorkflowExecID(ctx context.Context, workflowExecID uuid.UUID) ([]*core.Task, error) {
+	var tasks []*core.Task
+
+	// 使用 workflow_exec_id 索引查询
+	err := s.db.WithContext(ctx).
+		Where("workflow_exec_id = ?", workflowExecID).
+		Order("step_order ASC, id ASC"). // 按步骤序号排序
+		Find(&tasks).Error
+
+	if err != nil {
 		return nil, err
 	}
 

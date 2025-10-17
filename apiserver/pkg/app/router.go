@@ -184,16 +184,20 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	cronjobRoutes := apis.Group("/cronjob")
 	cronjobRoutes.Use(authGroup.Standard) // 使用标准认证中间件
 	{
-		cronjobRoutes.POST("/", cronjobController.Create)                                          // 创建定时任务
-		cronjobRoutes.GET("/", cronjobController.List)                                             // 获取定时任务列表
-		cronjobRoutes.GET("/:id/", cronjobController.Find)                                         // 根据ID获取定时任务
-		cronjobRoutes.PUT("/:id/", cronjobController.Update)                                       // 更新定时任务信息
-		cronjobRoutes.DELETE("/:id/", cronjobController.Delete)                                    // 删除定时任务
-		cronjobRoutes.PUT("/:id/toggle-active/", cronjobController.ToggleActive)                   // 切换任务激活状态
-		cronjobRoutes.POST("/:id/execute/", cronjobController.Execute)                             // 手动执行定时任务
+		cronjobRoutes.POST("/", cronjobController.Create) // 创建定时任务
+		cronjobRoutes.GET("/", cronjobController.List)    // 获取定时任务列表
+
+		// 具体路径（必须在 /:id/ 之前注册，避免路由冲突）
 		cronjobRoutes.POST("/validate-expression/", cronjobController.ValidateExpression)          // 验证cron表达式
 		cronjobRoutes.GET("/project/:project/name/:name/", cronjobController.FindByProjectAndName) // 根据项目和名称获取任务
-		cronjobRoutes.PATCH("/:id/", cronjobController.Patch)                                      // 动态更新部分字段
+
+		// 单个任务操作（动态路由放在最后）
+		cronjobRoutes.GET("/:id/", cronjobController.Find)                       // 根据ID获取定时任务
+		cronjobRoutes.PUT("/:id/", cronjobController.Update)                     // 更新定时任务信息
+		cronjobRoutes.PATCH("/:id/", cronjobController.Patch)                    // 动态更新部分字段
+		cronjobRoutes.DELETE("/:id/", cronjobController.Delete)                  // 删除定时任务
+		cronjobRoutes.PUT("/:id/toggle-active/", cronjobController.ToggleActive) // 切换任务激活状态
+		cronjobRoutes.POST("/:id/execute/", cronjobController.Execute)           // 手动执行定时任务
 	}
 
 	// ========== 工作流管理模块 ⭐ ==========
@@ -208,19 +212,36 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	workflowService := services.NewWorkflowService(workflowStore)
 	workflowController := controllers.NewWorkflowController(workflowService)
 
+	// 🔥 将 credentialService 和 cronJobService 注入到 workflowService 中
+	// 用于一键创建Webhook定时任务功能
+	if ws, ok := workflowService.(*services.WorkflowService); ok {
+		ws.SetCredentialService(credentialService)
+		ws.SetCronJobService(cronjobService)
+	}
+
 	// Workflow 模板管理接口需要用户认证
 	workflowRoutes := apis.Group("/workflow")
 	workflowRoutes.Use(authGroup.Standard) // 使用标准认证中间件
 	{
-		workflowRoutes.POST("/", workflowController.Create)                         // 创建工作流模板
-		workflowRoutes.GET("/", workflowController.List)                            // 获取工作流列表
+		workflowRoutes.POST("/", workflowController.Create) // 创建工作流模板
+		workflowRoutes.GET("/", workflowController.List)    // 获取工作流列表
+
+		// 具体路径（必须在 /:id/ 之前注册，避免路由冲突）
+		workflowRoutes.GET("/by-code/:code/", workflowController.FindByCode) // 根据Code获取工作流（用于快捷访问）
+
+		// 单个工作流操作（动态路由放在最后）
 		workflowRoutes.GET("/:id/", workflowController.Find)                        // 根据ID获取工作流详情
-		workflowRoutes.GET("/by-code/:code/", workflowController.FindByCode)        // 根据Code获取工作流（用于快捷访问）
 		workflowRoutes.PUT("/:id/", workflowController.Update)                      // 更新工作流模板
 		workflowRoutes.DELETE("/:id/", workflowController.Delete)                   // 删除工作流
 		workflowRoutes.POST("/:id/toggle-active/", workflowController.ToggleActive) // 切换激活状态
 		workflowRoutes.GET("/:id/statistics/", workflowController.GetStatistics)    // 获取统计信息
 	}
+
+	// ========== 工作流 Webhook 触发模块 🔥 ==========
+	// Webhook 触发接口：无需认证，通过 Token 验证
+	// Webhook 管理接口：需要用户认证
+	// 🔥 注意：workflowExecService 会在后面创建，这里先声明控制器，后面再初始化路由
+	var webhookController *controllers.WorkflowWebhookController
 
 	// ========== 工作流执行管理模块 ⭐ ==========
 	// WorkflowExecute 执行实例管理
@@ -258,10 +279,18 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	taskStore = store.NewTaskStore(db)                               // 🔥 这里使用之前声明的变量
 	taskService := services.NewTaskService(taskStore, lockerService) // 🔥 注入lockerService用于取消功能
 
-	// 🔥 创建 WorkflowExecute 相关服务（在 taskStore 创建后）⭐
+	// 🔥 提前创建 approvalStore（用于 WorkflowExecuteService 的依赖注入）
+	approvalStore := store.NewApprovalStore(db)
+	approvalRecordStore := store.NewApprovalRecordStore(db)
+
+	// 🔥 创建 WorkflowExecute 相关服务（在 taskStore 和 approvalStore 创建后）⭐
 	workflowExecStore := store.NewWorkflowExecuteStore(db)
-	workflowExecService = services.NewWorkflowExecuteService(workflowExecStore, workflowStore, taskStore)
+	workflowExecService = services.NewWorkflowExecuteService(workflowExecStore, workflowStore, taskStore, approvalStore)
+
 	workflowExecController := controllers.NewWorkflowExecuteController(workflowExecService)
+
+	// 🔥 创建 Webhook 控制器（在 workflowExecService 创建后）⭐
+	webhookController = controllers.NewWorkflowWebhookController(workflowService, workflowExecService)
 
 	// WorkflowExecute 执行实例管理接口需要用户认证
 	workflowExecRoutes := apis.Group("/workflow-execute")
@@ -278,7 +307,43 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	{
 		workflowRoutes.POST("/:id/execute/", workflowExecController.Execute)          // ⭐ 触发执行
 		workflowRoutes.GET("/:id/executes/", workflowExecController.ListByWorkflowID) // 执行历史
+
+		// 🔥 Webhook 管理接口（需要用户认证）
+		workflowRoutes.PUT("/:id/webhook/toggle", webhookController.ToggleWebhook)          // 启用/禁用Webhook
+		workflowRoutes.POST("/:id/webhook/regenerate", webhookController.RegenerateToken)   // 重新生成Token
+		workflowRoutes.PUT("/:id/webhook/whitelist", webhookController.UpdateIPWhitelist)   // 更新IP白名单
+		workflowRoutes.GET("/:id/webhook/info", webhookController.GetWebhookInfo)           // 获取Webhook信息
+		workflowRoutes.GET("/:id/webhook/url", webhookController.GetWebhookFullURL)         // 获取完整Webhook URL
+		workflowRoutes.POST("/:id/webhook/cronjob", webhookController.CreateWebhookCronJob) // 🔥 一键创建Webhook定时任务
 	}
+
+	// 🔥 Webhook 触发接口（无需认证，通过查询参数key传递Token）
+	// 注意：必须在所有需要认证的路由之外单独注册，避免被认证中间件拦截
+	webhookRoutes := apis.Group("/workflow")
+	// 不添加认证中间件，允许外部系统直接访问
+	{
+		webhookRoutes.POST("/:id/webhook", webhookController.TriggerByWebhook) // 🔥 Webhook触发（?key=token）
+	}
+
+	// ========== Workflow统计分析模块 ⭐ ==========
+	// 提供Workflow执行的统计分析功能
+	// 🔥 核心功能：
+	//   1. 执行成功率趋势（最近N天）
+	//   2. 执行效率分析（平均时长、时长分布）
+	//   3. Workflow排行榜（Top 10高频Workflow）
+	//   4. 时间分布分析（按星期统计）
+	//   5. 时间段对比（本周vs上周、本月vs上月）
+	//   6. 手动聚合触发（补偿机制）
+	workflowStatsStore := store.NewWorkflowStatsStore(db)
+	workflowStatsService := services.NewWorkflowStatsService(db, workflowStatsStore, workflowExecStore, workflowStore)
+	workflowStatsController := controllers.NewWorkflowStatsController(workflowStatsService)
+
+	// Workflow统计分析接口（需要用户认证）
+	apis.GET("/workflow/analysis/", authGroup.Standard, workflowStatsController.GetAnalysis)
+
+	// Workflow统计聚合接口（需要管理员权限）
+	apis.POST("/workflow/stats/aggregate/daily", authGroup.Admin, workflowStatsController.TriggerDailyAggregation)           // 手动触发每日聚合
+	apis.POST("/workflow/stats/aggregate/historical", authGroup.Admin, workflowStatsController.TriggerHistoricalAggregation) // 手动触发历史聚合
 
 	// 🔥 创建dispatchService用于任务调度和重试（注意：在taskController之前创建）
 	dispatchService := services.NewDispatchService(cronjobStore, taskStore, lockerService)
@@ -417,6 +482,83 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 
 	// 监控指标直接注册到app根路由，不经过apis路由组，避免中间件影响
 	app.GET("/metrics", metricsController.Metrics)
+
+	// ========== 审批管理模块 ==========
+	// 提供AI平台配置、AI Agent和审批功能
+
+	// AI Provider管理
+	aiProviderStore := store.NewAIProviderStore(db)
+	aiProviderService := services.NewAIProviderService(aiProviderStore)
+	aiProviderController := controllers.NewAIProviderController(aiProviderService)
+
+	aiProviderRoutes := apis.Group("/ai-providers")
+	aiProviderRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		aiProviderRoutes.POST("/", aiProviderController.Create)       // 创建AI平台配置
+		aiProviderRoutes.GET("/", aiProviderController.List)          // 获取AI平台配置列表
+		aiProviderRoutes.GET("/:id/", aiProviderController.Get)       // 获取单个AI平台配置
+		aiProviderRoutes.PUT("/:id/", aiProviderController.Update)    // 更新AI平台配置
+		aiProviderRoutes.DELETE("/:id/", aiProviderController.Delete) // 删除AI平台配置
+	}
+
+	// AI Agent管理
+	aiAgentStore := store.NewAIAgentStore(db)
+	aiAgentService := services.NewAIAgentService(aiAgentStore)
+	aiAgentController := controllers.NewAIAgentController(aiAgentService)
+
+	aiAgentRoutes := apis.Group("/ai-agents")
+	aiAgentRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		aiAgentRoutes.POST("/", aiAgentController.Create)       // 创建AI Agent
+		aiAgentRoutes.GET("/", aiAgentController.List)          // 获取AI Agent列表
+		aiAgentRoutes.GET("/:id/", aiAgentController.Get)       // 获取单个AI Agent
+		aiAgentRoutes.PUT("/:id/", aiAgentController.Update)    // 更新AI Agent
+		aiAgentRoutes.DELETE("/:id/", aiAgentController.Delete) // 删除AI Agent
+	}
+
+	// ========== Usercenter服务 ==========
+	// 🔥 创建 Usercenter Service（用于发送站内信通知）
+	// 复用 Auth 配置（Auth 服务就是 Usercenter 服务）
+	usercenterService := services.NewUsercenterService(
+		config.Auth.ApiUrl,
+		config.Auth.ApiKey,
+		config.Auth.Timeout,
+	)
+
+	// 🔥 审批管理（approvalStore 和 approvalRecordStore 已在前面创建）
+	approvalService := services.NewApprovalService(
+		approvalStore,
+		approvalRecordStore,
+		taskStore,
+		workflowExecStore,
+		workflowExecService, // 🔥 传递 workflowExecService
+		usercenterService,   // 🔥 传递 usercenterService
+	)
+	approvalController := controllers.NewApprovalController(approvalService)
+
+	approvalRoutes := apis.Group("/approvals")
+	approvalRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		approvalRoutes.POST("/", approvalController.Create) // 创建审批
+		approvalRoutes.GET("/", approvalController.List)    // 获取审批列表
+
+		// 我的审批（必须在 /:id/ 之前注册，避免路由冲突）
+		approvalRoutes.GET("/my/pending/", approvalController.MyPending) // 我的待审批
+		approvalRoutes.GET("/my/created/", approvalController.MyCreated) // 我发起的审批
+
+		// 单个审批操作（动态路由放在最后）
+		approvalRoutes.GET("/:id/", approvalController.Get)                  // 获取单个审批
+		approvalRoutes.POST("/:id/action/", approvalController.HandleAction) // 统一审批操作接口（approve/reject/cancel）
+		approvalRoutes.DELETE("/:id/", approvalController.Delete)            // 删除审批
+	}
+
+	// 审批记录管理
+	approvalRecordController := controllers.NewApprovalRecordController(approvalRecordStore)
+	approvalRecordRoutes := apis.Group("/approval-records")
+	approvalRecordRoutes.Use(authGroup.Standard) // 使用标准认证中间件
+	{
+		approvalRecordRoutes.GET("/", approvalRecordController.List) // 获取审批记录列表（支持按approval_id过滤）
+	}
 
 	// ========== 认证缓存管理接口 ==========
 	// 提供认证缓存管理功能，需要管理员权限

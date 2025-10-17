@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -277,19 +278,27 @@ func (controller *TaskController) Update(c *gin.Context) {
 			updatedTask.Status == core.TaskStatusFailed ||
 			updatedTask.Status == core.TaskStatusError ||
 			updatedTask.Status == core.TaskStatusTimeout ||
-			updatedTask.Status == core.TaskStatusCanceled
+			updatedTask.Status == core.TaskStatusCanceled ||
+			updatedTask.Status == core.TaskStatusStopped
 
 		// 检查状态是否发生变化（从非完成态 → 完成态）
 		wasNotCompleted := oldStatus != core.TaskStatusSuccess &&
 			oldStatus != core.TaskStatusFailed &&
 			oldStatus != core.TaskStatusError &&
 			oldStatus != core.TaskStatusTimeout &&
-			oldStatus != core.TaskStatusCanceled
+			oldStatus != core.TaskStatusCanceled &&
+			oldStatus != core.TaskStatusStopped
 
 		if isCompletedStatus && wasNotCompleted {
-			// 异步调用 HandleTaskComplete，避免阻塞响应
+			// 🔥 异步调用 HandleTaskComplete，避免阻塞响应
+			// 重要：使用 context.Background() 而不是 c.Request.Context()
+			// 因为 gin 的 context 在请求结束后会被取消，导致后续数据库操作失败
 			go func(taskID uuid.UUID) {
-				if err := controller.workflowExecService.HandleTaskComplete(c.Request.Context(), taskID); err != nil {
+				// 使用带超时的 context，避免无限等待
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+
+				if err := controller.workflowExecService.HandleTaskComplete(ctx, taskID); err != nil {
 					// 记录错误日志，但不影响响应
 					fmt.Printf("HandleTaskComplete error: %v\n", err)
 				}

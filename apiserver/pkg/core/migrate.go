@@ -36,10 +36,16 @@ func AutoMigrate(db *gorm.DB) error {
 			&WorkflowExecute{}, // 工作流执行实例
 
 			// 🔥 统计数据表（用于性能优化）
-			&TaskStatsDaily{},    // 任务每日统计
-			&CronjobStatsDaily{}, // CronJob每日统计
-			&WorkerStatsDaily{},  // Worker每日统计
-			&TaskStatsHourly{},   // 任务每小时统计（可选）
+			&TaskStatsDaily{},     // 任务每日统计
+			&CronjobStatsDaily{},  // CronJob每日统计
+			&WorkerStatsDaily{},   // Worker每日统计
+			&WorkflowStatsDaily{}, // Workflow每日统计
+
+			// 🔥 审批管理表（Approval 模块）
+			&AIProvider{},     // AI平台配置
+			&AIAgent{},        // AI Agent实体
+			&Approval{},       // 审批记录
+			&ApprovalRecord{}, // 审批操作历史
 		); err != nil {
 			// 如果迁移过程中出现错误，返回错误信息
 			return err

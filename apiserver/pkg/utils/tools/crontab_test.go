@@ -208,3 +208,78 @@ func TestCronJobExecuteTime(t *testing.T) {
 	}
 	t.Log("下次执行的时间是", next)
 }
+
+// TestMonthlyExecutionTime 测试每月1号0点执行的表达式
+func TestMonthlyExecutionTime(t *testing.T) {
+	expr := "0 0 0 1 * * *" // 每月1号0点0分0秒
+	t.Logf("测试表达式: %s", expr)
+
+	cron, err := NewCronExpression(expr)
+	if err != nil {
+		t.Fatalf("❌ 解析表达式失败: %v", err)
+	}
+	t.Log("✅ 表达式解析成功")
+
+	// 打印解析后的字段
+	t.Logf("解析结果:")
+	t.Logf("  秒: %s -> %v", cron.Second, cron.secondRanges)
+	t.Logf("  分: %s -> %v", cron.Minute, cron.minuteRanges)
+	t.Logf("  时: %s -> %v", cron.Hour, cron.hourRanges)
+	t.Logf("  日: %s -> %v", cron.Day, cron.dayRanges)
+	t.Logf("  月: %s -> 长度=%d", cron.Month, len(cron.monthRanges))
+	t.Logf("  周: %s -> %v", cron.Weekday, cron.weekdayRanges)
+	t.Logf("  年: %s -> 长度=%d", cron.Year, len(cron.yearRanges))
+
+	// 测试从一个固定时间开始（2025年10月18号13点）
+	now := time.Date(2025, 10, 18, 13, 0, 0, 0, time.Local)
+	t.Logf("当前时间: %s (周%d)", now.Format("2006-01-02 15:04:05"), now.Weekday())
+
+	// 期望的下一次执行时间应该是 2025年11月1号0点
+	expected := time.Date(2025, 11, 1, 0, 0, 0, 0, time.Local)
+	t.Logf("期望时间: %s (周%d)", expected.Format("2006-01-02 15:04:05"), expected.Weekday())
+
+	next, err := cron.NextExecutionTime(now)
+	if err != nil {
+		t.Fatalf("❌ 获取下一次执行时间失败: %v", err)
+	}
+
+	t.Logf("✅ 下一次执行时间: %s (周%d)", next.Format("2006-01-02 15:04:05"), next.Weekday())
+
+	// 验证是否是1号
+	if next.Day() != 1 {
+		t.Errorf("下一次执行应该在1号，但得到 %d 号", next.Day())
+	}
+
+	// 验证是否是0点0分0秒
+	if next.Hour() != 0 || next.Minute() != 0 || next.Second() != 0 {
+		t.Errorf("下一次执行应该在 00:00:00，但得到 %02d:%02d:%02d",
+			next.Hour(), next.Minute(), next.Second())
+	}
+
+	// 验证时间在未来
+	if !next.After(now) {
+		t.Errorf("下一次执行时间应该在当前时间之后")
+	}
+
+	// 连续计算接下来的12次（一年）
+	t.Log("\n接下来12个月的执行时间:")
+	current := now
+	for i := 0; i < 12; i++ {
+		next, err := cron.NextExecutionTime(current)
+		if err != nil {
+			t.Fatalf("第 %d 次计算失败: %v", i+1, err)
+		}
+
+		// 验证每次都是1号0点
+		if next.Day() != 1 {
+			t.Errorf("第 %d 次: 应该在1号，但得到 %d 号", i+1, next.Day())
+		}
+		if next.Hour() != 0 || next.Minute() != 0 || next.Second() != 0 {
+			t.Errorf("第 %d 次: 应该在 00:00:00，但得到 %02d:%02d:%02d",
+				i+1, next.Hour(), next.Minute(), next.Second())
+		}
+
+		t.Logf("  %2d. %s", i+1, next.Format("2006-01-02 15:04:05 Mon"))
+		current = next
+	}
+}

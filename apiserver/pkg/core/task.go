@@ -17,15 +17,17 @@ import (
 // 任务执行状态常量定义
 // 用于标识任务在生命周期中的不同状态
 const (
+	TaskStatusTodo     = "todo"     // 🔥 待激活 - 工作流任务预创建状态，Worker 看不到
 	TaskStatusPending  = "pending"  // 待执行 - 任务已创建，等待调度执行
 	TaskStatusRunning  = "running"  // 运行中 - 任务正在执行
 	TaskStatusSuccess  = "success"  // 执行成功 - 任务执行完成且成功
-	TaskStatusFailed   = "failed"   // 执行失败 - 任务执行完成但失败
-	TaskStatusError    = "error"    // 执行错误 - 任务执行过程中发生错误
+	TaskStatusFailed   = "failed"   // 执行失败 - 任务执行完成但业务失败（如：测试失败、健康检查返回 503）
+	TaskStatusError    = "error"    // 执行错误 - 任务执行过程中发生系统错误（如：网络不通、服务不可用）
 	TaskStatusTimeout  = "timeout"  // 执行超时 - 任务执行时间超过设定值
 	TaskStatusCanceled = "canceled" // 已取消 - 任务被手动取消（通常用于pending状态）
 	TaskStatusStopped  = "stopped"  // 🔥 已停止 - 任务被用户主动停止（running状态被stop/kill）
 	TaskStatusRetrying = "retrying" // 重试中 - 任务正在重试执行
+	TaskStatusSkipped  = "skipped"  // 🔥 已跳过 - 条件不满足，未执行（工作流条件分支）
 )
 
 // Task 任务执行记录实体
@@ -39,46 +41,54 @@ const (
 //
 // 这是CronJob的具体执行实例，每次调度都会创建一个新的Task
 type Task struct {
-	ID             uuid.UUID       `gorm:"size:256;primaryKey" json:"id"`                                                                                                                                     // 任务唯一标识
-	TeamID         *uuid.UUID      `gorm:"size:256;index;index:idx_team_status_created,priority:1;index:idx_team_deleted,priority:1" json:"team_id"`                                                          // 团队ID，用于多租户隔离（复合索引：team_id+status+created_at, team_id+deleted_at）
-	Project        string          `gorm:"size:128;index:idx_project;default:default" json:"project"`                                                                                                         // 所属项目，用于任务分组管理
-	Category       string          `gorm:"size:128;index:idx_category;default:default" json:"category"`                                                                                                       // 任务分类，用于任务类型管理
-	CronJob        *uuid.UUID      `gorm:"size:256;index:idx_cronjob;index:idx_cronjob_created,priority:1;index:idx_cronjob_team_deleted,priority:1;column:cronjob;" json:"cronjob"`                          // 关联的定时任务ID，独立任务为nil（复合索引：cronjob+created_at, cronjob+team_id+deleted_at）
-	Workflow       *uuid.UUID      `gorm:"size:256;index:idx_workflow;index:idx_workflow_created,priority:1;column:workflow;" json:"workflow"`                                                                // 🔥 关联的工作流ID（冗余字段，提升查询性能），非工作流任务为nil（复合索引：workflow+created_at）
-	WorkflowExecID *uuid.UUID      `gorm:"size:256;index:idx_workflow_exec;index:idx_workflow_exec_order,priority:1;column:workflow_exec_id;" json:"workflow_exec_id"`                                        // 🔥 关联的工作流执行实例ID，非工作流任务为nil（复合索引：workflow_exec_id+step_order）
-	StepOrder      int             `gorm:"type:int;default:0;index:idx_workflow_exec_order,priority:2" json:"step_order"`                                                                                     // 🔥 工作流步骤序号（从1开始），非工作流任务为0（复合索引：workflow_exec_id+step_order）
-	Name           string          `gorm:"size:256;index:idx_name" json:"name"`                                                                                                                               // 任务名称，通常包含时间戳
-	IsGroup        *bool           `gorm:"type:boolean;default:false" json:"is_group"`                                                                                                                        // 是否为任务组，支持任务链式执行
-	TaskOrder      int             `gorm:"type:int;default:0" json:"task_order"`                                                                                                                              // 任务组内的执行顺序
-	Previous       *uuid.UUID      `gorm:"size:256;index:idx_previous" json:"previous"`                                                                                                                       // 前置任务ID，用于任务链
-	Next           *uuid.UUID      `gorm:"size:256;index:idx_next" json:"next"`                                                                                                                               // 后续任务ID，用于任务链
-	Command        string          `gorm:"size:512" json:"command"`                                                                                                                                           // 要执行的命令
-	Args           string          `gorm:"type:text" json:"args"`                                                                                                                                             // 命令参数，JSON格式，支持大文本（如脚本代码）
-	Description    string          `gorm:"size:512" json:"description"`                                                                                                                                       // 任务描述
-	TimePlan       time.Time       `gorm:"column:time_plan;index:idx_tasks_pending_check,priority:2" json:"time_plan"`                                                                                        // 计划执行时间
-	TimeoutAt      time.Time       `gorm:"column:timeout_at;index:idx_tasks_timeout_check,priority:2;index:idx_tasks_pending_check,priority:3" json:"timeout_at"`                                             // 任务超时时间点
-	TimeStart      *time.Time      `gorm:"column:time_start" json:"time_start"`                                                                                                                               // 实际开始执行时间
-	TimeEnd        *time.Time      `gorm:"column:time_end" json:"time_end"`                                                                                                                                   // 实际结束执行时间
-	Status         string          `gorm:"size:40;index:idx_status;index:idx_tasks_timeout_check,priority:1;index:idx_tasks_pending_check,priority:1;index:idx_team_status_created,priority:2" json:"status"` // 当前执行状态（复合索引：team_id+status+created_at）
-	Output         string          `gorm:"type:text" json:"output"`                                                                                                                                           // 任务执行输出（JSON格式），支持结构化数据
-	SaveLog        *bool           `gorm:"type:boolean;default:true" json:"save_log"`                                                                                                                         // 是否保存执行日志
-	RetryCount     int             `gorm:"type:int;default:0;index:idx_retry_count" json:"retry_count"`                                                                                                       // 当前重试次数（添加索引）
-	MaxRetry       int             `gorm:"type:int;default:0" json:"max_retry"`                                                                                                                               // 最大重试次数（从CronJob继承）
-	WorkerID       *uuid.UUID      `gorm:"size:256;index" json:"worker_id,omitempty"`                                                                                                                         // 执行此任务的Worker节点ID
-	WorkerName     string          `gorm:"size:256;" json:"worker_name,omitempty"`                                                                                                                            // 执行此任务的Worker节点名称
-	IsStandalone   *bool           `gorm:"type:boolean;default:false" json:"is_standalone"`                                                                                                                   // 是否为独立任务（非CronJob产生）
-	Timeout        int             `gorm:"type:int;default:0" json:"timeout"`                                                                                                                                 // 超时时间（秒），0表示不限制
-	Metadata       json.RawMessage `gorm:"type:json" json:"metadata" swaggertype:"object"`                                                                                                                    // 任务元数据，存储执行环境、Worker配置等信息
+	ID             uuid.UUID       `gorm:"size:256;primaryKey" json:"id"`                                                                                                                                          // 任务唯一标识
+	TeamID         *uuid.UUID      `gorm:"size:256;index;index:idx_team_status_created,priority:1;index:idx_team_deleted,priority:1" json:"team_id"`                                                               // 团队ID，用于多租户隔离（复合索引：team_id+status+created_at, team_id+deleted_at）
+	Project        string          `gorm:"size:128;index:idx_project;default:default" json:"project"`                                                                                                              // 所属项目，用于任务分组管理
+	Category       string          `gorm:"size:128;index:idx_category;default:default" json:"category"`                                                                                                            // 任务分类，用于任务类型管理
+	CronJob        *uuid.UUID      `gorm:"size:256;index:idx_cronjob;index:idx_cronjob_created,priority:1;index:idx_cronjob_team_deleted,priority:1;column:cronjob;" json:"cronjob"`                               // 关联的定时任务ID，独立任务为nil（复合索引：cronjob+created_at, cronjob+team_id+deleted_at）
+	Workflow       *uuid.UUID      `gorm:"size:256;index:idx_workflow;index:idx_workflow_created,priority:1;column:workflow;" json:"workflow"`                                                                     // 🔥 关联的工作流ID（冗余字段，提升查询性能），非工作流任务为nil（复合索引：workflow+created_at）
+	WorkflowExecID *uuid.UUID      `gorm:"size:256;index:idx_workflow_exec;index:idx_workflow_exec_order,priority:1;index:idx_workflow_exec_parallel,priority:1;column:workflow_exec_id;" json:"workflow_exec_id"` // 🔥 关联的工作流执行实例ID，非工作流任务为nil（复合索引：workflow_exec_id+step_order, workflow_exec_id+parallel_group）
+	StepOrder      int             `gorm:"type:int;default:0;index:idx_workflow_exec_order,priority:2" json:"step_order"`                                                                                          // 🔥 工作流步骤序号（从1开始），非工作流任务为0（复合索引：workflow_exec_id+step_order）
+	Name           string          `gorm:"size:256;index:idx_name" json:"name"`                                                                                                                                    // 任务名称，通常包含时间戳
+	IsGroup        *bool           `gorm:"type:boolean;default:false" json:"is_group"`                                                                                                                             // 是否为任务组，支持任务链式执行
+	TaskOrder      int             `gorm:"type:int;default:0" json:"task_order"`                                                                                                                                   // 任务组内的执行顺序
+	Previous       *uuid.UUID      `gorm:"size:256;index:idx_previous" json:"previous"`                                                                                                                            // 前置任务ID，用于任务链
+	Next           *uuid.UUID      `gorm:"size:256;index:idx_next" json:"next"`                                                                                                                                    // 后续任务ID，用于任务链
+	Command        string          `gorm:"size:512" json:"command"`                                                                                                                                                // 要执行的命令
+	Args           string          `gorm:"type:text" json:"args"`                                                                                                                                                  // 命令参数，JSON格式，支持大文本（如脚本代码）
+	Description    string          `gorm:"size:512" json:"description"`                                                                                                                                            // 任务描述
+	TimePlan       time.Time       `gorm:"column:time_plan;index:idx_tasks_pending_check,priority:2" json:"time_plan"`                                                                                             // 计划执行时间
+	TimeoutAt      time.Time       `gorm:"column:timeout_at;index:idx_tasks_timeout_check,priority:2;index:idx_tasks_pending_check,priority:3" json:"timeout_at"`                                                  // 任务超时时间点
+	TimeStart      *time.Time      `gorm:"column:time_start" json:"time_start"`                                                                                                                                    // 实际开始执行时间
+	TimeEnd        *time.Time      `gorm:"column:time_end" json:"time_end"`                                                                                                                                        // 实际结束执行时间
+	Status         string          `gorm:"size:40;index:idx_status;index:idx_tasks_timeout_check,priority:1;index:idx_tasks_pending_check,priority:1;index:idx_team_status_created,priority:2" json:"status"`      // 当前执行状态（复合索引：team_id+status+created_at）
+	Output         string          `gorm:"type:text" json:"output"`                                                                                                                                                // 任务执行输出（JSON格式），支持结构化数据
+	SaveLog        *bool           `gorm:"type:boolean;default:true" json:"save_log"`                                                                                                                              // 是否保存执行日志
+	RetryCount     int             `gorm:"type:int;default:0;index:idx_retry_count" json:"retry_count"`                                                                                                            // 当前重试次数（添加索引）
+	MaxRetry       int             `gorm:"type:int;default:0" json:"max_retry"`                                                                                                                                    // 最大重试次数（从CronJob继承）
+	WorkerID       *uuid.UUID      `gorm:"size:256;index" json:"worker_id,omitempty"`                                                                                                                              // 执行此任务的Worker节点ID
+	WorkerName     string          `gorm:"size:256;" json:"worker_name,omitempty"`                                                                                                                                 // 执行此任务的Worker节点名称
+	IsStandalone   *bool           `gorm:"type:boolean;default:false" json:"is_standalone"`                                                                                                                        // 是否为独立任务（非CronJob产生）
+	Timeout        int             `gorm:"type:int;default:0" json:"timeout"`                                                                                                                                      // 超时时间（秒），0表示不限制
+	Metadata       json.RawMessage `gorm:"type:json" json:"metadata" swaggertype:"object"`                                                                                                                         // 任务元数据，存储执行环境、Worker配置等信息
 
 	// 🔥 自动重试相关字段
-	FailureReason string         `gorm:"size:256;index:idx_failure_reason" json:"failure_reason"`                                                                          // 失败原因分类（timeout/worker_error/network_error等）
-	Retryable     *bool          `gorm:"type:boolean;index:idx_retryable" json:"retryable"`                                                                                // 是否可重试（从CronJob继承或Worker判断）
-	NextRetryTime *time.Time     `gorm:"index:idx_next_retry_time" json:"next_retry_time"`                                                                                 // 下次重试时间（ApiServer计算）
-	IsRetry       *bool          `gorm:"type:boolean;default:false;index:idx_is_retry" json:"is_retry"`                                                                    // 🔥 是否是重试任务（重试任务的ParentTask ID存储在Metadata.parent_task中）
-	CreatedAt     time.Time      `gorm:"column:created_at;autoCreateTime;index:idx_team_status_created,priority:3;index:idx_cronjob_created,priority:2" json:"created_at"` // 任务创建时间（复合索引：team_id+status+created_at 和 cronjob+created_at）
-	UpdatedAt     time.Time      `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`                                                                               // 任务最后更新时间
-	DeletedAt     gorm.DeletedAt `gorm:"index;index:idx_team_deleted,priority:2;index:idx_cronjob_team_deleted,priority:3" json:"-"`                                       // 软删除时间（复合索引：team_id+deleted_at, cronjob+team_id+deleted_at）
-	Deleted       *bool          `gorm:"type:boolean;default:false" json:"deleted" form:"deleted"`                                                                         // 软删除标记
+	FailureReason string     `gorm:"size:256;index:idx_failure_reason" json:"failure_reason"`       // 失败原因分类（timeout/worker_error/network_error等）
+	Retryable     *bool      `gorm:"type:boolean;index:idx_retryable" json:"retryable"`             // 是否可重试（从CronJob继承或Worker判断）
+	NextRetryTime *time.Time `gorm:"index:idx_next_retry_time" json:"next_retry_time"`              // 下次重试时间（ApiServer计算）
+	IsRetry       *bool      `gorm:"type:boolean;default:false;index:idx_is_retry" json:"is_retry"` // 🔥 是否是重试任务（重试任务的ParentTask ID存储在Metadata.parent_task中）
+
+	// 🔥 条件分支和并行执行相关字段（从 WorkflowStep 继承）
+	Condition       string `gorm:"size:512;default:''" json:"condition"`                                                  // 条件表达式（从 WorkflowStep.Condition 继承）
+	ParallelGroup   string `gorm:"size:128;default:'';index:idx_workflow_exec_parallel,priority:2" json:"parallel_group"` // 并行组 ID（复合索引：workflow_exec_id+parallel_group，用于查询同组任务）
+	WaitStrategy    string `gorm:"size:40;default:'all'" json:"wait_strategy"`                                            // 等待策略（all/any/threshold:N）
+	FailureStrategy string `gorm:"size:40;default:'continue'" json:"failure_strategy"`                                    // 失败策略（continue/abort）
+
+	// 时间戳字段
+	CreatedAt time.Time      `gorm:"column:created_at;autoCreateTime;index:idx_team_status_created,priority:3;index:idx_cronjob_created,priority:2" json:"created_at"` // 任务创建时间（复合索引：team_id+status+created_at 和 cronjob+created_at）
+	UpdatedAt time.Time      `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`                                                                               // 任务最后更新时间
+	DeletedAt gorm.DeletedAt `gorm:"index;index:idx_team_deleted,priority:2;index:idx_cronjob_team_deleted,priority:3" json:"-"`                                       // 软删除时间（复合索引：team_id+deleted_at, cronjob+team_id+deleted_at）
+	Deleted   *bool          `gorm:"type:boolean;default:false" json:"deleted" form:"deleted"`                                                                         // 软删除标记
 }
 
 // TableName 表名
@@ -233,6 +243,43 @@ type TaskStore interface {
 	//   - retry_count < max_retry - 未达到最大重试次数
 	//   - max_retry > 0 - 配置了重试
 	GetNeedRetryTasks(ctx context.Context, limit int) ([]*Task, error)
+
+	// 🔥 FindByWorkflowExecAndOrder 根据工作流执行ID和步骤序号查找任务
+	// 用于查找工作流中特定步骤序号的所有任务（支持条件分支：同一个 order 可能有多个 Task）
+	//
+	// 参数：
+	//   - ctx: 上下文对象
+	//   - workflowExecID: 工作流执行实例ID
+	//   - order: 步骤序号（从1开始）
+	//
+	// 返回：
+	//   - []*Task: 任务列表（可能为空）
+	//   - error: 查询错误
+	FindByWorkflowExecAndOrder(ctx context.Context, workflowExecID uuid.UUID, order int) ([]*Task, error)
+
+	// 🔥 FindByWorkflowExecAndParallelGroup 根据工作流执行ID和并行组ID查找任务
+	// 用于查找并行执行组内的所有任务，用于判断并行组是否全部完成
+	//
+	// 参数：
+	//   - ctx: 上下文对象
+	//   - workflowExecID: 工作流执行实例ID
+	//   - parallelGroup: 并行组ID
+	//
+	// 返回：
+	//   - []*Task: 任务列表（可能为空）
+	//   - error: 查询错误
+	FindByWorkflowExecAndParallelGroup(ctx context.Context, workflowExecID uuid.UUID, parallelGroup string) ([]*Task, error)
+
+	// ListByWorkflowExecID 根据工作流执行ID获取任务列表
+	//
+	// 参数：
+	//   - ctx: 上下文
+	//   - workflowExecID: 工作流执行ID
+	//
+	// 返回：
+	//   - []*Task: 任务列表（可能为空）
+	//   - error: 查询错误
+	ListByWorkflowExecID(ctx context.Context, workflowExecID uuid.UUID) ([]*Task, error)
 }
 
 // TaskService 任务服务接口

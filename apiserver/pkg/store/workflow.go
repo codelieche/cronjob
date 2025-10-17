@@ -95,8 +95,10 @@ func (s *WorkflowStore) Update(ctx context.Context, workflow *core.Workflow) err
 	}()
 
 	// 明确指定要更新的字段
+	// 🔥 包含Webhook相关字段
 	updateFields := []string{
 		"project", "code", "name", "description", "steps", "default_variables", "metadata", "is_active", "timeout",
+		"webhook_enabled", "webhook_token", "webhook_ip_whitelist", "webhook_metadata",
 	}
 
 	if err := tx.Model(workflow).Select(updateFields).Updates(workflow).Error; err != nil {
@@ -213,7 +215,11 @@ func (s *WorkflowStore) Count(ctx context.Context, filterActions ...filters.Filt
 }
 
 // UpdateStats 更新统计信息
-// 在WorkflowExecute完成后调用，更新执行次数和最后执行状态
+// 在WorkflowExecute状态变化时调用，更新执行次数和最后执行状态
+//
+// 调用规则：
+// 1. Execute() 创建时：传 status="pending"，execute_count +1
+// 2. 完成时：传 status="success/failed"，只更新 success_count/failed_count（不再更新 execute_count）
 func (s *WorkflowStore) UpdateStats(ctx context.Context, id uuid.UUID, status string) error {
 	workflow, err := s.FindByID(ctx, id)
 	if err != nil {
@@ -231,17 +237,24 @@ func (s *WorkflowStore) UpdateStats(ctx context.Context, id uuid.UUID, status st
 	// 更新统计信息
 	now := time.Now()
 	updates := map[string]interface{}{
-		"execute_count":   workflow.ExecuteCount + 1,
 		"last_execute_at": now,
 		"last_status":     status,
 	}
 
-	// 根据状态更新成功/失败次数
-	if status == core.WorkflowExecuteStatusSuccess {
+	// 🔥 根据状态决定更新逻辑：
+	// - pending: 发起执行，execute_count +1
+	// - success/failed/canceled: 执行完成，只更新 success_count/failed_count（不更新 execute_count）
+	if status == core.WorkflowExecuteStatusPending {
+		// 发起执行时：execute_count +1
+		updates["execute_count"] = workflow.ExecuteCount + 1
+	} else if status == core.WorkflowExecuteStatusSuccess {
+		// 执行成功：success_count +1（不更新 execute_count）
 		updates["success_count"] = workflow.SuccessCount + 1
 	} else if status == core.WorkflowExecuteStatusFailed {
+		// 执行失败：failed_count +1（不更新 execute_count）
 		updates["failed_count"] = workflow.FailedCount + 1
 	}
+	// 其他状态（running, canceled）：只更新 last_status，不更新计数
 
 	if err := tx.Model(&core.Workflow{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		tx.Rollback()

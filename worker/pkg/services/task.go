@@ -355,6 +355,14 @@ func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 		return
 	}
 
+	// 🔥 特殊处理：如果 Runner 返回 StatusRunning，表示任务仍在进行中
+	// 这种情况下，只更新 output 等信息，不更新 status
+	// 典型场景：审批任务（创建审批对象后，保持 running 状态，等待审批完成）
+	if taskResult.Status == core.StatusRunning {
+		ts.handleRunningTaskResult(task, taskResult)
+		return
+	}
+
 	// 根据Runner结果状态映射到Task状态
 	var taskStatus string
 	switch taskResult.Status {
@@ -491,6 +499,77 @@ func (ts *TaskServiceImpl) executeTask(task *core.Task) {
 			zap.String("error", taskResult.Error),
 			zap.Int("exit_code", taskResult.ExitCode))
 	}
+}
+
+// handleRunningTaskResult 处理 Runner 返回 StatusRunning 的特殊情况
+// 此时任务仍在进行中（如审批等待中），只更新 output 等信息，不更新 status
+func (ts *TaskServiceImpl) handleRunningTaskResult(task *core.Task, taskResult *core.Result) {
+	// 🔥 处理 output：确保总是有效的JSON格式
+	var outputJSON string
+	trimmedOutput := strings.TrimSpace(taskResult.Output)
+	var testParse map[string]interface{}
+	isValidJSON := false
+
+	// 尝试解析为JSON，验证是否有效
+	if trimmedOutput != "" && json.Unmarshal([]byte(trimmedOutput), &testParse) == nil {
+		// 是有效的 JSON 对象，直接使用
+		outputJSON = trimmedOutput
+		isValidJSON = true
+	}
+
+	// 如果不是有效的JSON，需要包装
+	if !isValidJSON {
+		outputMap := make(map[string]interface{})
+		if taskResult.Output != "" {
+			maxLen := 10 * 1024
+			if len(taskResult.Output) > maxLen {
+				outputMap["message"] = taskResult.Output[:maxLen] + "... (truncated)"
+				outputMap["truncated"] = true
+			} else {
+				outputMap["message"] = taskResult.Output
+			}
+		} else {
+			outputMap["message"] = "任务正在进行中"
+		}
+		if taskResult.Duration > 0 {
+			outputMap["duration_ms"] = taskResult.Duration
+		}
+		if jsonBytes, err := json.Marshal(outputMap); err == nil {
+			outputJSON = string(jsonBytes)
+		} else {
+			outputJSON = `{"message": "任务正在进行中"}`
+		}
+	}
+
+	// 🔥 关键：构建结果数据，但不包含 status 字段
+	// 这样 Task 的状态会保持为 running，不会变成其他状态
+	result := map[string]interface{}{}
+
+	// 添加输出信息（用于后续任务取数据）
+	if outputJSON != "" {
+		result["output"] = outputJSON
+	}
+
+	// 添加执行日志（用于显示给用户）
+	if taskResult.ExecuteLog != "" {
+		result["execute_log"] = taskResult.ExecuteLog
+	}
+
+	// 添加执行时长
+	if taskResult.Duration > 0 {
+		result["duration"] = taskResult.Duration
+	}
+
+	// 发送任务更新（不包含 status，保持 running 状态）
+	ts.updateCallback.SendTaskUpdate(task.ID.String(), result)
+
+	// 记录日志
+	logger.Info("任务 Runner 执行完成，Task 保持 running 状态",
+		zap.String("task_id", task.ID.String()),
+		zap.String("task_name", task.Name),
+		zap.String("category", task.Category),
+		zap.Int64("duration", taskResult.Duration),
+		zap.String("note", "等待外部操作完成（如审批）"))
 }
 
 // isTaskCategorySupported 检查任务类型是否被Worker支持

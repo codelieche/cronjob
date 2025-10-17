@@ -48,4 +48,9 @@ func init() {
 	core.RegisterRunner("container", func() core.Runner {
 		return NewContainerRunner()
 	})
+
+	// 注册ApprovalRunner（v1.0 审批流程）
+	core.RegisterRunner("approval", func() core.Runner {
+		return NewApprovalRunner()
+	})
 }
