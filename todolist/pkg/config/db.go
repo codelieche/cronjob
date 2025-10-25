@@ -18,7 +18,7 @@ type database struct {
 
 // GetDSN 获取数据库的DSN
 func (db *database) GetDSN() string {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=True&loc=Asia%%2FShanghai",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=True&loc=Local",
 		db.User, db.Password, db.Host, db.Port, db.Database)
 	// PG数据库的话默认的schema是public
 	if db.Driver == "postgresql" || db.Driver == "postgres" {

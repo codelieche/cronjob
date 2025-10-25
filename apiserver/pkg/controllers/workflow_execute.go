@@ -88,7 +88,7 @@ func (controller *WorkflowExecuteController) Find(c *gin.Context) {
 // @Param username query string false "触发用户"
 // @Param search query string false "搜索关键字"
 // @Param ordering query string false "排序字段（支持：created_at, time_start, time_end, status，前缀-表示降序）" default("-created_at")
-// @Success 200 {object} types.ListResponse "执行实例列表"
+// @Success 200 {object} types.ResponseList "执行实例列表"
 // @Failure 400 {object} core.ErrorResponse "请求参数错误"
 // @Router /workflow-execute/ [get]
 // @Security BearerAuth

@@ -22,16 +22,25 @@ FROM alpine:3.22.1
 RUN apk update && apk add --no-cache curl bash tree \
     && rm -rf /var/cache/apk/*
 
+# 创建非 root 用户
+RUN addgroup -g 1000 appuser && \
+adduser -D -u 1000 -G appuser appuser
+
 WORKDIR /data
 
 # 从builder阶段复制编译好的二进制文件
-COPY --from=builder /data/apiserver ./
+COPY --from=builder  --chown=appuser:appuser /data/apiserver ./
 
 # 复制 Swagger 文档文件（从builder阶段生成的文件）
-COPY --from=builder /data/docs/swagger.* ./docs/
+RUN mkdir -p ./docs
+COPY --from=builder  --chown=appuser:appuser /data/docs/swagger.* ./docs/
 
 # 设置可执行权限
-RUN chmod +x ./apiserver
+RUN chown -R appuser:appuser /data && \
+    chmod +x ./apiserver
+
+# 切换到非 root 用户
+USER appuser
 
 EXPOSE 80
 

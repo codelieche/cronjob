@@ -22,11 +22,11 @@ type Approval struct {
 	// 审批内容
 	Title   string          `gorm:"type:varchar(200);not null" json:"title"`
 	Content string          `gorm:"type:text" json:"content"`
-	Context json.RawMessage `gorm:"type:json" json:"context"` // 使用json.RawMessage保证类型安全
+	Context json.RawMessage `gorm:"type:json" json:"context" swaggertype:"object"` // 使用json.RawMessage保证类型安全
 
 	// 审批人配置
-	UserIDs    json.RawMessage `gorm:"type:json" json:"user_ids"`     // 使用json.RawMessage保证类型安全
-	AIAgentIDs json.RawMessage `gorm:"type:json" json:"ai_agent_ids"` // 使用json.RawMessage保证类型安全
+	UserIDs    json.RawMessage `gorm:"type:json" json:"user_ids" swaggertype:"array,string"`     // 使用json.RawMessage保证类型安全
+	AIAgentIDs json.RawMessage `gorm:"type:json" json:"ai_agent_ids" swaggertype:"array,string"` // 使用json.RawMessage保证类型安全
 	RequireAll *bool           `gorm:"default:false" json:"require_all"`
 
 	// 审批状态
@@ -36,7 +36,7 @@ type Approval struct {
 	ApprovalComment string     `gorm:"type:text" json:"approval_comment"`
 
 	// AI审批结果
-	AIDecision json.RawMessage `gorm:"type:json" json:"ai_decision,omitempty"` // 使用json.RawMessage保证类型安全
+	AIDecision json.RawMessage `gorm:"type:json" json:"ai_decision,omitempty" swaggertype:"object"` // 使用json.RawMessage保证类型安全
 
 	// 超时配置
 	Timeout   int        `gorm:"default:3600" json:"timeout"`
@@ -44,7 +44,7 @@ type Approval struct {
 	TimeoutAt *time.Time `gorm:"index" json:"timeout_at"`
 
 	// 扩展字段
-	Metadata json.RawMessage `gorm:"type:json" json:"metadata"` // 使用json.RawMessage保证类型安全
+	Metadata json.RawMessage `gorm:"type:json" json:"metadata" swaggertype:"object"` // 使用json.RawMessage保证类型安全
 
 	// 团队关联
 	TeamID uuid.UUID `gorm:"type:char(36);not null;index" json:"team_id"`

@@ -15,7 +15,7 @@ type WorkerCreateForm struct {
 	Name        string          `json:"name" form:"name" binding:"required" example:"worker-node-01"`
 	Description string          `json:"description" form:"description" example:"生产环境主要工作节点"`
 	IsActive    *bool           `json:"is_active" form:"is_active" example:"true"`
-	Metadata    json.RawMessage `json:"metadata" form:"metadata" example:"{\"cpu_cores\": 4, \"memory_gb\": 8, \"os\": \"linux\"}"`
+	Metadata    json.RawMessage `json:"metadata" form:"metadata" swaggertype:"object"`
 }
 
 // Validate 验证表单
@@ -91,7 +91,7 @@ type WorkerInfoForm struct {
 	Name        string          `json:"name" form:"name" example:"worker-node-01-updated"`
 	Description string          `json:"description" form:"description" example:"更新后的工作节点描述"`
 	IsActive    *bool           `json:"is_active" form:"is_active" example:"false"`
-	Metadata    json.RawMessage `json:"metadata" form:"metadata" example:"{\"cpu_cores\": 8, \"memory_gb\": 16, \"os\": \"linux\", \"version\": \"2.0\"}"`
+	Metadata    json.RawMessage `json:"metadata" form:"metadata" swaggertype:"object"`
 }
 
 // Validate 验证表单

@@ -5,6 +5,7 @@
 .DS_Store
 tmp/
 temp/
+/docs
 /pkg
 __pycache__
 sqlite3.db
@@ -15,6 +16,8 @@ sqlite3.db
 /codelieche
 /tutorial
 /chatbot
+/mcpservice
+/shared
 
 .python-version
 
@@ -22,4 +25,6 @@ tests
 docs
 /scripts
 /flutter-demo
+/flutterapp
+
 

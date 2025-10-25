@@ -484,37 +484,6 @@ func initRouter(app *gin.Engine) *services.QueueMetrics {
 	app.GET("/metrics", metricsController.Metrics)
 
 	// ========== 审批管理模块 ==========
-	// 提供AI平台配置、AI Agent和审批功能
-
-	// AI Provider管理
-	aiProviderStore := store.NewAIProviderStore(db)
-	aiProviderService := services.NewAIProviderService(aiProviderStore)
-	aiProviderController := controllers.NewAIProviderController(aiProviderService)
-
-	aiProviderRoutes := apis.Group("/ai-providers")
-	aiProviderRoutes.Use(authGroup.Standard) // 使用标准认证中间件
-	{
-		aiProviderRoutes.POST("/", aiProviderController.Create)       // 创建AI平台配置
-		aiProviderRoutes.GET("/", aiProviderController.List)          // 获取AI平台配置列表
-		aiProviderRoutes.GET("/:id/", aiProviderController.Get)       // 获取单个AI平台配置
-		aiProviderRoutes.PUT("/:id/", aiProviderController.Update)    // 更新AI平台配置
-		aiProviderRoutes.DELETE("/:id/", aiProviderController.Delete) // 删除AI平台配置
-	}
-
-	// AI Agent管理
-	aiAgentStore := store.NewAIAgentStore(db)
-	aiAgentService := services.NewAIAgentService(aiAgentStore)
-	aiAgentController := controllers.NewAIAgentController(aiAgentService)
-
-	aiAgentRoutes := apis.Group("/ai-agents")
-	aiAgentRoutes.Use(authGroup.Standard) // 使用标准认证中间件
-	{
-		aiAgentRoutes.POST("/", aiAgentController.Create)       // 创建AI Agent
-		aiAgentRoutes.GET("/", aiAgentController.List)          // 获取AI Agent列表
-		aiAgentRoutes.GET("/:id/", aiAgentController.Get)       // 获取单个AI Agent
-		aiAgentRoutes.PUT("/:id/", aiAgentController.Update)    // 更新AI Agent
-		aiAgentRoutes.DELETE("/:id/", aiAgentController.Delete) // 删除AI Agent
-	}
 
 	// ========== Usercenter服务 ==========
 	// 🔥 创建 Usercenter Service（用于发送站内信通知）
